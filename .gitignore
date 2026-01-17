@@ -2,3 +2,12 @@
 /.vscode
 /.idea
 /__pycache__
+/raw_data
+/src/__pycache__
+/log
+/pdn/*.json
+/src/logs/
+/src/ssim.log
+*.asv
+*.png
+*.jpg
