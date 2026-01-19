@@ -5,7 +5,7 @@ Header information
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
 Create Date: 2026.1.16\n
-Description: Script of generating dataset of IR Drop diffusion model
+Description: Script of generating raw data of IR Drop diffusion model
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------

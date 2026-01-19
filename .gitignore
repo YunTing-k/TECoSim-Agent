@@ -3,6 +3,7 @@
 /.idea
 /__pycache__
 /raw_data
+/data
 /src/__pycache__
 /log
 /pdn/*.json

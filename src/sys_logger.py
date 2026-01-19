@@ -54,7 +54,7 @@ class Logger:
         fh.setLevel(logging.DEBUG)
         log_format = colorlog.ColoredFormatter(
             fmt='%(log_color)s[%(asctime)s.%(msecs)03d] %(filename)s -> [%(levelname)s] : %(message)s',
-            datefmt='%H:%M',
+            datefmt='%H:%M:%S',
             log_colors=self.config
         )
         sh.setFormatter(log_format)
