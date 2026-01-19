@@ -11,12 +11,14 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.1.19      Yu Huang     1.0               First implementation\n
+2026.1.19      Yu Huang     1.1               Add HDF5 cache config\n
 
 Details:
 Test the packed HDF5 dataset, read the images, voltage, distance map and shuffle index.
 ------------------------------------------------------------------------------------------------------------------------
 
 """
+import os
 import sys
 import time
 import sys_logger
@@ -37,9 +39,9 @@ if __name__ == '__main__':
     frame_num = 100  # frame of simulation
     pdn_num = 120  # total amount of PDN cases
     total_num = pdn_num * frame_num  # total amount of samples
-    data_path = 'G:/case-19/data'  # path of raw raw_data set
-    # data_path = '../data'  # path of raw raw_data set
+    data_path = '../data/dataset32.h5'  # path of raw raw_data set
     check_index = 43  # the index of the shuffled sample among total_num samples (start from zero)
+    read_size = 256  # size of chunk read test
 
     # print params
     sys_log.param('random_seed: %d', random_seed)
@@ -53,6 +55,10 @@ if __name__ == '__main__':
     if check_index >= total_num:
         sys_log.error('Index of the checked sample is larger than all cases amount')
         sys.exit(0)
+    sys_log.param('size of chunk read test: %d', read_size)
+    if read_size >= total_num:
+        sys_log.error('Size of chunk read test is larger than all cases amount')
+        sys.exit(0)
 
     # get index
     shuffle_idx = np.random.choice(total_num, size=total_num, replace=False)
@@ -61,7 +67,17 @@ if __name__ == '__main__':
     frame_idx1 = shuffle_idx[check_index] - pdn_idx1 * frame_num  # index of frame start from zero
     sys_log.debug("Index-%d, Case-%d (shuffled), PDN Case-%d, Frame Idx-%d check test start",
                   check_index + 1, case_idx + 1, pdn_idx1 + 1, frame_idx1 + 1)
-    h5_file = h5py.File(data_path + '/dataset.h5', 'r')
+
+    # config HDF5
+    cache_config = {
+        'rdcc_nslots': 1601,
+        'rdcc_nbytes': 4 * 1024 * 1024 * 1024,
+        'rdcc_w0': 1.0,
+        'libver': 'latest',
+        'locking': False,
+        'swmr': False
+    }
+    h5_file = h5py.File(data_path, 'r', **cache_config)
 
     # read PDN index
     t = time.perf_counter_ns()
@@ -111,7 +127,16 @@ if __name__ == '__main__':
     t = time.perf_counter_ns()
     vdata_slice = vdata[check_index]  # get the shuffled vdata with check_index
     t = time.perf_counter_ns() - t
-    sys_log.debug("First Vdata slice-%d read, time=%.4f ms" % (int(case_idx) + 1, t * 1e-6))
+    sys_log.debug("First Vdata slice-%d read (HDF5 file), time=%.4f ms" % (check_index + 1, t * 1e-6))
+
+    # read from bin
+    vdata_slice.tofile('test.bin')
+    t = time.perf_counter_ns()
+    vdata_slice = np.fromfile('test.bin', dtype=np.float32)
+    vdata_slice = vdata_slice.reshape((p_height, p_width))
+    t = time.perf_counter_ns() - t
+    sys_log.debug("First Vdata slice-%d read (raw file), time=%.4f ms" % (check_index + 1, t * 1e-6))
+    os.remove('test.bin')
 
     # display voltage (display delayed)
     edge_sel = f'{(int(pdn_idx1) // 8 + 1):0{4}b}'
@@ -121,11 +146,18 @@ if __name__ == '__main__':
     plt.axis('off')
 
     # voltage chunk test
-    for i in range(128):
-        t = time.perf_counter_ns()
-        vdata_slice_ = vdata[check_index + i + 1]
-        t = time.perf_counter_ns() - t
-        sys_log.debug("Vdata slice-%d read, time=%.4f ms" % (check_index + i + 2, t * 1e-6))
+    t_total = 0
+    read_total = 0
+    for i in range(read_size):
+        if check_index + i + 1 < total_num:
+            t = time.perf_counter_ns()
+            vdata_slice_ = vdata[check_index + i + 1]
+            t = time.perf_counter_ns() - t
+            t_total = t_total + t
+            read_total = read_total + 1
+            sys_log.debug("Vdata slice-%d read, time=%.4f ms" % (check_index + i + 2, t * 1e-6))
+    if read_total != 0:
+        sys_log.info("Chunk test with avg. time of %.4f ms", t_total * 1e-6 / read_total)
 
     t = time.perf_counter_ns()
     vdata_slice_ = vdata[-1]
