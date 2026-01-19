@@ -81,7 +81,7 @@ if __name__ == '__main__':
     if not skip_pdn_gen:
         for i in range(16):  # 15 case of all edges combination
             if i == 0: continue
-            edge_sel = f'{i:0{4}b}'  # select code of edge [Left, Right, Top, Down]
+            edge_sel = f'{i:0{4}b}'  # select code of edge [0]->[Left, Right, Top, Down]<-[3]
             # generate `max_gen_time` times
             for j in range(max_gen_time):
                 # left edge is selected
