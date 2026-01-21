@@ -62,8 +62,8 @@ class Logger:
         self.logger.addHandler(sh)
         self.logger.addHandler(fh)
 
-    """Log 'msg % args' with severity 'PARAM'."""
     def param(self, msg, *args, **kwargs):
+        """Log 'msg % args' with severity 'PARAM'."""
         if self.isEnabledFor(LOG_LEVEL_PARAM):
             self.log(LOG_LEVEL_PARAM, msg, *args, **kwargs)
 
@@ -72,8 +72,7 @@ class Logger:
 
 class TqdmToLogger(io.StringIO):
     """
-        Output stream for TQDM which will output to logger module instead of
-        the StdOut.
+        Output stream for TQDM which will output to logger module instead of the StdOut.
     """
     logger = None
     level = None

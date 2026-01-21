@@ -5,7 +5,7 @@ Header information
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
 Create Date: 2026.1.19\n
-Description: Simple test script of the packed HDF5 dataset of IR Drop diffusion model
+Description: Simple test script of the packed HDF5 dataset of IR Drop deep learning
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------
@@ -26,7 +26,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys_log = sys_logger.Logger('dataset_test').logger  # logger
+sys_log = sys_logger.Logger(os.path.basename(__file__)[0:-3]).logger  # logger
 
 if __name__ == '__main__':
     sys_log.debug('Program start')

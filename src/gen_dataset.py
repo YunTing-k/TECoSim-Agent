@@ -5,7 +5,7 @@ Header information
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
 Create Date: 2026.1.16\n
-Description: Script of generating raw data of IR Drop diffusion model
+Description: Script of generating raw data of IR Drop deep learning
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------
@@ -24,7 +24,7 @@ import subprocess
 import sys_logger
 import numpy as np
 
-sys_log = sys_logger.Logger('gen_dataset').logger  # logger
+sys_log = sys_logger.Logger(os.path.basename(__file__)[0:-3]).logger  # logger
 
 if __name__ == '__main__':
     sys_log.debug('Program start')

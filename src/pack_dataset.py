@@ -5,7 +5,7 @@ Header information
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
 Create Date: 2026.1.19\n
-Description: Script of pack the raw data of IR Drop diffusion model
+Description: Script of pack the raw data of IR Drop deep learning
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------
@@ -20,6 +20,7 @@ current sample's frame and PDN.
 
 """
 import json
+import os
 import sys
 import sys_logger
 import h5py
@@ -28,7 +29,7 @@ from scipy.ndimage import distance_transform_edt as d_tran
 import numpy as np
 from tqdm import tqdm
 
-sys_log = sys_logger.Logger('pack_dataset').logger  # logger
+sys_log = sys_logger.Logger(os.path.basename(__file__)[0:-3]).logger  # logger
 
 if __name__ == '__main__':
     sys_log.debug('Program start')
