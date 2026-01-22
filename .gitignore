@@ -4,6 +4,7 @@
 /__pycache__
 /raw_data
 /data
+/test
 /src/__pycache__
 /log
 /pdn/*.json
