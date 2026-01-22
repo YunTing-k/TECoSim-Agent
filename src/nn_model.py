@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.1.21      Yu Huang     1.0               First implementation\n
+2026.1.22      Yu Huang     1.1               Unet debug\n
 
 Details:
 UNet and DDIM model definition script.
@@ -28,7 +29,7 @@ class UnetL1Encoder(nn.Module):
     """Unet Level-1 encoder"""
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_channels=5, out_channels=32, kernel_size=3, stride=3, padding=0, dilation=1)
+        self.conv1 = nn.Conv2d(in_channels=4, out_channels=32, kernel_size=3, stride=3, padding=0, dilation=1)
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1, dilation=1)
         self.relu = nn.ReLU()
 

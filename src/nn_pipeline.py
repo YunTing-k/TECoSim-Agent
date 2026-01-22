@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.1.21      Yu Huang     1.0               First implementation\n
+2026.1.22      Yu Huang     1.1               Unet debug\n
 
 Details:
 Training and inference pipeline of the Unet and DDIM model.
@@ -54,11 +55,11 @@ def unet_train(unet: nn.Module, path: str, hdf5_config: dict[str, any], train_ba
         optimizer.zero_grad()
         process_bar = tqdm(enumerate(train_loader), total=len(train_loader),
                            desc='Unet Training', leave=True, unit='batch')
-        for i, (samples) in process_bar:
-            samples_ = samples.to(device)
-            outputs = unet(samples_)
-            targets = samples[:, 0, :, :].unsqueeze(1).to(device)
-            loss = criterion(outputs, targets)  # get loss
+        for i, (samples, voltages) in process_bar:
+            samples = samples.to(device)
+            outputs = unet(samples)
+            voltages = voltages.to(device)
+            loss = criterion(outputs, voltages)  # get loss
             loss = loss / accumulation_steps  # scale to mean
             loss.backward()  # backward propagation
             if ((i + 1) % accumulation_steps == 0) or (i + 1 == len(train_loader)):

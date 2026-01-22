@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.1.21      Yu Huang     1.0               First implementation\n
+2026.1.22      Yu Huang     1.1               Unet debug\n
 
 Details:
 NN dataset, dataloader, optimizer, loss function definitions.
@@ -48,9 +49,9 @@ class IRDropDataset(Dataset):
         voltage = torch.from_numpy(self.vdata[index]).unsqueeze(dim=0)
         img = self.img[self.frame_idx[index]]
         dmap = self.dmap[self.pdn_idx[index]].unsqueeze(dim=0)
-        sample = torch.cat([voltage, img, dmap], dim=0)
-        # sample = torch.zeros((5, 1080, 1920), dtype=torch.float32)  # test for dataloader bottleneck
-        return sample
+        sample = torch.cat([img, dmap], dim=0)
+        # sample = torch.zeros((4, 1080, 1920), dtype=torch.float32)  # test for dataloader bottleneck
+        return sample, voltage
 
     def __len__(self):
         return self.len
