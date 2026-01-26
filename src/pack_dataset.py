@@ -45,7 +45,7 @@ if __name__ == '__main__':
     total_num = pdn_num * frame_num  # total amount of samples
     rawdata_path = '../raw_data'  # path of raw raw_data set
     data_path = '../data'  # path of raw raw_data set
-    chunk_size = 512  # chunk size of dataset
+    chunk_size = 32  # chunk size of dataset
 
     # print params
     sys_log.param('random_seed: %d', random_seed)

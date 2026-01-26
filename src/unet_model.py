@@ -13,9 +13,10 @@ Revision:
 2026.1.21      Yu Huang     1.0               First implementation\n
 2026.1.22      Yu Huang     1.1               Unet test realization\n
 2026.1.22      Yu Huang     1.2               Unet dataset test realization\n
+2026.1.23-26   Yu Huang     1.3               Unet arch optimization\n
 
 Details:
-Training and inference pipeline of the Unet and DDIM model.
+Training and inference pipeline of the Unet model.
 ------------------------------------------------------------------------------------------------------------------------
 
 """
@@ -43,9 +44,9 @@ if __name__ == '__main__':
     device = 'cuda:0'
     skip_train = False
     skip_test = False
-    test_train = True
-    skip_simulation = False
-    dataset_path = '../data/dataset32.h5'
+    test_train = False
+    skip_simulation = True
+    dataset_path = '../data/dataset32B.h5'
     hdf5_config = {
         'rdcc_nslots': 1601,
         'rdcc_nbytes': 4 * 1024 * 1024 * 1024,
@@ -67,12 +68,14 @@ if __name__ == '__main__':
     if not skip_train:
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.enabled = True
+        torch.set_float32_matmul_precision('high')
         unet = torch.compile(unet)
         nn_pipeline.unet_train(unet=unet, path=dataset_path, hdf5_config=hdf5_config,
-                               train_batch=6, epoch=5, device=device, accumulation_steps=5, epoch_save=True,
+                               train_batch=5, epoch=10, device=device, accumulation_steps=1, epoch_save=True,
                                update_count=1)
         torch.save(unet.state_dict(), '../model/unet.pth')
     else:
+        torch.set_float32_matmul_precision('high')
         unet = torch.compile(unet)
         unet.load_state_dict(torch.load('../model/unet.pth'))
         sys_log.info('Read Unet weights from file')
@@ -89,9 +92,9 @@ if __name__ == '__main__':
         max_seg_num = 5  # max segments of single edge
         column = 8  # max columns of json objects
         precision = 1  # digits precision of json dump
-        simulator_path = 'C:/Users/12416/Desktop/C++File/Project/TECoSim'  # path of TECoSim simulator
+        simulator_path = 'D:/TECoSimDev'  # path of TECoSim simulator
         frame_idx = 19  # index of test frame (start from one, for OOD test)
-        case_idx = 19  # index of test frame (start from zero, for dataset test)
+        case_idx = 20  # index of case (start from zero, for dataset test)
 
         target_config_path = simulator_path + '/config/pdn_injection.json'
         if not test_train:
@@ -184,13 +187,14 @@ if __name__ == '__main__':
             dmap_slice_ = torch.from_numpy(dmap_slice).unsqueeze(0).unsqueeze(0)
             vdata_slice_ = torch.from_numpy(vdata_slice).unsqueeze(0).unsqueeze(0)
             nn_input = torch.cat([img_slice_, dmap_slice_], dim=1).to(device)
-            nn_output = unet(nn_input)
+            nn_v, nn_vmin = unet(nn_input)
         v_real = vdata_slice * pdn_voltage  # [H W]
-        v_predict = nn_output.cpu()
-        v_predict = v_predict.numpy()
-        v_predict = np.squeeze(v_predict)  # [H W]
-        v_predict = v_predict * pdn_voltage
-        verr = v_real - v_predict
+        v_pred = nn_v * (1 - nn_vmin) + nn_vmin
+        v_pred = v_pred.cpu()
+        v_pred = v_pred.numpy()
+        v_pred = np.squeeze(v_pred)  # [H W]
+        v_pred = v_pred * pdn_voltage
+        verr = v_real - v_pred
         max_err = np.max(np.abs(verr))
         avg_err = np.mean(np.abs(verr))
         sys_log.info("Max error: %.4f mV, average error: %.4f mV", 1e3 * max_err, 1e3 * avg_err)
@@ -199,7 +203,7 @@ if __name__ == '__main__':
                 'dmap_slice': dmap_slice,
                 'img_slice': img_slice,
                 'v_real': v_real,
-                'v_predict': v_predict,
+                'v_predict': v_pred,
                 'v_err': verr}
         mat_io.savemat('../test/unet_test.mat', data)
     else:

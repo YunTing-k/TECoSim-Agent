@@ -13,6 +13,7 @@ Revision:
 2026.1.21      Yu Huang     1.0               First implementation\n
 2026.1.22      Yu Huang     1.1               Unet debug\n
 2026.1.22      Yu Huang     1.2               PDN generator & dumper realization\n
+2026.1.23-26   Yu Huang     1.3               Unet arch optimization\n
 
 Details:
 NN dataset, dataloader, optimizer, loss function definitions and other utilities such as PDN generator and dumper.
@@ -56,6 +57,20 @@ class IRDropDataset(Dataset):
 
     def __len__(self):
         return self.len
+
+
+def get_gradient(tensor: torch.Tensor):
+    """Get the gradient of input tensor"""
+    sobel_x = torch.tensor([[-1, 0, 1],
+                            [-2, 0, 2],
+                            [-1, 0, 1]], dtype=tensor.dtype).view(1, 1, 3, 3)
+    sobel_y = torch.tensor([[-1, -2, -1],
+                            [0, 0, 0],
+                            [1, 2, 1]], dtype=tensor.dtype).view(1, 1, 3, 3)
+
+    grad_x = torch.nn.functional.conv2d(tensor, sobel_x.to(tensor.device), padding=1)
+    grad_y = torch.nn.functional.conv2d(tensor, sobel_y.to(tensor.device), padding=1)
+    return grad_x, grad_y
 
 
 def get_dataset(path: str, hdf5_config: dict[str, any], transform=None, target_transform=None):
@@ -106,7 +121,7 @@ def get_loss_function(loss_type='MSELoss'):
     return criterion
 
 
-def numpy_to_mat(data_in: np.array, path: str, name='data'):
+def numpy_to_mat(data_in: np.ndarray, path: str, name='data'):
     """save numpy vars to mat"""
     data = {name: data_in}
     sio.savemat(path, data)
