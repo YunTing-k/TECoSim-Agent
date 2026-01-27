@@ -4,19 +4,16 @@ Header information
 ------------------------------------------------------------------------------------------------------------------------
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
-Create Date: 2026.1.19\n
-Description: Unet pipeline realization
+Create Date: 2026.1.27\n
+Description: UnetLand pipeline realization
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
-2026.1.21      Yu Huang     1.0               First implementation\n
-2026.1.22      Yu Huang     1.1               Unet test realization\n
-2026.1.22      Yu Huang     1.2               Unet dataset test realization\n
-2026.1.23-26   Yu Huang     1.3               Unet arch optimization\n
+2026.1.27      Yu Huang     1.0               First implementation\n
 
 Details:
-Training and inference pipeline instance of the Unet model.
+Training and inference pipeline instance of the Unet Landscape model.
 ------------------------------------------------------------------------------------------------------------------------
 
 """
@@ -58,10 +55,10 @@ if __name__ == '__main__':
 
     # create NN
     try:
-        unet = nn_model.Unet().to(device)
-        sys_log.info("Unet created and send to device %s", device)
+        unetland = nn_model.UnetLand().to(device)
+        sys_log.info("UnetLand created and send to device %s", device)
     except Exception as err:
-        sys_log.error("Unet create failed with error %s", str(err))
+        sys_log.error("UnetLand create failed with error %s", str(err))
         sys.exit(0)
 
     # train NN
@@ -69,16 +66,16 @@ if __name__ == '__main__':
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.enabled = True
         torch.set_float32_matmul_precision('high')
-        unet = torch.compile(unet)
-        nn_pipeline.unet_train(unet=unet, path=dataset_path, hdf5_config=hdf5_config,
-                               train_batch=5, epoch=5, device=device, accumulation_steps=1, epoch_save=True,
-                               update_count=1)
-        torch.save(unet.state_dict(), '../model/unet.pth')
+        unetland = torch.compile(unetland)
+        nn_pipeline.unetland_train(unetland=unetland, path=dataset_path, hdf5_config=hdf5_config,
+                                   train_batch=5, epoch=5, device=device, accumulation_steps=1, epoch_save=True,
+                                   update_count=1)
+        torch.save(unetland.state_dict(), '../model/unetland.pth')
     else:
         torch.set_float32_matmul_precision('high')
-        unet = torch.compile(unet)
-        unet.load_state_dict(torch.load('../model/unet.pth'))
-        sys_log.info('Read Unet weights from file')
+        unetland = torch.compile(unetland)
+        unetland.load_state_dict(torch.load('../model/unetland.pth'))
+        sys_log.info('Read UnetLand weights from file')
 
     # test NN
     if not skip_test:
@@ -181,32 +178,33 @@ if __name__ == '__main__':
             inj_row, inj_col = np.where(dmap_slice == 0)
 
         # get the prediction by NN
-        unet.eval()  # toggle inference mode
+        unetland.eval()  # toggle inference mode
         with torch.no_grad():
             img_slice_ = torch.from_numpy(img_slice).unsqueeze(0)
             dmap_slice_ = torch.from_numpy(dmap_slice).unsqueeze(0).unsqueeze(0)
             vdata_slice_ = torch.from_numpy(vdata_slice).unsqueeze(0).unsqueeze(0)
             nn_input = torch.cat([img_slice_, dmap_slice_], dim=1).to(device)
-            nn_v, nn_vmin = unet(nn_input)
-        v_real = vdata_slice * pdn_voltage  # [H W]
-        v_pred = nn_v * (1 - nn_vmin) + nn_vmin
-        v_pred = v_pred.cpu()
-        v_pred = v_pred.numpy()
-        v_pred = np.squeeze(v_pred)  # [H W]
-        v_pred = v_pred * pdn_voltage
-        verr = v_real - v_pred
+            nn_v = unetland(nn_input)
+        v_real_min = vdata_slice_.amin(dim=[2, 3], keepdim=True)  # get the input voltage's min value
+        v_real_rel = vdata_slice_ / v_real_min  # [N C H W]
+        v_real_rel = v_real_rel.numpy()
+        v_real_rel = np.squeeze(v_real_rel)  # [H W]
+        v_pred_rel = nn_v.cpu()
+        v_pred_rel = v_pred_rel.numpy()
+        v_pred_rel = np.squeeze(v_pred_rel)  # [H W]
+        verr = v_real_rel - v_pred_rel
         max_err = np.max(np.abs(verr))
         avg_err = np.mean(np.abs(verr))
-        sys_log.info("Max error: %.4f mV, average error: %.4f mV", 1e3 * max_err, 1e3 * avg_err)
+        sys_log.info("Max error: %.4e, average error: %.4e", max_err, avg_err)
         data = {'inj_row': inj_row,
                 'inj_col': inj_col,
                 'dmap_slice': dmap_slice,
                 'img_slice': img_slice,
-                'v_real': v_real,
-                'v_predict': v_pred,
+                'v_real_relative': v_real_rel,
+                'v_predict_relative': v_pred_rel,
                 'v_err': verr}
-        mat_io.savemat('../test/unet_test.mat', data)
+        mat_io.savemat('../test/unetland_test.mat', data)
     else:
-        sys_log.info('Unet test skipped')
+        sys_log.info('UnetLand test skipped')
 
     sys_log.debug('Program end')

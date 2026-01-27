@@ -13,6 +13,7 @@ Revision:
 2026.1.21      Yu Huang     1.0               First implementation\n
 2026.1.22      Yu Huang     1.1               Unet debug\n
 2026.1.23-26   Yu Huang     1.2               Unet arch optimization\n
+2026.1.27      Yu Huang     1.3               Unet Land implementation\n
 
 Details:
 UNet and DDIM model definition script.
@@ -205,7 +206,7 @@ class UnetL0Decoder(nn.Module):
 
 
 class Unet(nn.Module):
-    """Unet structure"""
+    """Unet for IR drop end-to-end prediction"""
 
     def __init__(self):
         super().__init__()
@@ -234,6 +235,66 @@ class Unet(nn.Module):
         y_dec1 = self.l1_decoder(x_enc1, y_dec2)
         y = self.l0_decoder(y_dec1)
         return y, y_min
+
+    def initialize(self):
+        """Initialize the prams of NN"""
+        for name, m in self.named_modules():
+            if isinstance(m, nn.Conv2d):
+                if name == 'l0_decoder.conv2':
+                    nn.init.xavier_uniform_(m.weight, gain=1.0)
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0.5)
+                else:
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.ConvTranspose2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                if m is self.vmin_extractor.fc1:
+                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0.01)
+                elif m is self.vmin_extractor.fc2:
+                    nn.init.xavier_uniform_(m.weight, gain=1.0)
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0.5)
+                else:
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+        sys_log.info("Unet params initialized")
+
+
+class UnetLand(nn.Module):
+    """Unet for IR drop landscape prediction"""
+
+    def __init__(self):
+        super().__init__()
+        self.l1_encoder = UnetL1Encoder()
+        self.l2_encoder = UnetL2Encoder()
+        self.l3_encoder = UnetL3Encoder()
+        self.l4_bottleneck = UnetL4Bottleneck()
+        self.l3_decoder = UnetL3Decoder()
+        self.l2_decoder = UnetL2Decoder()
+        self.l1_decoder = UnetL1Decoder()
+        self.l0_decoder = UnetL0Decoder()
+        sys_log.info("UnetLand constructed")
+
+    def forward(self, x):
+        # encoder
+        x_enc1 = self.l1_encoder(x)
+        x_enc2 = self.l2_encoder(x_enc1)
+        x_enc3 = self.l3_encoder(x_enc2)
+        x_bottleneck = self.l4_bottleneck(x_enc3)
+        # decoder
+        y_dec3 = self.l3_decoder(x_enc3, x_bottleneck)
+        y_dec2 = self.l2_decoder(x_enc2, y_dec3)
+        y_dec1 = self.l1_decoder(x_enc1, y_dec2)
+        y = self.l0_decoder(y_dec1)
+        return y
 
     def initialize(self):
         """Initialize the prams of NN"""

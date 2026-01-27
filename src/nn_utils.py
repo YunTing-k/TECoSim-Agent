@@ -21,6 +21,7 @@ NN dataset, dataloader, optimizer, loss function definitions and other utilities
 
 """
 import logging
+from typing import Union
 import sys
 import h5py
 import numpy as np
@@ -73,7 +74,7 @@ def get_gradient(tensor: torch.Tensor):
     return grad_x, grad_y
 
 
-def get_dataset(path: str, hdf5_config: dict[str, any], transform=None, target_transform=None):
+def get_dataset(path: str, hdf5_config: dict[str, Union[str, int, float, bool]], transform=None, target_transform=None):
     """Get dataset from path and hdf5 configs"""
     try:
         dataset = IRDropDataset(path=path, hdf5_config=hdf5_config,
