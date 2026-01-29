@@ -14,6 +14,7 @@ Revision:
 2026.1.22      Yu Huang     1.1               Unet debug\n
 2026.1.23-26   Yu Huang     1.2               Unet arch optimization\n
 2026.1.27      Yu Huang     1.3               Unet Land implementation\n
+2026.1.28      Yu Huang     1.4               Unet Land arch optimization\n
 
 Details:
 UNet and DDIM model definition script.
@@ -141,6 +142,27 @@ class UnetL3Decoder(nn.Module):
         return x
 
 
+class UnetL3DecoderNS(nn.Module):
+    """Unet Level-3 decoder (No skip connection)"""
+    def __init__(self):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv0 = nn.Conv2d(in_channels=1024, out_channels=512, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn0 = nn.GroupNorm(num_groups=32, num_channels=512)
+        self.conv1 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn1 = nn.GroupNorm(num_groups=32, num_channels=512)
+        self.conv2 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn2 = nn.GroupNorm(num_groups=32, num_channels=512)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.relu(self.gn0(self.conv0(x)))
+        x = self.relu(self.gn1(self.conv1(x)))
+        x = self.relu(self.gn2(self.conv2(x)))
+        return x
+
+
 class UnetL2Decoder(nn.Module):
     """Unet Level-2 decoder"""
     def __init__(self):
@@ -163,6 +185,27 @@ class UnetL2Decoder(nn.Module):
         return x
 
 
+class UnetL2DecoderNS(nn.Module):
+    """Unet Level-2 decoder (No skip connection)"""
+    def __init__(self):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv0 = nn.Conv2d(in_channels=512, out_channels=128, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn0 = nn.GroupNorm(num_groups=8, num_channels=128)
+        self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn1 = nn.GroupNorm(num_groups=8, num_channels=128)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn2 = nn.GroupNorm(num_groups=8, num_channels=128)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.relu(self.gn0(self.conv0(x)))
+        x = self.relu(self.gn1(self.conv1(x)))
+        x = self.relu(self.gn2(self.conv2(x)))
+        return x
+
+
 class UnetL1Decoder(nn.Module):
     """Unet Level-1 decoder"""
     def __init__(self):
@@ -180,6 +223,27 @@ class UnetL1Decoder(nn.Module):
         x = self.upsample(x)
         x = self.relu(self.gn0(self.conv0(x)))
         x = torch.cat([x_skip, x], dim=1)
+        x = self.relu(self.gn1(self.conv1(x)))
+        x = self.relu(self.gn2(self.conv2(x)))
+        return x
+
+
+class UnetL1DecoderNS(nn.Module):
+    """Unet Level-1 decoder (No skip connection)"""
+    def __init__(self):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv0 = nn.Conv2d(in_channels=128, out_channels=32, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn0 = nn.GroupNorm(num_groups=4, num_channels=32)
+        self.conv1 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn1 = nn.GroupNorm(num_groups=4, num_channels=32)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1, dilation=1)
+        self.gn2 = nn.GroupNorm(num_groups=4, num_channels=32)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.relu(self.gn0(self.conv0(x)))
         x = self.relu(self.gn1(self.conv1(x)))
         x = self.relu(self.gn2(self.conv2(x)))
         return x
@@ -278,8 +342,8 @@ class UnetLand(nn.Module):
         self.l3_encoder = UnetL3Encoder()
         self.l4_bottleneck = UnetL4Bottleneck()
         self.l3_decoder = UnetL3Decoder()
-        self.l2_decoder = UnetL2Decoder()
-        self.l1_decoder = UnetL1Decoder()
+        self.l2_decoder = UnetL2DecoderNS()
+        self.l1_decoder = UnetL1DecoderNS()
         self.l0_decoder = UnetL0Decoder()
         sys_log.info("UnetLand constructed")
 
@@ -291,8 +355,8 @@ class UnetLand(nn.Module):
         x_bottleneck = self.l4_bottleneck(x_enc3)
         # decoder
         y_dec3 = self.l3_decoder(x_enc3, x_bottleneck)
-        y_dec2 = self.l2_decoder(x_enc2, y_dec3)
-        y_dec1 = self.l1_decoder(x_enc1, y_dec2)
+        y_dec2 = self.l2_decoder(y_dec3)
+        y_dec1 = self.l1_decoder(y_dec2)
         y = self.l0_decoder(y_dec1)
         return y
 
@@ -325,4 +389,4 @@ class UnetLand(nn.Module):
                     nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                     if m.bias is not None:
                         nn.init.constant_(m.bias, 0)
-        sys_log.info("Unet params initialized")
+        sys_log.info("UnetLand params initialized")

@@ -4,13 +4,14 @@
 % Coding: UTF-8
 % Create Date: 2026.1.23
 % Description:
-% Plot the NN train loss, test results
+% Plot the Unet train loss, test results
 %
 % Revision:
 % ---------------------------------------------------------------------------------
 % [Date]         [By]         [Version]         [Change Log]
 % ---------------------------------------------------------------------------------
 % 2026/1/23      Yu Huang     1.0               First implementation
+% 2026/1/29      Yu Huang     1.1               3D View
 % ---------------------------------------------------------------------------------
 %
 %-FHDR//////////////////////////////////////////////////////////////////////////////
@@ -18,8 +19,10 @@ clc
 clear
 close all
 %% Params
-data_path = 'G:\case-19\model\unet1';
+data_path = 'G:\case-19\model\unet13';
 model = 'unet';
+test_path = 'test1';
+test_case = 'unet_test19_OOD4';
 addpath 'C:\Users\12416\Desktop\MatLabFile\库\Tools\slanCM\'
 addpath 'C:\Users\12416\Desktop\MatLabFile\库\Tools\altmany-export_fig'
 %% Plot train loss
@@ -36,8 +39,8 @@ xlabel("Iteration (#)")
 ylabel("Loss")
 set(gca,'FontName','Times New Roman','FontWeight','normal')
 set(gca,'YScale','log')
-%% Plot test error
-test_data = load([data_path, '\', model, '_test.mat']);
+%% Plot test error 2D
+test_data = load([data_path, '\', test_path, '\',test_case]);
 v_real = test_data.v_real;
 v_predict = test_data.v_predict;
 v_err = test_data.v_err;
@@ -57,8 +60,7 @@ set(gca,'FontName','Times New Roman','FontWeight','normal')
 daspect([1 1 1])
 set(fig0,'PaperPositionMode','manual');
 set(fig0,'PaperUnits','points');
-% set(fig,'PaperPosition',[0,0,1920,1080]);
-print(fig0,'v_real.jpg','-r600','-djpeg');
+print(fig0,[test_case, '_v_real2D.jpg'],'-r600','-djpeg');
 
 fig0 = figure;
 imagesc(v_predict)
@@ -72,5 +74,33 @@ set(gca,'FontName','Times New Roman','FontWeight','normal')
 daspect([1 1 1])
 set(fig0,'PaperPositionMode','manual');
 set(fig0,'PaperUnits','points');
-% set(fig,'PaperPosition',[0,0,1920,1080]);
-print(fig0,'v_predict.jpg','-r600','-djpeg');
+print(fig0,[test_case, '_v_predict2D.jpg'],'-r600','-djpeg');
+%% Plot test error 3D
+cmap = slanCM("spectral");
+cmap = flipud(cmap);
+
+fig2 = figure;
+mesh(v_real)
+box on
+c_bar = colorbar;
+xlabel('Col')
+ylabel('Row')
+set(get(c_bar,'title'),'string','V (V)');
+colormap(cmap)
+set(gca,'FontName','Times New Roman','FontWeight','normal')
+set(fig2,'PaperPositionMode','manual');
+set(fig2,'PaperUnits','points');
+print(fig2,[test_case, '_v_real3D.jpg'],'-r600','-djpeg');
+
+fig3 = figure;
+mesh(v_predict)
+box on
+c_bar = colorbar;
+xlabel('Col')
+ylabel('Row')
+set(get(c_bar,'title'),'string','V (V)');
+colormap(cmap)
+set(gca,'FontName','Times New Roman','FontWeight','normal')
+set(fig3,'PaperPositionMode','manual');
+set(fig3,'PaperUnits','points');
+print(fig3,[test_case, '_v_predict3D.jpg'],'-r600','-djpeg');

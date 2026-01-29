@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.1.27      Yu Huang     1.0               First implementation\n
+2026.1.28      Yu Huang     1.1               Debug output process\n
 
 Details:
 Training and inference pipeline instance of the Unet Landscape model.
@@ -186,7 +187,7 @@ if __name__ == '__main__':
             nn_input = torch.cat([img_slice_, dmap_slice_], dim=1).to(device)
             nn_v = unetland(nn_input)
         v_real_min = vdata_slice_.amin(dim=[2, 3], keepdim=True)  # get the input voltage's min value
-        v_real_rel = vdata_slice_ / v_real_min  # [N C H W]
+        v_real_rel = (vdata_slice_ - v_real_min) / (1.0 - v_real_min)  # [N C H W]
         v_real_rel = v_real_rel.numpy()
         v_real_rel = np.squeeze(v_real_rel)  # [H W]
         v_pred_rel = nn_v.cpu()
