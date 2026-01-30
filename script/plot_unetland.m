@@ -11,6 +11,7 @@
 % [Date]         [By]         [Version]         [Change Log]
 % ---------------------------------------------------------------------------------
 % 2026/1/29      Yu Huang     1.0               First implementation
+% 2026/1/30      Yu Huang     1.1               Modify ZLim
 % ---------------------------------------------------------------------------------
 %
 %-FHDR//////////////////////////////////////////////////////////////////////////////
@@ -87,6 +88,7 @@ ylabel('Row')
 set(get(c_bar,'title'),'string','a.u.');
 colormap(cmap)
 set(gca,'FontName','Times New Roman','FontWeight','normal')
+set(gca,'ZLim',[0 1])
 set(fig2,'PaperPositionMode','manual');
 set(fig2,'PaperUnits','points');
 print(fig2,[test_case, '_v_real3D.jpg'],'-r600','-djpeg');
@@ -100,6 +102,7 @@ ylabel('Row')
 set(get(c_bar,'title'),'string','a.u.');
 colormap(cmap)
 set(gca,'FontName','Times New Roman','FontWeight','normal')
+set(gca,'ZLim',[0 1])
 set(fig3,'PaperPositionMode','manual');
 set(fig3,'PaperUnits','points');
 print(fig3,[test_case, '_v_predict3D.jpg'],'-r600','-djpeg');
