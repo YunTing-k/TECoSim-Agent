@@ -5,7 +5,7 @@ Header information
 Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab\n
 Author: Yu Huang\n
 Create Date: 2026.1.19\n
-Description: Neural network pipeline realization
+Description: IR Drop simulation agent neural network pipeline realization
 
 Revision:
 ------------------------------------------------------------------------------------------------------------------------

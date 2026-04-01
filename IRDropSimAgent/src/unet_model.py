@@ -44,9 +44,9 @@ if __name__ == '__main__':
 
     # config params (train NN)
     device = 'cuda:0'
-    skip_train = False
+    skip_train = True
     skip_test = False
-    test_train = False
+    test_train = True
     skip_simulation = True
     dataset_path = '../data/dataset32B.h5'
     hdf5_config = {
