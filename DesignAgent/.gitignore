@@ -1,6 +1,7 @@
 /.VSCodeCounter
 /.vscode
 /.idea
+/gateway.bat
 /session/*
 /src/__pycache__
 /src/context/__pycache__

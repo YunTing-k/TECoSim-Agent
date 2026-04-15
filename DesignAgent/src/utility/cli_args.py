@@ -21,6 +21,7 @@ from argparse import Namespace
 
 
 def tecosim_agent_args() -> Namespace:
+    """Arguments of the TECoSim agent"""
     parser = argparse.ArgumentParser(description='Thermo-Electric Coupling Cross-level Display Simulator (TECoSim) Agent')
     parser.add_argument('-l', '--log', help='To enable dev logger', action='store_true')
     parser.add_argument('-r', '--resume', type=str, help='Resume with session UUID', metavar='<UUID>')

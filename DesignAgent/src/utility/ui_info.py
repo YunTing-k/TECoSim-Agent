@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.7       Yu Huang     1.0               First implementation\n
+2026.4.15      Yu Huang     1.1               Query prompts and message history\n
 
 Details:
 UI information of agent dev version, ASCII art banner of start, error
@@ -78,6 +79,7 @@ def log_tecosim_agent_info():
 
 
 def console_tecosim_agent_info(console: Console):
+    """print the agent's dev information into console"""
     banner = (
         "████████╗███████╗ ██████╗ ██████╗ ███████╗██╗███╗   ███╗     █████╗  ██████╗ ███████╗███╗   ██╗████████╗\n"
         "╚══██╔══╝██╔════╝██╔════╝██╔═══██╗██╔════╝██║████╗ ████║    ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝\n"
@@ -103,16 +105,6 @@ def console_tecosim_agent_info(console: Console):
     console.print("\n")
 
 
-def log_error_banner():
-    """print start banner of ERROR! into logger"""
-    sys_log.error('███████╗██████╗ ██████╗  ██████╗ ██████╗ ██╗')
-    sys_log.error('██╔════╝██╔══██╗██╔══██╗██╔═══██╗██╔══██╗██║')
-    sys_log.error('█████╗  ██████╔╝██████╔╝██║   ██║██████╔╝██║')
-    sys_log.error('██╔══╝  ██╔══██╗██╔══██╗██║   ██║██╔══██╗╚═╝')
-    sys_log.error('███████╗██║  ██║██║  ██║╚██████╔╝██║  ██║██╗')
-    sys_log.error('╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝')
-
-
 class GradientTextColumn(ProgressColumn):
     """Customized progress column with Text"""
     def __init__(self, start_rgb=(100, 100, 100), end_rgb=(255, 255, 255)):
@@ -129,7 +121,9 @@ class GradientTextColumn(ProgressColumn):
 
 
 @contextmanager
-def loading_spinner(description: str = "Brain (but not mine) using ...", spinner: str = "dots2"):
+def loading_spinner(waiting_desc: str = "Brain (but not mine) using ...",
+                    done_desc: str = "LLM response latency",
+                    spinner: str = "dots2"):
     """context manager for rich.Progress with any time-consuming operation"""
     with Progress(
         GradientTextColumn(start_rgb=(255, 159, 243), end_rgb=(84, 160, 255)),
@@ -137,6 +131,6 @@ def loading_spinner(description: str = "Brain (but not mine) using ...", spinner
         TimeElapsedColumn(),
         transient=False,
     ) as progress:
-        task = progress.add_task(description, total=None)
-        yield
-        progress.update(task, description="LLM response latency")
+        task = progress.add_task(waiting_desc, total=None)
+        yield progress
+        progress.update(task, description=done_desc)

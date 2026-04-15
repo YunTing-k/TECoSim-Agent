@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.7       Yu Huang     1.0               First implementation\n
+2026.4.15      Yu Huang     1.1               Tools requests realization\n
 
 Details:
 Client configuration, creation
@@ -55,11 +56,12 @@ def config_client(api_configs: Dict[str, Any], console: Console) -> OpenAI:
         return client
 
 
-def create_request(client: OpenAI, api_configs: Dict[str, Any], messages):
+def create_request(client: OpenAI, api_configs: Dict[str, Any], messages, tools):
     """Create LLM request with given LLM client, API configs and messages"""
     response = client.chat.completions.create(
         model=api_configs["MODEL_NAME"],
         messages=messages,
+        tools=tools,
         temperature=api_configs["MODEL_TEMPERATURE"],
         timeout=api_configs["TIMEOUT_MS"] / 1000
     )

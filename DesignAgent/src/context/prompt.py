@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.8       Yu Huang     1.0               First implementation\n
+2026.4.15      Yu Huang     1.1               Query prompts and message history\n
 
 Details:
 System prompts, Reminder, Tools
@@ -19,17 +20,20 @@ System prompts, Reminder, Tools
 import os
 import platform
 import subprocess
-from typing import Dict, Any
 import logging
+import json
+
+from typing import Dict, Any
 from rich.console import Console
+from rich.panel import Panel
+from src.context import session
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
 
-def create_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any], console: Console):
-    """create prompts of
-      - system (agent role, guideline, dynamic boundaries)
-      - tools"""
+def create_system_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any], console: Console) -> list[dict[str, Any]]:
+    """create prompts of system (agent role, guideline, dynamic boundaries)"""
     """system: agent role"""
     prompts1 = get_agent_role_prompts()
     """system: agent guideline"""
@@ -37,28 +41,24 @@ def create_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any], c
     """system: dynamic boundaries"""
     prompts3 = get_agent_dynamic_prompts(api_configs)
     sys_log.debug("System prompts generated")
-    """tools"""
-
-    sys_log.debug("Tools prompts generated")
-
     if agent_configs["MERGE_SYSTEM_PROMPTS"]:
         prompts = prompts1
         prompts[0]["content"] += (prompts2[0]["content"])
         prompts[0]["content"] += (prompts3[0]["content"])
     else:
         prompts = prompts1 + prompts2 + prompts3
-    sys_log.debug("System & tools prompts assembled")
+    sys_log.debug("System prompts assembled")
     return prompts
 
 
-def get_agent_role_prompts():
+def get_agent_role_prompts() -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's role"""
     prompts = [{"role": "system", "content":
                 "You are TECoSim Agent, developed by Yu Huang from Shanghai Jiao Tong University.\n"}]
     return prompts
 
 
-def get_agent_guideline_prompts():
+def get_agent_guideline_prompts() -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's guideline"""
     prompts = [{"role": "system", "content":
                 "You are an interactive agent that embedded with TECoSim to helps user with display panel engineering tasks. "
@@ -118,7 +118,7 @@ def get_agent_guideline_prompts():
     return prompts
 
 
-def get_agent_dynamic_prompts(api_configs: Dict[str, Any]):
+def get_agent_dynamic_prompts(api_configs: Dict[str, Any]) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's dynamic boundaries"""
     prompts = [{"role": "system", "content":
                 "# Environment\n"
@@ -130,7 +130,7 @@ def get_agent_dynamic_prompts(api_configs: Dict[str, Any]):
     return prompts
 
 
-def get_platform_info() -> [str]:
+def get_platform_info() -> list[str]:
     """get the information of the running platform"""
     system = platform.system()
     release = platform.release()
@@ -138,7 +138,7 @@ def get_platform_info() -> [str]:
     return [system, release, version]
 
 
-def is_git_repo(path: str = None):
+def is_git_repo(path: str = None) -> bool:
     """check if the given path is a git repository"""
     if path is None:
         path = os.getcwd()
@@ -153,3 +153,83 @@ def is_git_repo(path: str = None):
         return result.returncode == 0
     except FileNotFoundError:
         return False
+
+
+def query_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any],
+                  session_uuid: str, console: Console) -> list[dict[str, Any]]:
+    """create new prompts or resume prompts from persistence file with session UUID"""
+    messages = create_system_prompts(api_configs, agent_configs, console)
+    if session_uuid is None:
+        pass
+    else:
+        resumed_prompts = read_messages(session_uuid, console)
+        print_messages(resumed_prompts, console)
+        messages = messages + resumed_prompts
+    return messages
+
+
+def save_messages(messages, session_uuid: str, console: Console):
+    """save messages (exclude system) to persistence file"""
+    try:
+        serializable_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                continue
+            elif hasattr(msg, "model_dump"):
+                serializable_messages.append(msg.model_dump())
+            elif isinstance(msg, dict):
+                serializable_messages.append(msg.copy())
+            else:
+                serializable_messages.append(dict(msg))
+        sys_log.debug(f"Messages of session {session_uuid} converted")
+        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] converted")
+
+        path = "./session/" + session_uuid + "/messages.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Messages of session {session_uuid} saved")
+        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] saved")
+    except Exception as e:
+        sys_log.error(f"Failed to save the messages of session {session_uuid} with unknown error: {e}")
+        console.print(f"[bold red]Failed to save the messages of session {session_uuid} with unknown error: {e}[/bold red]")
+
+
+def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
+    """read messages (exclude system) from persistence file"""
+    path = "./session/" + session_uuid + "/messages.json"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            messages = json.load(f)
+        sys_log.debug(f"Messages of session {session_uuid} loaded")
+        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] loaded")
+        return messages
+    except Exception as e:
+        sys_log.error(f"Failed to load the messages of session {session_uuid} with unknown error: {e}")
+        console.print(f"[bold red]Failed to load the messages of session {session_uuid} with unknown error: {e}[/bold red]")
+
+
+def print_messages(messages, console: Console):
+    """print the message exclude system"""
+    try:
+        for msg in messages:
+            if msg["role"] == "system":
+                continue
+            elif msg["role"] == "user":
+                console.print(Panel("> " + msg["content"]))
+            elif msg["role"] == "assistant":
+                if msg["content"] is not None:
+                    console.print("\n")
+                    console.print(msg["content"])
+                    console.print("\n")
+                if msg["tool_calls"] is not None:
+                    for tool_calls in msg["tool_calls"]:
+                        tool_name = tool_calls["function"]["name"]
+                        console.print(f"[bright_black]Using tool: {tool_name}[/bright_black]")
+            elif msg["role"] == "tool":
+                continue
+            else:
+                sys_log.debug(f"Unknown role: {msg["role"]} in history massages")
+                continue
+    except Exception as e:
+        sys_log.error(f"Failed to print the history messages with error: {e}")
+        console.print(f"[bold red]Failed to print the history messages with error: {e}[/bold red]")

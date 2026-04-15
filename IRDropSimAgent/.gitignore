@@ -1,0 +1,15 @@
+/.VSCodeCounter
+/.vscode
+/.idea
+/src/__pycache__
+/raw_data
+/data
+/model
+/test
+/log
+/pdn/*.json
+/src/logs/
+/src/ssim.log
+*.asv
+*.png
+*.jpg
