@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.8       Yu Huang     1.0               First implementation\n
 2026.4.15      Yu Huang     1.1               Query prompts and message history\n
+2026.4.16      Yu Huang     1.2               Agent context realization with logic merge\n
 
 Details:
 System prompts, Reminder, Tools
@@ -25,23 +26,24 @@ import json
 
 from typing import Dict, Any
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
-from src.context import session
+from src.context.session import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
 
-def create_system_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any], console: Console) -> list[dict[str, Any]]:
-    """create prompts of system (agent role, guideline, dynamic boundaries)"""
+def create_system_prompts(ctx: AgentContext, console: Console) -> list[dict[str, Any]]:
+    """create prompts of system (agent role, guideline, dynamic boundaries) with AgentContext"""
     """system: agent role"""
     prompts1 = get_agent_role_prompts()
     """system: agent guideline"""
     prompts2 = get_agent_guideline_prompts()
     """system: dynamic boundaries"""
-    prompts3 = get_agent_dynamic_prompts(api_configs)
+    prompts3 = get_agent_dynamic_prompts(ctx)
     sys_log.debug("System prompts generated")
-    if agent_configs["MERGE_SYSTEM_PROMPTS"]:
+    if ctx.agent_configs["MERGE_SYSTEM_PROMPTS"]:
         prompts = prompts1
         prompts[0]["content"] += (prompts2[0]["content"])
         prompts[0]["content"] += (prompts3[0]["content"])
@@ -64,7 +66,7 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "You are an interactive agent that embedded with TECoSim to helps user with display panel engineering tasks. "
                 "Use the instructions below and the tools available to you to assist the user.\n"
                 "# System\n"
-                " - All text you output outside of tool use is displayed to the user. "
+                " - All text you output outside of tool calls is displayed to the user. "
                 "Output text to communicate with the user. You can use Github-flavored markdown for formatting.\n"
                 " - Your are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), "
                 "which is a high-performance display panel simulator based on C/C++ and NVIDIA CUDA. TECoSim adopts "
@@ -89,6 +91,20 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "layout/parasitic parameters, panel heat flux/contact parameters, panel specification (such as resolution, "
                 "physical size and material parameters and so on), and simulation parameters (such as solving threads num, "
                 "solving methods, data export configs, visualization configs and so on).\n"
+                "# Guidelines\n"
+                " - Before the first simulation, you should check if the simulator is available. Only recheck when needed.\n"
+                " - A 'design' is always needed before launching simulator for panel design or evaluation. Each design is "
+                "identified by a single integer id starts from 1, and you should managed the all designs' ids and don't "
+                "assume that user knows the ids. Design can be created with default value or copied from other existing "
+                "designs. You can modify the design, but can't delete any design nor override it with another design by copy.\n"
+                " - After each simulation, the following contents will be all outputted and managed with the unit of 'run': "
+                "1) simulator's stdout log, 2) simulator's stderr log, 3) raw simulation results, 4) visualization video, "
+                "5) copy of input design. Each launch of simulator will create a run and each run is identified by a single "
+                "integer id starts from 1. Each run is read-only and its id is automatically managed by simulator.\n"
+                " - Please use tool 'read_log' to read the simulator's stdout/stderr logs in units of lines. When reading "
+                "a stdout log, only read all lines of it when necessary, since the stdout log can be too long. For example, "
+                "if you want to check for error information when a simulation fails, you can read a few lines of stdout "
+                "log from the bottom (e.g., 50 lines) rather than reading all of the lines at once.\n"
                 "# Tasks\n"
                 " - The user will primarily request you to perform display panel engineering tasks. These may include "
                 "designing a display panel from scratch with core target metis, validating specific panel's IR drop severity "
@@ -118,15 +134,16 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
     return prompts
 
 
-def get_agent_dynamic_prompts(api_configs: Dict[str, Any]) -> list[dict[str, Any]]:
-    """get system prompts of TECoSim agent's dynamic boundaries"""
+def get_agent_dynamic_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
+    """get system prompts of TECoSim agent's dynamic boundaries with AgentContext"""
     prompts = [{"role": "system", "content":
                 "# Environment\n"
                 "You have been invoked in the following environment: \n"
                 f" - Primary working directory: {os.getcwd()}\n"
+                f" - Path of TECoSim simulator: {ctx.agent_configs["SIMULATOR_PATH"]}\n"
                 f" - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
                 f" - Platform: {get_platform_info()[0]} {get_platform_info()[1]} version: {get_platform_info()[2]}\n"
-                f" - You are powered by the LLM: {api_configs["MODEL_NAME"]}"}]
+                f" - You are powered by the LLM: {ctx.api_configs["MODEL_NAME"]}"}]
     return prompts
 
 
@@ -155,47 +172,20 @@ def is_git_repo(path: str = None) -> bool:
         return False
 
 
-def query_prompts(api_configs: Dict[str, Any], agent_configs: Dict[str, Any],
-                  session_uuid: str, console: Console) -> list[dict[str, Any]]:
-    """create new prompts or resume prompts from persistence file with session UUID"""
-    messages = create_system_prompts(api_configs, agent_configs, console)
+def query_prompts(ctx: AgentContext, session_uuid: str, console: Console) -> list[dict[str, Any]]:
+    """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
+    messages = create_system_prompts(ctx, console)
     if session_uuid is None:
         pass
     else:
         resumed_prompts = read_messages(session_uuid, console)
-        print_messages(resumed_prompts, console)
+        print_messages(resumed_prompts, ctx, console)
         messages = messages + resumed_prompts
     return messages
 
 
-def save_messages(messages, session_uuid: str, console: Console):
-    """save messages (exclude system) to persistence file"""
-    try:
-        serializable_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                continue
-            elif hasattr(msg, "model_dump"):
-                serializable_messages.append(msg.model_dump())
-            elif isinstance(msg, dict):
-                serializable_messages.append(msg.copy())
-            else:
-                serializable_messages.append(dict(msg))
-        sys_log.debug(f"Messages of session {session_uuid} converted")
-        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] converted")
-
-        path = "./session/" + session_uuid + "/messages.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
-        sys_log.debug(f"Messages of session {session_uuid} saved")
-        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] saved")
-    except Exception as e:
-        sys_log.error(f"Failed to save the messages of session {session_uuid} with unknown error: {e}")
-        console.print(f"[bold red]Failed to save the messages of session {session_uuid} with unknown error: {e}[/bold red]")
-
-
 def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
-    """read messages (exclude system) from persistence file"""
+    """read messages (exclude system) from persistence file with given uuid"""
     path = "./session/" + session_uuid + "/messages.json"
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -204,12 +194,13 @@ def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
         console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] loaded")
         return messages
     except Exception as e:
-        sys_log.error(f"Failed to load the messages of session {session_uuid} with unknown error: {e}")
-        console.print(f"[bold red]Failed to load the messages of session {session_uuid} with unknown error: {e}[/bold red]")
+        sys_log.error(f"Failed to load the messages of session {session_uuid} with error: {e}")
+        console.print(f"[bold red]Failed to load the messages of session {session_uuid} with error: {e}[/bold red]")
+        raise RuntimeError(e)
 
 
-def print_messages(messages, console: Console):
-    """print the message exclude system"""
+def print_messages(messages, ctx: AgentContext, console: Console):
+    """print the given messages (exclude system) with AgentContext"""
     try:
         for msg in messages:
             if msg["role"] == "system":
@@ -219,12 +210,15 @@ def print_messages(messages, console: Console):
             elif msg["role"] == "assistant":
                 if msg["content"] is not None:
                     console.print("\n")
-                    console.print(msg["content"])
+                    if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
+                        console.print(Markdown(msg["content"]))
+                    else:
+                        console.print(msg["content"])
                     console.print("\n")
                 if msg["tool_calls"] is not None:
                     for tool_calls in msg["tool_calls"]:
                         tool_name = tool_calls["function"]["name"]
-                        console.print(f"[bright_black]Using tool: {tool_name}[/bright_black]")
+                        console.print(f"[bright_black]Tool used: {tool_name}[/bright_black]")
             elif msg["role"] == "tool":
                 continue
             else:
@@ -233,3 +227,31 @@ def print_messages(messages, console: Console):
     except Exception as e:
         sys_log.error(f"Failed to print the history messages with error: {e}")
         console.print(f"[bold red]Failed to print the history messages with error: {e}[/bold red]")
+        raise RuntimeError(e)
+
+
+def save_messages(ctx: AgentContext, console: Console):
+    """save messages (exclude system) to persistence file of AgentContext"""
+    try:
+        serializable_messages = []
+        for msg in ctx.messages:
+            if msg["role"] == "system":
+                continue
+            elif hasattr(msg, "model_dump"):
+                serializable_messages.append(msg.model_dump())
+            elif isinstance(msg, dict):
+                serializable_messages.append(msg.copy())
+            else:
+                serializable_messages.append(dict(msg))
+        sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
+        console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] converted")
+
+        path = "./session/" + ctx.session_uuid + "/messages.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
+        console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] saved")
+    except Exception as e:
+        sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
+        console.print(f"[bold red]Failed to save the messages of session {ctx.session_uuid} with error: {e}[/bold red]")
+        raise RuntimeError(e)

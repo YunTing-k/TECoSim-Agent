@@ -13,6 +13,7 @@ Revision:
 2023.11.20     Yu Huang     1.0               First implementation\n
 2024.4.11      Yu Huang     1.1               Add param level and tqdm to logger\n
 2026.1.16      Yu Huang     1.2               Add function of param level logger\n
+2026.4.16      Yu Huang     1.3               Bug fix of no file written\n
 
 Details:
 ------------------------------------------------------------------------------------------------------------------------
@@ -46,7 +47,8 @@ class Logger:
             'CRITICAL': 'red',
         }
         self.name = name
-        if dev_log:
+        self.dev_log = dev_log
+        if self.dev_log:
             sh = logging.StreamHandler()
             sh.setLevel(logging.DEBUG)
         current_time = datetime.datetime.now()
@@ -58,10 +60,11 @@ class Logger:
             datefmt='%H:%M:%S',
             log_colors=self.config
         )
-        if dev_log:
+        if self.dev_log:
             sh.setFormatter(log_format)
             self.logger.addHandler(sh)
         fh.setFormatter(log_format)
+        self.logger.addHandler(fh)
 
     def param(self, msg, *args, **kwargs):
         """Log 'msg % args' with severity 'PARAM'."""
