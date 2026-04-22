@@ -13,6 +13,7 @@ Revision:
 2026.4.8       Yu Huang     1.0               First implementation\n
 2026.4.15      Yu Huang     1.1               Query prompts and message history\n
 2026.4.16      Yu Huang     1.2               Agent context realization with logic merge\n
+2026.4.22      Yu Huang     1.3               Bash support\n
 
 Details:
 System prompts, Reminder, Tools
@@ -24,7 +25,7 @@ import subprocess
 import logging
 import json
 
-from typing import Dict, Any
+from typing import Any
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -66,8 +67,8 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "You are an interactive agent that embedded with TECoSim to helps user with display panel engineering tasks. "
                 "Use the instructions below and the tools available to you to assist the user.\n"
                 "# System\n"
-                " - All text you output outside of tool calls is displayed to the user. "
-                "Output text to communicate with the user. You can use Github-flavored markdown for formatting.\n"
+                " - All text you output outside of tool calls is displayed to the user. Output text to communicate with "
+                "the user. You can use Github-flavored markdown for formatting.\n"
                 " - Your are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), "
                 "which is a high-performance display panel simulator based on C/C++ and NVIDIA CUDA. TECoSim adopts "
                 "cross-level co-simulation methodology that combines bottom-up hierarchical abstraction with system-level "
@@ -105,6 +106,8 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "a stdout log, only read all lines of it when necessary, since the stdout log can be too long. For example, "
                 "if you want to check for error information when a simulation fails, you can read a few lines of stdout "
                 "log from the bottom (e.g., 50 lines) rather than reading all of the lines at once.\n"
+                " - IMPORTANT: Never ever create/modify/delete any file or directory in the path of TECoSim simulator and "
+                "the sub directory named 'session' under primary working directory. They are read-only.\n"
                 "# Tasks\n"
                 " - The user will primarily request you to perform display panel engineering tasks. These may include "
                 "designing a display panel from scratch with core target metis, validating specific panel's IR drop severity "
@@ -139,9 +142,10 @@ def get_agent_dynamic_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     prompts = [{"role": "system", "content":
                 "# Environment\n"
                 "You have been invoked in the following environment: \n"
-                f" - Primary working directory: {os.getcwd()}\n"
                 f" - Path of TECoSim simulator: {ctx.agent_configs["SIMULATOR_PATH"]}\n"
-                f" - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
+                f" - Is bash available: {is_bash_available()}\n"
+                f" - Primary working directory: {os.getcwd()}\n"
+                f"  - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
                 f" - Platform: {get_platform_info()[0]} {get_platform_info()[1]} version: {get_platform_info()[2]}\n"
                 f" - You are powered by the LLM: {ctx.api_configs["MODEL_NAME"]}"}]
     return prompts
@@ -169,6 +173,20 @@ def is_git_repo(path: str = None) -> bool:
         )
         return result.returncode == 0
     except FileNotFoundError:
+        return False
+
+
+def is_bash_available() -> bool:
+    """check if bash is available"""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", "bash --version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
         return False
 
 

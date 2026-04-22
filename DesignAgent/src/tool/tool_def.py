@@ -14,6 +14,7 @@ Revision:
 2026.4.16      Yu Huang     1.1               Agent context realization with logic merge\n
 2026.4.19      Yu Huang     1.2               tools of init/copy/query design, launch simulator, query run, read logs,
                                               general read/write file\n
+2026.4.22      Yu Huang     1.3               Bash support\n
 
 Details:
 Prompts of available tools of TECoSim agent
@@ -47,6 +48,7 @@ def create_tools_prompts(console: Console) -> list[dict[str, Any]]:
     prompts.append((tool_read_log_def()))
     prompts.append((tool_read_file_def()))
     prompts.append((tool_write_file_def()))
+    prompts.append((tool_bash_def()))
     return prompts
 
 
@@ -447,7 +449,8 @@ def tool_read_log_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "read_log",
-            "description": "Read the stdout log of the simulation run with given id, reading method and line num",
+            "description": "Read the stdout or stderr log of the simulation run with given id, reading method and line num. "
+                           "This tool will also return the total line num of the log",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -462,15 +465,23 @@ def tool_read_log_def() -> dict[str, Any]:
                     },
                     "method": {
                         "type": "string",
-                        "enum": ["from_top", "from_bottom", "all"],
+                        "enum": ["from_top", "from_bottom", "offset", "all"],
                         "description": "The method to read the log. Method 'from_top' reads the lines from top, method "
-                                       "'from_bottom' reads the lines from bottom. Method 'all' reads all the lines.",
+                                       "'from_bottom' reads the lines from bottom, method 'offset' reads the lines with "
+                                       "given offset (include the offset line) to read any part of a very long logs or when "
+                                       "needed. Method 'all' reads all the lines.",
                     },
                     "line_num": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "The num of read-in lines when method is 'from_top' or 'from_bottom'. If the method "
-                                       "is 'all', this argument is ignored.",
+                        "description": "The num of read-in lines when method is 'from_top', 'from_bottom' or 'offset' (min 1). "
+                                       "If the method is 'all', this argument is ignored.",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The offset of read-in lines when method is 'offset' (min 1). If the method is not "
+                                       "'offset', this argument is ignored.",
                     }
                 },
                 "required": ["id", "log_type", "method"],
@@ -507,34 +518,48 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
             raise RuntimeError(f"Invalid log type: {log_type}")
         total_line_num = len(log_line)
         """prepare the content"""
-        target_line_num = arguments.get("line_num", 0)
+        read_line_num = arguments.get("line_num", 0)
+        offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         if method == "from_top":
-            if target_line_num < 1 or target_line_num is None:
-                sys_log.error(f"read_log FAIL: Invalid line num: {target_line_num} < 1")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {target_line_num} < 1[/bold red]")
-                raise RuntimeError(f"Invalid line num: {target_line_num} < 1")
-            if total_line_num <= target_line_num:
+            if read_line_num < 1:
+                sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
                 log_str = "\n".join(log_line)
             else:
-                log_str = "\n".join(log_line[0:target_line_num])
+                log_str = "\n".join(log_line[0:read_line_num])
         elif method == "from_bottom":
-            if target_line_num < 1 or target_line_num is None:
-                sys_log.error(f"read_log FAIL: Invalid line num: {target_line_num} < 1")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {target_line_num} < 1[/bold red]")
-                raise RuntimeError(f"Invalid line num: {target_line_num} < 1")
-            if total_line_num <= target_line_num:
+            if read_line_num < 1:
+                sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
                 log_str = "\n".join(log_line)
             else:
-                log_str = "\n".join(log_line[-target_line_num:])
+                log_str = "\n".join(log_line[-read_line_num:])
+        elif method == "offset":
+            if offset_line_num < 1:
+                sys_log.error(f"read_log FAIL: Invalid offset: {offset_line_num} < 1")
+                progress.console.print(f"[bold red]read_log FAIL: Invalid offset: {offset_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
+            if offset_line_num > total_line_num:
+                sys_log.error(f"read_log FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
+                progress.console.print(f"[bold red]read_log FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}[/bold red]")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
+            if (read_line_num + offset_line_num - 1) <= total_line_num:
+                log_str = "\n".join(log_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
+            else:
+                log_str = "\n".join(log_line[offset_line_num - 1:])
         elif method == "all":
             log_str = "\n".join(log_line)
         else:
             raise RuntimeError(f"Invalid method type: {method}")
         sys_log.debug(f"read_log SUCCESS: Run id: {run_id} "
-                      f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {target_line_num}")
+                      f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}")
         progress.console.print(f"[bright_black]read_log SUCCESS: Run id: {run_id} "
-                               f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {target_line_num}[/bright_black]")
+                               f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}[/bright_black]")
         return {"status": "SUCCESS",
                 "total_line": total_line_num,
                 "log_content": log_str}
@@ -550,27 +575,38 @@ def tool_read_file_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read file as text with given path, method, line num and encoding method",
+            "description": "Reads a file from the local filesystem with given path, method, line num and encoding method. "
+                           "You can access any file directly by using this tool. This tool will also return the line num "
+                           "of the file. You can optionally specify a offset (especially handy for long files). However, "
+                           "it's recommended to use other methods ('from_top', 'from_bottom', 'all') unless offset-based "
+                           "reading is specifically needed",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path of the file (absolute or relative to current working directory). Relative path "
-                                       "of the current path should be start with './'",
+                        "description": "Path of the file (must to be absolute, not relative).",
                     },
                     "method": {
                         "type": "string",
-                        "enum": ["from_top", "from_bottom", "all"],
+                        "enum": ["from_top", "from_bottom", "offset", "all"],
                         "description": "The method to read the file. Method 'from_top' reads the lines from top, method "
-                                       "'from_bottom' reads the lines from bottom. Method 'all' reads all the lines.",
+                                       "'from_bottom' reads the lines from bottom, method 'offset' reads the lines with "
+                                       "given offset (include the offset line) to read any part of a very long file or when "
+                                       "needed. Method 'all' reads all the lines.",
                     },
                     "line_num": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 10000,
-                        "description": "The num of read-in lines when method is 'from_top' or 'from_bottom'. If the method "
-                                       "is 'all', this argument is ignored.",
+                        "description": "The num of read-in lines when method is 'from_top', 'from_bottom' or 'offset' "
+                                       "(min 1, max 10000). If the method is 'all', this argument is ignored.",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The offset of read-in lines when method is 'offset' (min 1). If the method is not "
+                                       "'offset', this argument is ignored.",
                     },
                     "encoding": {
                         "type": "string",
@@ -616,34 +652,48 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             file_line = f.readlines()
         total_line_num = len(file_line)
         """prepare the content"""
-        target_line_num = arguments.get("line_num", 0)
+        read_line_num = arguments.get("line_num", 0)
+        offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         if method == "from_top":
-            if target_line_num < 1 or target_line_num is None:
-                sys_log.error(f"read_file FAIL: Invalid line num: {target_line_num} < 1")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {target_line_num} < 1[/bold red]")
-                raise RuntimeError(f"Invalid line num: {target_line_num} < 1")
-            if total_line_num <= target_line_num:
-                file_str = "\n".join(file_line)
+            if read_line_num < 1 or read_line_num is None:
+                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
+                file_str = "".join(file_line)
             else:
-                file_str = "\n".join(file_line[0:target_line_num])
+                file_str = "".join(file_line[0:read_line_num])
         elif method == "from_bottom":
-            if target_line_num < 1 or target_line_num is None:
-                sys_log.error(f"read_file FAIL: Invalid line num: {target_line_num} < 1")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {target_line_num} < 1[/bold red]")
-                raise RuntimeError(f"Invalid line num: {target_line_num} < 1")
-            if total_line_num <= target_line_num:
-                file_str = "\n".join(file_line)
+            if read_line_num < 1 or read_line_num is None:
+                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
+                file_str = "".join(file_line)
             else:
-                file_str = "\n".join(file_line[-target_line_num:])
+                file_str = "".join(file_line[-read_line_num:])
+        elif method == "offset":
+            if offset_line_num < 1:
+                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} < 1")
+                progress.console.print(f"[bold red]read_file FAIL: Invalid offset: {offset_line_num} < 1[/bold red]")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
+            if offset_line_num > total_line_num:
+                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
+                progress.console.print(f"[bold red]read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}[/bold red]")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
+            if (read_line_num + offset_line_num - 1) <= total_line_num:
+                file_str = "".join(file_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
+            else:
+                file_str = "".join(file_line[offset_line_num - 1:])
         elif method == "all":
-            file_str = "\n".join(file_line)
+            file_str = "".join(file_line)
         else:
             raise RuntimeError(f"Invalid method type: {method}")
         sys_log.debug(f"read_file SUCCESS: "
-                      f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {target_line_num}")
+                      f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}")
         progress.console.print(f"[bright_black]read_file SUCCESS: "
-                               f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {target_line_num}[/bright_black]")
+                               f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}[/bright_black]")
         return {"status": "SUCCESS",
                 "total_line": total_line_num,
                 "log_content": file_str}
@@ -672,34 +722,34 @@ def tool_write_file_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write or append content to a file with given path, contents, writing mode and encoding method. "
-                           "Supports creating parent directories automatically",
+            "description": "Write a file or append content to a file to the local filesystem with given path, contents, writing "
+                           "mode and encoding method. Supports creating parent directories automatically",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path of the file (absolute or relative to current working directory). Relative path "
-                                       "of the current path should be start with './'",
+                        "description": "Path of the file (must to be absolute, not relative).",
                     },
                     "content": {
                         "type": "string",
-                        "description": "The content to write to the file. Can be plain text, JSON, html, code, etc."
+                        "description": "The content to write to the file. Can be plain text, json, html, code, etc."
                     },
                     "mode": {
                         "type": "string",
                         "enum": ["write", "append"],
-                        "description": "Write mode: 'write' overwrites the file (default), 'append' adds content to the end.",
+                        "description": "Optional write mode: 'write' overwrites the file (default), 'append' adds content "
+                                       "to the end.",
                         "default": "write"
                     },
                     "create_dirs": {
                         "type": "boolean",
-                        "description": "If true, automatically create missing parent directories. Default true.",
+                        "description": "Optional flag. If true (default), automatically create missing parent directories.",
                         "default": True
                     },
                     "encoding": {
                         "type": "string",
-                        "description": "File encoding (e.g., 'utf-8', 'gbk', 'ascii'). Default 'utf-8'.",
+                        "description": "Optional encoding type (e.g., 'utf-8', 'gbk', 'ascii'). Default 'utf-8'.",
                         "default": "utf-8",
                     }
                 },
@@ -756,3 +806,124 @@ def write_file(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
         sys_log.error(f"write_file FAIL: Write file failed with error: {e}")
         progress.console.print(f"[bold red]write_file FAIL: Write file failed with error: {e}[/bold red]")
         return {"status": "FAIL", "info": f"Write file failed with error: {e}"}
+
+
+def tool_bash_def() -> dict[str, Any]:
+    """tool definition of bash (bash)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Executes a given bash command and returns its output. The working directory persists between "
+                           "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
+                           "IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, or `echo` commands, unless explicitly "
+                           "instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, "
+                           "use the appropriate dedicated tool as this will provide a much better experience for the user.\n"
+                           " - Read files: Use read_file (NOT cat/head/tail)\n"
+                           " - Write files: Use write_file(NOT echo >/cat <<EOF)\n"
+                           " - Communication: Output text directly (NOT echo/printf)\n"
+                           "While the Bash tool can do similar things, it’s better to use the built-in tools as they provide "
+                           "a better user experience and make it easier to review tool calls and give permission.\n"
+                           "# Instructions\n"
+                           " - If your command will create new directories or files, first use this tool to run `ls` to "
+                           "verify the parent directory exists and is the correct location.\n"
+                           " - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "
+                           "\"path with spaces/file.txt\")\n"
+                           " - Try to maintain your current working directory throughout the session by using absolute "
+                           "paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.\n"
+                           " - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, "
+                           "your command will timeout after 120000ms (2 minutes).\n"
+                           " - When issuing multiple commands:\n"
+                           "  - If the commands are independent and can run in parallel, make multiple Bash tool calls in"
+                           " a single message. Example: if you need to run \"git status\" and \"git diff\", send a single "
+                           "message with two Bash tool calls in parallel.\n"
+                           "  - If the commands depend on each other and must run sequentially, use a single Bash call with "
+                           "'&&' to chain them together.\n"
+                           "  - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail.\n"
+                           "  - DO NOT use newlines to separate commands (newlines are ok in quoted strings).\n"
+                           " - Avoid unnecessary `sleep` commands:\n"
+                           "  - Do not sleep between commands that can run immediately — just run them.\n"
+                           "  - Do not retry failing commands in a sleep loop — diagnose the root cause.\n"
+                           "  - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command to execute",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Clear, concise description of what this command does in active voice. Never use "
+                                       "words like \"complex\" or \"risk\" in the description - just describe what it does. "
+                                       "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):\n"
+                                       "- ls → \"List files in current directory\"\n"
+                                       "- git status → \"Show working tree status\"\n"
+                                       "- npm install → \"Install package dependencies\"\n\n"
+                                       "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), "
+                                       "add enough context to clarify what it does:\n"
+                                       "- find . -name \"*.tmp\" -exec rm {} \\; → \"Find and delete all .tmp files recursively\"\n"
+                                       "- git reset --hard origin/main → \"Discard all local changes and match remote main\"\n"
+                                       "- curl -s url | jq '.data[]' → \"Fetch JSON from URL and extract data array elements\"",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "maximum": 600000,
+                        "description": "Optional timeout in milliseconds (max 600000, default 120000)",
+                        "default": 120000,
+                    }
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def bash(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
+    """tool realization of bash command execution with arguments and AgentContext"""
+    try:
+        """execute command"""
+        command = arguments["command"]
+        description = arguments.get("description", "")
+        timeout = arguments.get("timeout", 120000)
+        sys_log.debug(f"bash: {description} start")
+        progress.console.print(f"[bright_black]bash: {description} start[/bright_black]")
+        proc = subprocess.Popen(["bash", "-c", command],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout / 1000)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                stdout, stderr = proc.communicate(timeout=2)
+                sys_log.error(f"bash FAIL: "
+                              f"{description} with command {command} timeout > {timeout/1000} s")
+                progress.console.print(f"[bold red]bash FAIL: "
+                                       f"{description} with command {command} timeout > {timeout/1000} s[/bold red]")
+                return {"status": "TIMEOUT",
+                        "return code": proc.returncode,
+                        "stdout": stdout.decode('utf-8'),
+                        "stderr": stderr.decode('utf-8')}
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                sys_log.error(f"bash FAIL: "
+                              f"{description} with command {command} timeout > {timeout / 1000} s and task has been killed")
+                progress.console.print(f"[bold red]bash FAIL: "
+                                       f"{description} with command {command} timeout > {timeout / 1000} s and task has been killed[/bold red]")
+                return {"status": "TIMEOUT",
+                        "return code": proc.returncode,
+                        "stdout": stdout.decode('utf-8'),
+                        "stderr": stderr.decode('utf-8')}
+        sys_log.debug(f"bash: {description} with command {command} done")
+        progress.console.print(f"[bright_black]bash: {description} with command {command} done[/bright_black]")
+        return {"status": "DONE",
+                "return code": proc.returncode,
+                "stdout": stdout.decode('utf-8'),
+                "stderr": stderr.decode('utf-8')}
+    except Exception as e:
+        sys_log.error(f"bash FAIL: Command execute with error: {e}")
+        progress.console.print(f"[bold red]bash FAIL: Command execute with error: {e}[/bold red]")
+        return {"status": "FAIL", "info": f"Command execute with error: {e}"}

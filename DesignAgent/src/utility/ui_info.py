@@ -18,13 +18,12 @@ UI information of agent dev version, ASCII art banner of start, error
 ------------------------------------------------------------------------------------------------------------------------
 """
 import logging
-import time
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.style import Style
-from rich.progress import Progress, ProgressColumn, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import Progress, ProgressColumn, SpinnerColumn, TimeElapsedColumn
 from contextlib import contextmanager
 from src.constants import *
 

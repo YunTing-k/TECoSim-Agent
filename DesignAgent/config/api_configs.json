@@ -1,7 +1,7 @@
 {
     "API_URL": "http://localhost:8080/openai",
     "API_KEY": "sk-1234",
-    "MODEL_NAME": "SJTU/glm-5",
+    "MODEL_NAME": "aixj/gpt-5.4",
     "MODEL_TEMPERATURE": 0.3,
     "TIMEOUT_MS": 100000
 }

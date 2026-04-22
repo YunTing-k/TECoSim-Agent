@@ -48,21 +48,21 @@ class Logger:
         }
         self.name = name
         self.dev_log = dev_log
-        if self.dev_log:
-            sh = logging.StreamHandler()
-            sh.setLevel(logging.DEBUG)
+
         current_time = datetime.datetime.now()
         time_format = current_time.strftime("%Y-%m-%d %H_%M_%S")
-        fh = logging.FileHandler(filename='./log/' + self.name + '_' + time_format + '.txt', mode='w')
-        fh.setLevel(logging.DEBUG)
         log_format = colorlog.ColoredFormatter(
             fmt='%(log_color)s[%(asctime)s.%(msecs)03d] %(filename)s -> [%(levelname)s] : %(message)s',
             datefmt='%H:%M:%S',
             log_colors=self.config
         )
         if self.dev_log:
+            sh = logging.StreamHandler()
+            sh.setLevel(logging.DEBUG)
             sh.setFormatter(log_format)
             self.logger.addHandler(sh)
+        fh = logging.FileHandler(filename='./log/' + self.name + '_' + time_format + '.txt', mode='w')
+        fh.setLevel(logging.DEBUG)
         fh.setFormatter(log_format)
         self.logger.addHandler(fh)
 

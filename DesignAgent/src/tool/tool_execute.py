@@ -14,6 +14,7 @@ Revision:
 2026.4.16      Yu Huang     1.1               Agent context realization with logic merge\n
 2026.4.19      Yu Huang     1.2               tools of init/copy/query design, launch simulator, query run, read logs,
                                               general read/write file\n
+2026.4.22      Yu Huang     1.3               Bash support\n
 
 Details:
 Tools execution of the TECoSim agent
@@ -75,6 +76,8 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
             results = tool_def.read_file(arguments, ctx, progress)
         elif func_name == "write_file":
             results = tool_def.write_file(arguments, progress)
+        elif func_name == "bash":
+            results = tool_def.bash(arguments, progress)
         else:
             sys_log.warning(f"Undefined tool: {func_name}")
             progress.console.print(f"[bold_yellow]Undefined tool: {func_name}[/bold_yellow]\r")
@@ -85,4 +88,3 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
         progress.console.print(f"[bold_red]Tool {func_name} execution failed with error: {e}[/bold_red]\r")
         results = {"status": "FAIL", "info": f"Tool {func_name} execution failed with error: {e}"}
         return results
-
