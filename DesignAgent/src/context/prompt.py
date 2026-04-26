@@ -26,6 +26,8 @@ import logging
 import json
 
 from typing import Any
+
+import rich.box
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -35,7 +37,7 @@ from src.constants import *
 sys_log = logging.getLogger('logger')
 
 
-def create_system_prompts(ctx: AgentContext, console: Console) -> list[dict[str, Any]]:
+def create_system_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """create prompts of system (agent role, guideline, dynamic boundaries) with AgentContext"""
     """system: agent role"""
     prompts1 = get_agent_role_prompts()
@@ -57,7 +59,7 @@ def create_system_prompts(ctx: AgentContext, console: Console) -> list[dict[str,
 def get_agent_role_prompts() -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's role"""
     prompts = [{"role": "system", "content":
-                "You are TECoSim Agent, developed by Yu Huang from Shanghai Jiao Tong University.\n"}]
+                "You are TECoSim Agent, developed by Yu Huang (黄雨) from Shanghai Jiao Tong University.\n"}]
     return prompts
 
 
@@ -190,9 +192,9 @@ def is_bash_available() -> bool:
         return False
 
 
-def query_prompts(ctx: AgentContext, session_uuid: str, console: Console) -> list[dict[str, Any]]:
+def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console) -> list[dict[str, Any]]:
     """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
-    messages = create_system_prompts(ctx, console)
+    messages = create_system_prompts(ctx)
     if session_uuid is None:
         pass
     else:
@@ -213,30 +215,40 @@ def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
         return messages
     except Exception as e:
         sys_log.error(f"Failed to load the messages of session {session_uuid} with error: {e}")
-        console.print(f"[bold red]Failed to load the messages of session {session_uuid} with error: {e}[/bold red]")
+        console.print(f"Failed to load the messages of session {session_uuid} with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 
-def print_messages(messages, ctx: AgentContext, console: Console):
+def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
         for msg in messages:
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
-                console.print(Panel("> " + msg["content"]))
+                console.print(Panel("> " + msg["content"], box=rich.box.SQUARE))
             elif msg["role"] == "assistant":
-                if msg["content"] is not None:
+                assistant_reasoning = get_reasoning(msg)
+                if assistant_reasoning is not None and not "":
                     console.print("\n")
                     if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                        console.print(Markdown(msg["content"]))
+                        console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
                     else:
-                        console.print(msg["content"])
+                        console.print("{Think}: " + assistant_reasoning, style=f"italic {REASONING_COLOR}")
+                    if msg["content"] is None:
+                        console.print("\n")
+                if msg["content"] is not None and not "":
+                    if assistant_reasoning is None:
+                        console.print("\n")
+                    if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
+                        console.print(Markdown(msg["content"]), style="bold")
+                    else:
+                        console.print(msg["content"], style="bold")
                     console.print("\n")
                 if msg["tool_calls"] is not None:
                     for tool_calls in msg["tool_calls"]:
                         tool_name = tool_calls["function"]["name"]
-                        console.print(f"[bright_black]Tool used: {tool_name}[/bright_black]")
+                        console.print(f"Tool used: [{MAJOR_COLOR1}]{tool_name}[/{MAJOR_COLOR1}]", style="bright_black")
             elif msg["role"] == "tool":
                 continue
             else:
@@ -244,7 +256,7 @@ def print_messages(messages, ctx: AgentContext, console: Console):
                 continue
     except Exception as e:
         sys_log.error(f"Failed to print the history messages with error: {e}")
-        console.print(f"[bold red]Failed to print the history messages with error: {e}[/bold red]")
+        console.print(f"Failed to print the history messages with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 
@@ -256,7 +268,7 @@ def save_messages(ctx: AgentContext, console: Console):
             if msg["role"] == "system":
                 continue
             elif hasattr(msg, "model_dump"):
-                serializable_messages.append(msg.model_dump())
+                serializable_messages.append(msg.model_dump(mode="json"))
             elif isinstance(msg, dict):
                 serializable_messages.append(msg.copy())
             else:
@@ -271,5 +283,33 @@ def save_messages(ctx: AgentContext, console: Console):
         console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] saved")
     except Exception as e:
         sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
-        console.print(f"[bold red]Failed to save the messages of session {ctx.session_uuid} with error: {e}[/bold red]")
+        console.print(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}", style="bold red")
         raise RuntimeError(e)
+
+
+def get_reasoning(message: dict[str, Any]) -> str | None:
+    """get the reasoning contents of input message"""
+    if "reasoning" in message:
+        print("reasoning")
+        return message.get('reasoning')
+    if "reasoning_content" in message:
+        print("reasoning_content")
+        print(message.get('reasoning_content'))
+        return message.get('reasoning_content')
+    print("none")
+    return None
+
+
+def deepseek_support(message: dict[str, Any]) -> dict[str, Any]:
+    """convert the input message with deepseek supported format"""
+    if "reasoning_details" in message:
+        del message["reasoning_details"]
+    if "reasoning" in message:
+        if "reasoning_content" in message:
+            del message["reasoning"]
+        else:
+            message["reasoning_content"] = message["reasoning"]
+            del message["reasoning"]
+    if "reasoning_content" not in message:
+        message["reasoning_content"] = None
+    return message

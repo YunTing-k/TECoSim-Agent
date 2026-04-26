@@ -33,7 +33,7 @@ from src.constants import *
 args = cli_args.tecosim_agent_args()
 
 """create logger"""
-sys_log = sys_logger.Logger(os.path.basename(__file__)[0:-3], args.log).logger
+sys_log = sys_logger.Logger(str(os.path.basename(__file__))[0:-3], args.log).logger
 
 """create console"""
 console = Console()
@@ -50,6 +50,7 @@ if __name__ == '__main__':
 
     """create/resume session"""
     [ctx.session_uuid, agent_session] = session.query_session(session_uuid=args.resume, console=console)
+    ctx.agent_session = agent_session
 
     """config agent context"""
     # read context
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     """load Agent configs and query prompts"""
     ctx.agent_configs = client.load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
     ctx.messages = prompt.query_prompts(ctx, args.resume, console)
-    ctx.tools = tool_def.create_tools_prompts(console)
+    ctx.tools = tool_def.create_tools_prompts()
 
     """core agent loop"""
     while True:
@@ -80,57 +81,99 @@ if __name__ == '__main__':
             sys_log.debug("LLM request start")
             with ui_info.loading_spinner():
                 response = client.create_request(llm_client, ctx)
-
-            """append history and get context"""
             sys_log.debug("LLM request end")
+
+            """check finish reason"""
+            finish_reason = response.choices[0].finish_reason
+            sys_log.debug(f"Finish reason: {finish_reason}\n")
+            if finish_reason == "length":
+                sys_log.error(f"LLM out of input/output context")
+                console.print(f"LLM out of input/output context", style="bold red")
+            if finish_reason == "content_filter":
+                sys_log.warning(f"LLM's response has been filtered")
+                console.print(f"LLM's response has been filtered", style="bold yellow")
+
+            """check the usage"""
             usage = response.usage
             ctx.total_input_tokens += usage.prompt_tokens
             ctx.total_output_tokens += usage.completion_tokens
             ctx.total_tokens += usage.total_tokens
+            cached_tokens = usage.prompt_tokens_details.cached_tokens
+            uncached_tokens = usage.prompt_tokens - usage.prompt_tokens_details.cached_tokens  # uncached input tokens
+            ctx.total_uncached_tokens += uncached_tokens
             sys_log.debug(f"Token usage: input= +{usage.prompt_tokens} ({ctx.total_input_tokens}), "
                           f"output= +{usage.completion_tokens} ({ctx.total_output_tokens}), "
-                          f"total= +{usage.total_tokens} ({ctx.total_tokens})")
-            ctx.messages.append(response.choices[0].message.model_dump())
-            assistant_chat = response.choices[0].message.content
-            assistant_toolcalls = response.choices[0].message.tool_calls
-            if (assistant_chat is None) and (assistant_toolcalls is None):
-                raise RuntimeError("Content and Tool calls in LLM message are both empty")
+                          f"total= +{usage.total_tokens} ({ctx.total_tokens}), "
+                          f"cached= {cached_tokens}, "
+                          f"uncached= +{uncached_tokens} ({ctx.total_uncached_tokens})")
 
-            """display chat"""
-            if assistant_chat is not None:
+            """message dump and conversion"""
+            dumped_msg = response.choices[0].message.model_dump(mode="json")
+            if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+                dumped_msg = prompt.deepseek_support(dumped_msg)
+            ctx.messages.append(dumped_msg)
+            assistant_reasoning = prompt.get_reasoning(dumped_msg)
+            assistant_chat = dumped_msg["content"]
+            assistant_tool_calls = dumped_msg["tool_calls"]
+            if (assistant_chat is None) and (assistant_tool_calls is None):
+                if assistant_reasoning is None:
+                    raise RuntimeError("Output and Tool calls in LLM's message are both empty")
+                else:
+                    sys_log.warning(f"There is only reasoning content in LLM's message")
+                    console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
+            if ctx.total_input_tokens >= ctx.api_configs["MODEL_CONTEXT"]:
+                sys_log.error(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
+                console.print(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens", style="bold red")
+                raise RuntimeError(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
+            if ctx.total_input_tokens >= ctx.api_configs["MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
+                sys_log.warning(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
+                console.print(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context", style="bold yellow")
+
+            """display reasoning"""
+            if assistant_reasoning is not None and not "":
                 console.print("\n")
                 if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                    console.print(Markdown(assistant_chat))
+                    console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
                 else:
-                    console.print(assistant_chat)
+                    console.print("{Think}: " + assistant_reasoning, style=f"italic {REASONING_COLOR}")
+                if assistant_chat is None:
+                    console.print("\n")
+            """display chat"""
+            if assistant_chat is not None:
+                if assistant_reasoning is None and not "":
+                    console.print("\n")
+                if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
+                    console.print(Markdown(assistant_chat), style="bold")
+                else:
+                    console.print(assistant_chat, style="bold")
                 console.print("\n")
 
             """call tools"""
-            if assistant_toolcalls is not None:
+            if assistant_tool_calls is not None:
                 ctx.task_end = False
                 sys_log.debug("Tools call start")
                 with ui_info.loading_spinner(waiting_desc="Tools calling", done_desc="Tools execution done") as progress:
-                    tools_response = tool_execute.execute_tools(tool_calls=assistant_toolcalls, ctx=ctx, progress=progress)
+                    tools_response = tool_execute.execute_tools(tool_calls=assistant_tool_calls, ctx=ctx, progress=progress)
                     ctx.messages.extend(tools_response)
             else:
                 ctx.task_end = True
         except openai.APITimeoutError:
-            if ctx.task_end:
+            if ctx.task_end:  # no tool calls, only user prompt, so pop it
                 ctx.messages.pop()
-            else:
+            else:  # if send tool calls' results, retry
                 pass
             sys_log.warning(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
-            console.print(f"[bold yellow]LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry[/bold yellow]")
+            console.print(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
             continue
         except KeyboardInterrupt:
             prompt.save_messages(ctx, console)
             ctx.save_context(console=console)
             sys_log.debug("TECoSim Agent exits with KeyboardInterrupt")
-            console.print(f"[{MAJOR_COLOR2}]TECoSim Agent exits with KeyboardInterrupt[/{MAJOR_COLOR2}]")
+            console.print(f"TECoSim Agent exits with KeyboardInterrupt", style=MAJOR_COLOR2)
             sys.exit(-1)
         except Exception as e:
             prompt.save_messages(ctx, console)
             ctx.save_context(console=console)
             sys_log.error(f"TECoSim Agent exits with error: {e}")
-            console.print(f"[bold red]TECoSim Agent exits with error: {e}[/bold red]")
+            console.print(f"TECoSim Agent exits with error: {e}", style="bold red")
             sys.exit(-1)

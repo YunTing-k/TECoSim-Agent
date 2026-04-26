@@ -26,29 +26,32 @@ import logging
 import shutil
 import re
 
-from typing import Dict, Any, List
+from typing import Any
 from rich.console import Console
 from rich.progress import Progress
 from src.constants import *
 from src.context.session import AgentContext
+from src.tool.ask_question import ask_user_question_tui, UserCancelledError, OTHER_LABEL, RECOMMEND_LABEL
 
 sys_log = logging.getLogger('logger')
 
 
-def create_tools_prompts(console: Console) -> list[dict[str, Any]]:
+def create_tools_prompts() -> list[dict[str, Any]]:
     """create prompts of all available tools"""
-    prompts: list[dict[str, Any]] = []
-    # prompts.append(tool_get_agent_version_def())  # for tool test
-    prompts.append(tool_check_simulator_def())
-    prompts.append(tool_init_design_def())
-    prompts.append(tool_copy_design_def())
-    prompts.append(tool_query_design_list_def())
-    prompts.append(tool_launch_simulator_def())
-    prompts.append((tool_query_run_num_def()))
-    prompts.append((tool_read_log_def()))
-    prompts.append((tool_read_file_def()))
-    prompts.append((tool_write_file_def()))
-    prompts.append((tool_bash_def()))
+    prompts: list[dict[str, Any]] = [
+        tool_check_simulator_def(),
+        tool_init_design_def(),
+        tool_copy_design_def(),
+        tool_query_design_list_def(),
+        tool_launch_simulator_def(),
+        (tool_query_run_num_def()),
+        (tool_read_log_def()),
+        (tool_read_file_def()),
+        (tool_write_file_def()),
+        (tool_bash_def()),
+        (tool_ask_user_question_def())
+    ]
+    sys_log.debug("Tools prompts assembled")
     return prompts
 
 
@@ -72,9 +75,9 @@ def tool_get_agent_version_def() -> dict[str, Any]:
 
 def get_agent_version(progress: Progress) -> dict[str, Any]:
     """tool realization of getting the dev version of TECoSim agent"""
-    progress.console.print(f"[bright_black]get_agent_version SUCCESS: "
-                           f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}"
-                           f"[/bright_black]")
+    progress.console.print(f"get_agent_version SUCCESS: "
+                           f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}",
+                           style="bright_black")
     return {"status": "SUCCESS",
             "version": f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}"}
 
@@ -97,14 +100,14 @@ def tool_check_simulator_def() -> dict[str, Any]:
     return tool_def
 
 
-def check_simulator(ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def check_simulator(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of checking if the simulator is available with AgentContext"""
     try:
         """check the path"""
         if not os.path.exists(ctx.agent_configs["SIMULATOR_PATH"]):
             sys_log.error(f"check_simulator FAIL: Simulator's path {ctx.agent_configs["SIMULATOR_PATH"]} defined in SIMULATOR_PATH does not exist")
-            progress.console.print(f"[bold red]check_simulator FAIL: Simulator's path {ctx.agent_configs["SIMULATOR_PATH"]} "
-                                   f"defined in SIMULATOR_PATH does not exist[/bold red]: ")
+            progress.console.print(f"check_simulator FAIL: Simulator's path {ctx.agent_configs["SIMULATOR_PATH"]} "
+                                   f"defined in SIMULATOR_PATH does not exist", style="bold red")
             return {"status": "FAIL",
                     "info": f"Simulator's path {ctx.agent_configs["SIMULATOR_PATH"]} defined in SIMULATOR_PATH does not exist"}
 
@@ -113,15 +116,15 @@ def check_simulator(ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if results.returncode != 0 and results.stdout is not None:
             sys_log.debug("check_simulator SUCCESS: Simulator is available")
-            progress.console.print("[bright_black]check_simulator SUCCESS: Simulator is available[/bright_black]")
+            progress.console.print("check_simulator SUCCESS: Simulator is available", style="bright_black")
             return {"status": "SUCCESS", "info": "Simulator is available"}
         else:
             sys_log.error("check_simulator FAIL: Simulator is unavailable")
-            progress.console.print(f"[bold red]check_simulator FAIL: Simulator is unavailable[/bold red]")
+            progress.console.print(f"check_simulator FAIL: Simulator is unavailable", style="bold red")
             return {"status": "FAIL", "info": "Simulator is unavailable"}
     except Exception as e:
         sys_log.error(f"check_simulator FAIL: Check simulator failed with error: {e}")
-        progress.console.print(f"[bold red]Check_simulator FAIL: check simulator failed with error: {e}[/bold red]")
+        progress.console.print(f"Check_simulator FAIL: check simulator failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Check simulator failed with error: {e}"}
 
 
@@ -149,25 +152,25 @@ def tool_init_design_def() -> dict[str, Any]:
     return tool_def
 
 
-def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of initializing a design with arguments and AgentContext"""
     try:
         design_id = arguments["id"]
         path = "./session/" + ctx.session_uuid + f"/design{design_id}"
         if os.path.exists(path):
             sys_log.error(f"init_design FAIL: Design with id: {design_id} already exists")
-            progress.console.print(f"[bold red]init_design FAIL: Design with id: {design_id} already exists[/bold red]")
+            progress.console.print(f"init_design FAIL: Design with id: {design_id} already exists", style="bold red")
             return {"status": "FAIL", "info": f"Design with id: {design_id} already exists"}
         os.makedirs(path)
         source_path = ctx.agent_configs["SIMULATOR_PATH"] + "/config"
         shutil.copytree(src=source_path, dst=path, dirs_exist_ok=True)
         ctx.design_created.append(design_id)
         sys_log.debug(f"init_design SUCCESS: Design with id: {design_id} initialized")
-        progress.console.print(f"[bright_black]init_design SUCCESS: Design with id: {design_id} initialized[/bright_black]")
+        progress.console.print(f"init_design SUCCESS: Design with id: {design_id} initialized", style="bright_black")
         return {"status": "SUCCESS", "info": f"Design with id: {design_id} initialized"}
     except Exception as e:
         sys_log.error(f"init_design FAIL: Initialize design failed with error: {e}")
-        progress.console.print(f"[bold red]init_design FAIL: Initialize design failed with error: {e}[/bold red]")
+        progress.console.print(f"init_design FAIL: Initialize design failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Initialize design failed with error: {e}"}
 
 
@@ -200,7 +203,7 @@ def tool_copy_design_def() -> dict[str, Any]:
     return tool_def
 
 
-def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of copying a design with arguments and AgentContext"""
     try:
         source_id = arguments["source_id"]
@@ -209,21 +212,21 @@ def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
         target_path = "./session/" + ctx.session_uuid + f"/design{target_id}"
         if not os.path.exists(source_path):
             sys_log.error(f"copy_design FAIL: Source design with id: {source_id} doesn't exist")
-            progress.console.print(f"[bold red]copy_design FAIL: Source design with id: {source_id} doesn't exist[/bold red]")
+            progress.console.print(f"copy_design FAIL: Source design with id: {source_id} doesn't exist", style="bold red")
             return {"status": "FAIL", "info": f"Source design with id: {source_id} doesn't exist"}
         if os.path.exists(target_path):
             sys_log.error(f"copy_design FAIL: Target design with id: {target_id} already exists")
-            progress.console.print(f"[bold red]copy_design FAIL: Target design with id: {target_id} already exists[/bold red]")
+            progress.console.print(f"copy_design FAIL: Target design with id: {target_id} already exists", style="bold red")
             return {"status": "FAIL", "info": f"Target design with id: {target_id} already exists"}
         os.makedirs(target_path)
         shutil.copytree(src=source_path, dst=target_path, dirs_exist_ok=True)
         ctx.design_created.append(target_id)
         sys_log.debug(f"copy_design SUCCESS: Design with id: {target_id} created by design with id: {source_id}")
-        progress.console.print(f"[bright_black]copy_design SUCCESS: Design with id: {target_id} created by design with id: {source_id}[/bright_black]")
+        progress.console.print(f"copy_design SUCCESS: Design with id: {target_id} created by design with id: {source_id}", style="bright_black")
         return {"status": "SUCCESS", "info": f"Design with id: {target_id} created by design with id: {source_id}"}
     except Exception as e:
         sys_log.error(f"copy_design FAIL: Create design by copying failed with error: {e}")
-        progress.console.print(f"[bold red]copy_design FAIL: Create design by copying failed with error: {e}[/bold red]")
+        progress.console.print(f"copy_design FAIL: Create design by copying failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Create design by copying failed with error: {e}"}
 
 
@@ -245,11 +248,11 @@ def tool_query_design_list_def() -> dict[str, Any]:
     return tool_def
 
 
-def query_design_list(ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def query_design_list(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of querying the list of created designs with AgentContext"""
     sys_log.debug(f"query_design_list SUCCESS: Total num: {len(ctx.design_created)}, list: {ctx.design_created}")
-    progress.console.print(f"[bright_black]query_design_list SUCCESS: Total num: {len(ctx.design_created)}, "
-                           f"list: {ctx.design_created}[/bright_black]")
+    progress.console.print(f"query_design_list SUCCESS: Total num: {len(ctx.design_created)}, "
+                           f"list: {ctx.design_created}", style="bright_black")
     return {"status": "SUCCESS",
             "total_num": f"{len(ctx.design_created)}",
             "list": f"{ctx.design_created}"}
@@ -279,7 +282,7 @@ def tool_launch_simulator_def() -> dict[str, Any]:
     return tool_def
 
 
-def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of launching the simulator with arguments and AgentContext"""
     try:
         """check the design"""
@@ -288,8 +291,8 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         if not os.path.exists(design_path):
             sys_log.error(f"launch_simulator FAIL: "
                           f"Design with id: {design_id} doesn't exist. Launch is not performed")
-            progress.console.print(f"[bold red]launch_simulator FAIL: "
-                                   f"Design with id: {design_id} doesn't exist. Launch is not performed[/bold red]")
+            progress.console.print(f"launch_simulator FAIL: "
+                                   f"Design with id: {design_id} doesn't exist. Launch is not performed", style="bold red")
             return {"status": "FAIL",
                     "info": f"Design with id: {design_id} doesn't exist. Launch is not performed"}
         """clean up"""
@@ -298,32 +301,32 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         if results1.returncode != 0 or results1.stdout is None:
             sys_log.error("launch_simulator FAIL: "
                           "Clean up script exits with error. Launch is not performed")
-            progress.console.print("[bold red]launch_simulator FAIL: "
-                                   "Clean up script exits with error. Launch is not performed[/bold red]")
+            progress.console.print("launch_simulator FAIL: "
+                                   "Clean up script exits with error. Launch is not performed", style="bold red")
             return {"status": "FAIL", "info": f"Clean up script exits with error. Launch is not performed"}
         sys_log.debug(f"launch_simulator: clean up done")
-        progress.console.print(f"[bright_black]launch_simulator: clean up done[/bright_black]")
+        progress.console.print(f"launch_simulator: clean up done", style="bright_black")
         """create run"""
         ctx.simulation_launched += 1
         run_path = "./session/" + ctx.session_uuid + f"/run{ctx.simulation_launched}"
         if os.path.exists(run_path):
             sys_log.error(f"launch_simulator FAIL: "
                           f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed")
-            progress.console.print(f"[bold red]launch_simulator FAIL: "
-                                   f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed[/bold red]")
+            progress.console.print(f"launch_simulator FAIL: "
+                                   f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed", style="bold red")
             return {"status": "FAIL",
                     "info": f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed"}
         os.makedirs(run_path)
         sys_log.debug(f"launch_simulator: simulation run with id: {ctx.simulation_launched} created")
-        progress.console.print(f"[bright_black]launch_simulator: simulation run with id: {ctx.simulation_launched} created[/bright_black]")
+        progress.console.print(f"launch_simulator: simulation run with id: {ctx.simulation_launched} created", style="bright_black")
         """launch simulation"""
         sys_log.debug(f"launch_simulator: simulation run with id: {ctx.simulation_launched} start")
-        progress.console.print(f"[bright_black]launch_simulator: simulation run with id: {ctx.simulation_launched} start[/bright_black]")
+        progress.console.print(f"launch_simulator: simulation run with id: {ctx.simulation_launched} start", style="bright_black")
         configs = design_path + "/"
         results2 = subprocess.run([ctx.agent_configs["SIMULATOR_PATH"] + '/TECoSim.exe', configs],
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         sys_log.debug(f"launch_simulator: simulation run with id: {ctx.simulation_launched} stop")
-        progress.console.print(f"[bright_black]launch_simulator: simulation run with id: {ctx.simulation_launched} stop[/bright_black]")
+        progress.console.print(f"launch_simulator: simulation run with id: {ctx.simulation_launched} stop", style="bright_black")
         """write/copy logs"""
         stderr = results2.stderr.decode('utf-8')
         with open(run_path + "/stderr.log", "w", encoding="utf-8") as f:
@@ -337,15 +340,15 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         log_file = log_path + log_files_sorted[0]
         shutil.copy(log_file, run_path + "/stdout.log")
         sys_log.debug(f"launch_simulator: logs write/copy done")
-        progress.console.print(f"[bright_black]launch_simulator: logs write/copy done[/bright_black]")
+        progress.console.print(f"launch_simulator: logs write/copy done", style="bright_black")
         """check status"""
         if results2.returncode != 0:
             sys_log.error(f"launch_simulator FAIL: "
                           f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
                           f"{design_id} failed with error. Check logs for details if needed")
-            progress.console.print(f"[bold red]launch_simulator FAIL: "
+            progress.console.print(f"launch_simulator FAIL: "
                                    f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                                   f"{design_id} failed with error. Check logs for details if needed[/bold red]")
+                                   f"{design_id} failed with error. Check logs for details if needed", style="bold red")
             return {"status": "FAIL",
                     "run_id": ctx.simulation_launched,
                     "info": f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
@@ -358,15 +361,15 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         shutil.copytree(src=design_path, dst=run_path + "/design")
         sys_log.debug(f"launch_simulator SUCCESS: "
                       f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without error. Results are ready")
-        progress.console.print(f"[bright_black]launch_simulator SUCCESS: "
-                               f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without error. Results are ready[/bright_black]")
+        progress.console.print(f"launch_simulator SUCCESS: "
+                               f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without error. Results are ready", style="bright_black")
         return {"status": "SUCCESS",
                 "run_id": ctx.simulation_launched,
                 "info": f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without "
                         f"error. Results are ready"}
     except Exception as e:
         sys_log.error(f"launch_simulator FAIL: Launch simulator failed with error: {e}")
-        progress.console.print(f"[bold red]launch_simulator FAIL: Launch simulator failed with error: {e}[/bold red]")
+        progress.console.print(f"launch_simulator FAIL: Launch simulator failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Launch simulator failed with error: {e}"}
 
 
@@ -388,10 +391,10 @@ def tool_query_run_num_def() -> dict[str, Any]:
     return tool_def
 
 
-def query_run_num(ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def query_run_num(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of querying the amount of launched run with AgentContext"""
     sys_log.debug(f"query_run_num SUCCESS: Total num: {ctx.simulation_launched}")
-    progress.console.print(f"[bright_black]query_run_num SUCCESS: Total num: {ctx.simulation_launched}[/bright_black]")
+    progress.console.print(f"query_run_num SUCCESS: Total num: {ctx.simulation_launched}", style="bright_black")
     return {"status": "SUCCESS",
             "total_num": f"{ctx.simulation_launched}"}
 
@@ -492,7 +495,7 @@ def tool_read_log_def() -> dict[str, Any]:
     return tool_def
 
 
-def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of reading the log with arguments and AgentContext"""
     try:
         """check the run"""
@@ -500,7 +503,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         run_path = "./session/" + ctx.session_uuid + f"/run{run_id}"
         if not os.path.exists(run_path):
             sys_log.error(f"read_log FAIL: Run with id: {run_id} doesn't exist")
-            progress.console.print(f"[bold red]read_log FAIL: Run with id: {run_id} doesn't exist[/bold red]")
+            progress.console.print(f"read_log FAIL: Run with id: {run_id} doesn't exist", style="bold red")
             return {"status": "FAIL",
                     "info": f"Run with id: {run_id} doesn't exist"}
         """read the log"""
@@ -514,7 +517,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
             log_line = clean_stderr_log(log_content)
         else:
             sys_log.error(f"read_log FAIL: Invalid log type: {log_type}")
-            progress.console.print(f"[bold red]read_log FAIL: Invalid log type: {log_type}[/bold red]")
+            progress.console.print(f"read_log FAIL: Invalid log type: {log_type}", style="bold red")
             raise RuntimeError(f"Invalid log type: {log_type}")
         total_line_num = len(log_line)
         """prepare the content"""
@@ -524,7 +527,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         if method == "from_top":
             if read_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if total_line_num <= read_line_num:
                 log_str = "\n".join(log_line)
@@ -533,7 +536,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         elif method == "from_bottom":
             if read_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if total_line_num <= read_line_num:
                 log_str = "\n".join(log_line)
@@ -542,11 +545,11 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         elif method == "offset":
             if offset_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid offset: {offset_line_num} < 1")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid offset: {offset_line_num} < 1[/bold red]")
+                progress.console.print(f"read_log FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
             if offset_line_num > total_line_num:
                 sys_log.error(f"read_log FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
-                progress.console.print(f"[bold red]read_log FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}[/bold red]")
+                progress.console.print(f"read_log FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
                 raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
             if (read_line_num + offset_line_num - 1) <= total_line_num:
                 log_str = "\n".join(log_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
@@ -558,14 +561,14 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
             raise RuntimeError(f"Invalid method type: {method}")
         sys_log.debug(f"read_log SUCCESS: Run id: {run_id} "
                       f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}")
-        progress.console.print(f"[bright_black]read_log SUCCESS: Run id: {run_id} "
-                               f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}[/bright_black]")
+        progress.console.print(f"read_log SUCCESS: Run id: {run_id} "
+                               f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}", style="bright_black")
         return {"status": "SUCCESS",
                 "total_line": total_line_num,
                 "log_content": log_str}
     except Exception as e:
         sys_log.error(f"read_log FAIL: Read log failed with error: {e}")
-        progress.console.print(f"[bold red]read_log FAIL: Read log failed with error: {e}[/bold red]")
+        progress.console.print(f"read_log FAIL: Read log failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Read log failed with error: {e}"}
 
 
@@ -622,20 +625,20 @@ def tool_read_file_def() -> dict[str, Any]:
     return tool_def
 
 
-def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> Dict[str, Any]:
+def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of reading the file with arguments and AgentContext"""
     try:
         """check the path"""
         file_path = arguments["path"]
         if not os.path.exists(file_path):
             sys_log.error(f"read_file FAIL: Path: {file_path} doesn't exist.")
-            progress.console.print(f"[bold red]read_file FAIL: Path: {file_path} doesn't exist[/bold red]")
+            progress.console.print(f"read_file FAIL: Path: {file_path} doesn't exist", style="bold red")
             return {"status": "FAIL",
                     "info": f"Path: {file_path} doesn't exist"}
         """check the file"""
         if not os.path.isfile(file_path):
             sys_log.error(f"read_file FAIL: Path: {file_path} is not a file")
-            progress.console.print(f"[bold red]read_file FAIL: Path: {file_path} is not a file[/bold red]")
+            progress.console.print(f"read_file FAIL: Path: {file_path} is not a file", style="bold red")
             return {"status": "FAIL",
                     "info": f"Path: {file_path} is not a file"}
         """read the file"""
@@ -643,8 +646,8 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"read_file FAIL: "
                           f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB")
-            progress.console.print(f"[bold red]read_file FAIL: "
-                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB[/bold red]")
+            progress.console.print(f"read_file FAIL: "
+                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB", style="bold red")
             return {"status": "FAIL",
                     "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB"}
         encoding = arguments.get("encoding", "utf-8")
@@ -658,7 +661,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if method == "from_top":
             if read_line_num < 1 or read_line_num is None:
                 sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if total_line_num <= read_line_num:
                 file_str = "".join(file_line)
@@ -667,7 +670,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         elif method == "from_bottom":
             if read_line_num < 1 or read_line_num is None:
                 sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid line num: {read_line_num} < 1[/bold red]")
+                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if total_line_num <= read_line_num:
                 file_str = "".join(file_line)
@@ -676,11 +679,11 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         elif method == "offset":
             if offset_line_num < 1:
                 sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} < 1")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid offset: {offset_line_num} < 1[/bold red]")
+                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
             if offset_line_num > total_line_num:
                 sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
-                progress.console.print(f"[bold red]read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}[/bold red]")
+                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
                 raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
             if (read_line_num + offset_line_num - 1) <= total_line_num:
                 file_str = "".join(file_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
@@ -692,27 +695,27 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             raise RuntimeError(f"Invalid method type: {method}")
         sys_log.debug(f"read_file SUCCESS: "
                       f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}")
-        progress.console.print(f"[bright_black]read_file SUCCESS: "
-                               f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}[/bright_black]")
+        progress.console.print(f"read_file SUCCESS: "
+                               f"Path: {file_path}, method: {method}, encoding: {encoding}, total line: {total_line_num}, read-in line: {read_line_num}, offset: {offset_line_num}", style="bright_black")
         return {"status": "SUCCESS",
                 "total_line": total_line_num,
                 "log_content": file_str}
     except UnicodeDecodeError as e:
         sys_log.error(f"read_file FAIL: Can't read file with given encoding, error: {e}")
-        progress.console.print(f"[bold red]read_file FAIL: Can't read file with given encoding, error: {e}[/bold red]")
+        progress.console.print(f"read_file FAIL: Can't read file with given encoding, error: {e}", style="bold red")
         return {"status": "FAIL",
                 "info": f"Can't read file with given encoding, error: {e}"}
     except PermissionError as e:
         sys_log.error(f"read_file FAIL: Can't read file, permission denied: {e}")
-        progress.console.print(f"[bold red]read_file FAIL: Can't read file, permission denied: {e}[/bold red]")
+        progress.console.print(f"read_file FAIL: Can't read file, permission denied: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Can't read file, permission denied: {e}"}
     except OSError as e:
         sys_log.error(f"read_file FAIL: Can't read file, OS error: {e}")
-        progress.console.print(f"[bold red]read_file FAIL: Can't read file, OS error: {e}[/bold red]")
+        progress.console.print(f"read_file FAIL: Can't read file, OS error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Can't read file, OS error: {e}"}
     except Exception as e:
         sys_log.error(f"read_file FAIL: Read file failed with error: {e}")
-        progress.console.print(f"[bold red]read_file FAIL: Read file failed with error: {e}[/bold red]")
+        progress.console.print(f"read_file FAIL: Read file failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Read file failed with error: {e}"}
 
 
@@ -761,7 +764,7 @@ def tool_write_file_def() -> dict[str, Any]:
     return tool_def
 
 
-def write_file(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
+def write_file(arguments: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """tool realization of writing the file with arguments"""
     try:
         """check the path"""
@@ -772,7 +775,7 @@ def write_file(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
             if not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
                 sys_log.debug(f"write_file: Parent directory: {parent_dir} created")
-                progress.console.print(f"[bright_black]write_file: Parent directory: {parent_dir} created[/bright_black]")
+                progress.console.print(f"write_file: Parent directory: {parent_dir} created", style="bright_black")
         """write the file"""
         mode = arguments.get("mode", "write")
         w_mode = 'w' if mode == "write" else 'a'
@@ -784,27 +787,27 @@ def write_file(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
         byte_count = len(content_bytes)
         sys_log.debug(f"write_file SUCCESS: "
                       f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}")
-        progress.console.print(f"[bright_black]write_file SUCCESS: "
-                               f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}[/bright_black]")
+        progress.console.print(f"write_file SUCCESS: "
+                               f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}", style="bright_black")
         return {"status": "SUCCESS",
                 "bytes_written": byte_count,
                 "info": f"Write content to {file_path} done successfully"}
     except UnicodeDecodeError as e:
         sys_log.error(f"write_file FAIL: Can't write file with given encoding, error: {e}")
-        progress.console.print(f"[bold red]write_file FAIL: Can't write file with given encoding, error: {e}[/bold red]")
+        progress.console.print(f"write_file FAIL: Can't write file with given encoding, error: {e}", style="bold red")
         return {"status": "FAIL",
                 "info": f"Can't write file with given encoding, error: {e}"}
     except PermissionError as e:
         sys_log.error(f"write_file FAIL: Can't write file, permission denied: {e}")
-        progress.console.print(f"[bold red]write_file FAIL: Can't write file, permission denied: {e}[/bold red]")
+        progress.console.print(f"write_file FAIL: Can't write file, permission denied: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Can't write file, permission denied: {e}"}
     except OSError as e:
         sys_log.error(f"write_file FAIL: Can't write file, OS error: {e}")
-        progress.console.print(f"[bold red]write_file FAIL: Can't write file, OS error: {e}[/bold red]")
+        progress.console.print(f"write_file FAIL: Can't write file, OS error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Can't write file, OS error: {e}"}
     except Exception as e:
         sys_log.error(f"write_file FAIL: Write file failed with error: {e}")
-        progress.console.print(f"[bold red]write_file FAIL: Write file failed with error: {e}[/bold red]")
+        progress.console.print(f"write_file FAIL: Write file failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Write file failed with error: {e}"}
 
 
@@ -881,7 +884,7 @@ def tool_bash_def() -> dict[str, Any]:
     return tool_def
 
 
-def bash(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
+def bash(arguments: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """tool realization of bash command execution with arguments and AgentContext"""
     try:
         """execute command"""
@@ -889,7 +892,7 @@ def bash(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
         description = arguments.get("description", "")
         timeout = arguments.get("timeout", 120000)
         sys_log.debug(f"bash: {description} start")
-        progress.console.print(f"[bright_black]bash: {description} start[/bright_black]")
+        progress.console.print(f"bash: {description} start", style="bright_black")
         proc = subprocess.Popen(["bash", "-c", command],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
@@ -900,8 +903,8 @@ def bash(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
                 stdout, stderr = proc.communicate(timeout=2)
                 sys_log.error(f"bash FAIL: "
                               f"{description} with command {command} timeout > {timeout/1000} s")
-                progress.console.print(f"[bold red]bash FAIL: "
-                                       f"{description} with command {command} timeout > {timeout/1000} s[/bold red]")
+                progress.console.print(f"bash FAIL: "
+                                       f"{description} with command {command} timeout > {timeout/1000} s", style="bold red")
                 return {"status": "TIMEOUT",
                         "return code": proc.returncode,
                         "stdout": stdout.decode('utf-8'),
@@ -911,19 +914,146 @@ def bash(arguments: dict[str, Any], progress: Progress) -> Dict[str, Any]:
                 stdout, stderr = proc.communicate()
                 sys_log.error(f"bash FAIL: "
                               f"{description} with command {command} timeout > {timeout / 1000} s and task has been killed")
-                progress.console.print(f"[bold red]bash FAIL: "
-                                       f"{description} with command {command} timeout > {timeout / 1000} s and task has been killed[/bold red]")
+                progress.console.print(f"bash FAIL: "
+                                       f"{description} with command {command} timeout > {timeout / 1000} s and task has been killed", style="bold red")
                 return {"status": "TIMEOUT",
                         "return code": proc.returncode,
                         "stdout": stdout.decode('utf-8'),
                         "stderr": stderr.decode('utf-8')}
         sys_log.debug(f"bash: {description} with command {command} done")
-        progress.console.print(f"[bright_black]bash: {description} with command {command} done[/bright_black]")
+        progress.console.print(f"bash: {description} with command {command} done", style="bright_black")
         return {"status": "DONE",
                 "return code": proc.returncode,
                 "stdout": stdout.decode('utf-8'),
                 "stderr": stderr.decode('utf-8')}
     except Exception as e:
         sys_log.error(f"bash FAIL: Command execute with error: {e}")
-        progress.console.print(f"[bold red]bash FAIL: Command execute with error: {e}[/bold red]")
+        progress.console.print(f"bash FAIL: Command execute with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Command execute with error: {e}"}
+
+
+def tool_ask_user_question_def() -> dict[str, Any]:
+    """tool definition of asking structured questions to the user (ask_user_question)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "ask_user_question",
+            "description": "Use this tool to ask the user questions when you need. This allows you to:\n"
+                           "1. Gather user preferences or requirements\n"
+                           "2. Clarify ambiguous instructions\n"
+                           "3. Get decisions on implementation choices as you work\n"
+                           "4. Offer choices to the user about what direction to take.\n"
+                           "Usage notes:\n"
+                           f"- User will always be able to select '{OTHER_LABEL}' to provide custom text input\n"
+                           f"- Use multi_select: true to allow multiple answers to be selected for a question\n"
+                           f"- If you recommend a specific option, make that the first option in the list and add '({RECOMMEND_LABEL})' "
+                           f"at the end of the label\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "description": "Questions to ask the user (1-4 questions).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": {
+                                    "type": "string",
+                                    "description": "The full question shown to the user."
+                                },
+                                "header": {
+                                    "type": "string",
+                                    "description": "Very short label displayed as a tag."
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 4,
+                                    "description": "The available options for this question. Must have 2-4 options. Each "
+                                                   "option should be a distinct, mutually exclusive choice (unless multi_select "
+                                                   f"is enabled). There should be no '{OTHER_LABEL}' option, that will be "
+                                                   f"provided automatically.",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {
+                                                "type": "string",
+                                                "description": "The display text for this option that the user will see "
+                                                               "and select. Should be concise and clearly describe the choice."
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "Explanation of what this option means or what will happen "
+                                                               "if chosen. Useful for providing context about trade-offs "
+                                                               "or implications."
+                                            }
+                                        },
+                                        "required": ["label", "description"],
+                                        "additionalProperties": False
+                                    }
+                                },
+                                "multi_select": {
+                                    "type": "boolean",
+                                    "description": "Set to true to allow the user to select multiple options instead of "
+                                                   "just one. Use when choices are not mutually exclusive",
+                                    "default": False
+                                }
+                            },
+                            "required": ["question", "header", "options", "multi_select"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["questions"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of asking structured questions to the user"""
+    try:
+        questions = arguments.get("questions", [])
+        if len(questions) == 0:
+            sys_log.error("ask_user_question FAIL: questions is empty")
+            progress.console.print("ask_user_question FAIL: questions is empty", style="bold red")
+            return {"status": "FAIL", "info": "questions is empty"}
+        if ctx.agent_session is None:
+            sys_log.error("ask_user_question FAIL: agent session is unavailable")
+            progress.console.print("ask_user_question FAIL: agent session is unavailable", style="bold red")
+            return {"status": "FAIL", "info": "agent session is unavailable"}
+        for idx, question in enumerate(questions, start=1):
+            options = question.get("options", [])
+            if len(options) == 0:
+                sys_log.error(f"ask_user_question FAIL: question {idx} has no options")
+                progress.console.print(f"ask_user_question FAIL: question {idx} has no options", style="bold red")
+                return {"status": "FAIL", "info": f"question {idx} has no options"}
+        progress.stop()
+        sys_log.debug(f"ask_user_question: waiting for user selection")
+        try:
+            answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
+        finally:
+            progress.start()
+        sys_log.debug(f"ask_user_question SUCCESS: {len(answers)} answers collected")
+        progress.console.print(f"ask_user_question SUCCESS: {len(answers)} answers collected", style="bright_black")
+        return {
+            "status": "SUCCESS",
+            "answers": answers,
+            "info": f"Collected {len(answers)} answers from user"
+        }
+    except UserCancelledError as e:
+        sys_log.warning(f"ask_user_question FAIL: {e}")
+        progress.console.print(f"ask_user_question FAIL: {e}", style="bold yellow")
+        return {"status": "FAIL", "info": str(e)}
+    except KeyboardInterrupt:
+        sys_log.warning("ask_user_question FAIL: user cancelled")
+        progress.console.print("ask_user_question FAIL: user cancelled", style="bold yellow")
+        return {"status": "FAIL", "info": "user cancelled"}
+    except Exception as e:
+        sys_log.error(f"ask_user_question FAIL: Ask user question failed with error: {e}")
+        progress.console.print(f"ask_user_question FAIL: Ask user question failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Ask user question failed with error: {e}"}

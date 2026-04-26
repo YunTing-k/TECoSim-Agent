@@ -33,7 +33,7 @@ from src.constants import *
 sys_log = logging.getLogger('logger')
 
 
-def query_session(session_uuid: str, console: Console) -> [str, PromptSession]:
+def query_session(session_uuid: str | None, console: Console) -> tuple[str, PromptSession[Any]]:
     """create a session or resume a session with given UUID"""
     if session_uuid is None:
         return create_session(console)
@@ -41,7 +41,7 @@ def query_session(session_uuid: str, console: Console) -> [str, PromptSession]:
         return resume_session(session_uuid, console)
 
 
-def create_session(console: Console) -> [str, PromptSession]:
+def create_session(console: Console) -> tuple[str, PromptSession[Any]]:
     """create a session"""
     uuid_obj = uuid.uuid4()
     uuid_str = uuid_obj.__str__()
@@ -63,15 +63,15 @@ def create_session(console: Console) -> [str, PromptSession]:
             return uuid_str, session
         except Exception as e:
             sys_log.error(f"Failed to create session of {uuid_str} with error: {e}")
-            console.print(f"[bold red]Failed to create session of {uuid_str} with error: {e}[/bold red]")
+            console.print(f"Failed to create session of {uuid_str} with error: {e}", style="bold red")
             raise RuntimeError(e)
     else:
         sys_log.error(f"Path of session with UUID: {uuid_str} already exists")
-        console.print(f"[bold red]Path of session with UUID: {uuid_str} already exists[/bold red]")
+        console.print(f"Path of session with UUID: {uuid_str} already exists", style="bold red")
         raise RuntimeError(f"Path of session with UUID: {uuid_str} already exists")
 
 
-def resume_session(session_uuid: str, console: Console) -> [str, PromptSession]:
+def resume_session(session_uuid: str, console: Console) -> tuple[str, PromptSession[Any]]:
     """resume a session with given UUID"""
     try:
         uuid_obj = uuid.UUID(session_uuid)
@@ -79,7 +79,7 @@ def resume_session(session_uuid: str, console: Console) -> [str, PromptSession]:
         path = "./session/" + uuid_str
         if not os.path.exists(path):
             sys_log.error(f"Resuming session of {uuid_str}'s path not exist")
-            console.print(f"[bold red]Resuming session of {uuid_str}'s path not exist[/bold red]")
+            console.print(f"Resuming session of {uuid_str}'s path not exist", style="bold red")
             raise RuntimeError(f"Resuming session of {uuid_str}'s path not exists")
         try:
             session = PromptSession(
@@ -95,15 +95,15 @@ def resume_session(session_uuid: str, console: Console) -> [str, PromptSession]:
             return uuid_str, session
         except Exception as e:
             sys_log.error(f"Failed to resume session of {uuid_str} with error: {e}")
-            console.print(f"[bold red]Failed to resume session of {uuid_str} with error: {e}[/bold red]")
+            console.print(f"Failed to resume session of {uuid_str} with error: {e}", style="bold red")
             raise RuntimeError(e)
     except ValueError:
         sys_log.error(f"Invalid session UUID: {session_uuid}")
-        console.print(f"[bold red]Invalid session UUID: {session_uuid}[/bold red]")
+        console.print(f"Invalid session UUID: {session_uuid}", style="bold red")
         raise RuntimeError(f"Invalid session UUID: {session_uuid}")
     except Exception as e:
         sys_log.error(f"Failed to resume session of {session_uuid} with error: {e}")
-        console.print(f"[bold red]Failed to resume session of {session_uuid} with error: {e}[/bold red]")
+        console.print(f"Failed to resume session of {session_uuid} with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 
@@ -118,9 +118,11 @@ class AgentContext:
         self.tools: list[dict[str, Any]] = [{"None": None}]
         # params
         self.session_uuid: str = ""
+        self.agent_session: PromptSession | None = None
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
         self.total_tokens: int = 0
+        self.total_uncached_tokens: int = 0
         self.simulation_launched: int = 0
         self.design_created: list[int] = []
         # signals
@@ -132,6 +134,7 @@ class AgentContext:
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "total_tokens": self.total_tokens,
+            "total_uncached_tokens": self.total_uncached_tokens,
             "simulation_launched": self.simulation_launched,
             "design_created": self.design_created
         }
@@ -146,6 +149,7 @@ class AgentContext:
             self.total_input_tokens = in_dict["total_input_tokens"]
             self.total_output_tokens = in_dict["total_output_tokens"]
             self.total_tokens = in_dict["total_tokens"]
+            self.total_uncached_tokens = in_dict["total_uncached_tokens"]
             self.simulation_launched = in_dict["simulation_launched"]
             self.design_created = in_dict["design_created"]
 
@@ -153,7 +157,7 @@ class AgentContext:
             console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted from dict")
         except Exception as e:
             sys_log.error(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}")
-            console.print(f"[bold red]Failed to convert session {self.session_uuid}'s context from dict with error: {e}[/bold red]")
+            console.print(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}", style="bold red")
             raise RuntimeError(e)
 
     def save_context(self, console: Console):
@@ -168,7 +172,7 @@ class AgentContext:
             console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
         except Exception as e:
             sys_log.error(f"Failed to save session {self.session_uuid}'s context with error: {e}")
-            console.print(f"[bold red]Failed to save session {self.session_uuid}'s context with error: {e}[/bold red]")
+            console.print(f"Failed to save session {self.session_uuid}'s context with error: {e}", style="bold red")
             raise RuntimeError(e)
 
     def load_context(self, console: Console):
@@ -184,5 +188,5 @@ class AgentContext:
             self.from_dict(in_dict, console)
         except Exception as e:
             sys_log.error(f"Failed to load session {self.session_uuid}'s context with error: {e}")
-            console.print(f"[bold red]Failed to load session {self.session_uuid}'s context with error: {e}[/bold red]")
+            console.print(f"Failed to load session {self.session_uuid}'s context with error: {e}", style="bold red")
             raise RuntimeError(e)

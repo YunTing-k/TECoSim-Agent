@@ -23,15 +23,15 @@ import json
 
 from openai import OpenAI
 from rich.console import Console
-from typing import Dict, Any
+from typing import Any
 from src.constants import *
 from src.context.session import AgentContext
 
 sys_log = logging.getLogger('logger')
 
 
-def load_configs(configs_path: str, name: str, console: Console) -> Dict[str, Any]:
-    """load json configs with given path"""
+def load_configs(configs_path: str, name: str, console: Console) -> dict[str, Any]:
+    """load JSON configs with given path"""
     try:
         with open(configs_path, 'r', encoding="utf-8") as file:
             api_configs = json.load(file)
@@ -39,7 +39,7 @@ def load_configs(configs_path: str, name: str, console: Console) -> Dict[str, An
             return api_configs
     except Exception as e:
         sys_log.error(f"Failed to load {name} configs from {configs_path} with error: {e}")
-        console.print(f"[bold red]Failed to load {name} configs from {configs_path} with error: {e}[/bold red]")
+        console.print(f"Failed to load {name} configs from {configs_path} with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 
@@ -55,17 +55,25 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
         return client
     except Exception as e:
         sys_log.error(f"Failed to config client with API configs with error: {e}")
-        console.print(f"[bold red]Failed to config client with API configs with error: {e}[/bold red]")
+        console.print(f"Failed to config client with API configs with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 
 def create_request(client: OpenAI, ctx: AgentContext):
     """Create LLM request with given LLM client, API configs and messages"""
-    response = client.chat.completions.create(
-        model=ctx.api_configs["MODEL_NAME"],
-        messages=ctx.messages,
-        tools=ctx.tools,
-        temperature=ctx.api_configs["MODEL_TEMPERATURE"],
-        timeout=ctx.api_configs["TIMEOUT_MS"] / 1000
-    )
+    params: dict[str, Any] = {
+        "model": ctx.api_configs["MODEL_NAME"],
+        "temperature": ctx.api_configs["MODEL_TEMPERATURE"],
+        "reasoning_effort": ctx.api_configs["MODEL_REASONING_EFFORT"],
+        "max_tokens": ctx.api_configs["MODEL_MAX_TOKENS"],
+        "messages": ctx.messages,
+        "tools": ctx.tools,
+        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000
+    }
+    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs["MODEL_ENABLE_REASONING"]:
+            params["extra_body"] = {"thinking": {"type": "enabled"}}
+        else:
+            params["extra_body"] = {"thinking": {"type": "disabled"}}
+    response = client.chat.completions.create(**params)
     return response

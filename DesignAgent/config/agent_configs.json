@@ -1,7 +1,9 @@
 {
     "MERGE_SYSTEM_PROMPTS": true,
     "RESULTS_THUMB_LEN": 100,
-    "SIMULATOR_PATH": "C:/Users/12416/Desktop/C++File/Project/TECoSim",
+    "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",
     "READ_FILE_MB_LIMIT": 100,
-    "RENDER_RESPONSE_AS_MD": true
+    "RENDER_RESPONSE_AS_MD": true,
+    "CONTEXT_THRESHOLD": 0.9,
+    "DEEPSEEK_SUPPORT": true
 }
