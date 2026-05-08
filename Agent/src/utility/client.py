@@ -14,6 +14,7 @@ Revision:
 2026.4.15      Yu Huang     1.1               Tools requests realization\n
 2026.4.16      Yu Huang     1.2               Agent context realization with logic merge\n
 2026.4.26      Yu Huang     1.3               More LLM configs support\n
+2026.4.29      Yu Huang     1.4               Builtin commands support\n
 
 Details:
 Client configuration, creation
@@ -26,7 +27,7 @@ from openai import OpenAI
 from rich.console import Console
 from typing import Any
 from src.constants import *
-from src.context.session import AgentContext
+from src.context.agent_context import AgentContext
 
 sys_log = logging.getLogger('logger')
 
@@ -76,6 +77,7 @@ def create_request(client: OpenAI, ctx: AgentContext):
             params["extra_body"] = {"thinking": {"type": "enabled"}}
         else:
             params["extra_body"] = {"thinking": {"type": "disabled"}}
+    ctx.total_llm_requests += 1
     response = client.chat.completions.create(**params)
     return response
 

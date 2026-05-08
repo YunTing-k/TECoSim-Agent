@@ -15,9 +15,10 @@ Revision:
 2026.4.16      Yu Huang     1.2               Agent context realization with logic merge\n
 2026.4.22      Yu Huang     1.3               Bash support\n
 2026.4.26      Yu Huang     1.4               Reasoning support\n
+2026.4.29      Yu Huang     1.5               Builtin commands support\n
 
 Details:
-System prompts, Reminder, Tools
+Prompts management with create, assemble, resume, save, load
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
@@ -32,7 +33,7 @@ import rich.box
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from src.context.session import AgentContext
+from src.context.agent_context import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -51,8 +52,10 @@ def create_system_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         prompts = prompts1
         prompts[0]["content"] += (prompts2[0]["content"])
         prompts[0]["content"] += (prompts3[0]["content"])
+        ctx.system_prompts = 1
     else:
         prompts = prompts1 + prompts2 + prompts3
+        ctx.system_prompts = 3
     sys_log.debug("System prompts assembled")
     return prompts
 

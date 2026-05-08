@@ -17,9 +17,10 @@ Revision:
 2026.4.22      Yu Huang     1.3               Bash support\n
 2026.4.25-26   Yu Huang     1.4               Ask user support\n
 2026.4.28      Yu Huang     1.5               Permission request & Exit TUI support\n
+2026.4.29      Yu Huang     1.6               Builtin commands support\n
 
 Details:
-Prompts of available tools of TECoSim agent
+Prompts and realization of tools that TECoSim agent can call
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
@@ -32,14 +33,14 @@ import shlex
 from typing import Any
 from rich.progress import Progress
 from src.constants import *
-from src.context.session import AgentContext
+from src.context.agent_context import AgentContext
 from src.utility.ui_info import ask_permission_tui
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled, OTHER_LABEL, RECOMMEND_LABEL
 
 sys_log = logging.getLogger('logger')
 
 
-def create_tools_prompts() -> list[dict[str, Any]]:
+def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """create prompts of all available tools"""
     prompts: list[dict[str, Any]] = [
         tool_check_simulator_def(),
@@ -54,7 +55,9 @@ def create_tools_prompts() -> list[dict[str, Any]]:
         (tool_bash_def()),
         (tool_ask_user_question_def())
     ]
-    sys_log.debug("Tools prompts assembled")
+    tool_num = len(prompts)
+    ctx.tools_prompts = tool_num
+    sys_log.debug(f"{tool_num} tools prompts assembled")
     return prompts
 
 
@@ -1144,19 +1147,19 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
                 has_recursive = bool(re.search(r'(^|\s)(-r|-R|--recursive)(\s|$)', cmd))
                 has_force = bool(re.search(r'(^|\s)(-f|--force)(\s|$)', cmd))
                 if has_recursive and has_force:
-                    risk = BASH_RMRF_LABEL
+                    risk = BASH_REMOVAL_RF_LABEL
                     reason = "Recursive forced removal (rm/rmdir -rf)"
                     level = 1
                 elif has_recursive:
-                    risk = BASH_RMR_LABEL
+                    risk = BASH_REMOVAL_R_LABEL
                     reason = "Recursive removal (rm/rmdir -r)"
                     level = 2
                 elif has_force:
-                    risk = BASH_RMF_LABEL
+                    risk = BASH_REMOVAL_F_LABEL
                     reason = "Forced removal (rm/rmdir -f)"
                     level = 2
                 else:
-                    risk = BASH_RM_LABEL
+                    risk = BASH_REMOVAL_LABEL
                     reason = "Low-risk file removal"
                     level = 3
             elif "chmod" in cmd:

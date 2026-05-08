@@ -18,7 +18,7 @@ Revision:
 2026.4.25-26   Yu Huang     1.4               Ask user support\n
 
 Details:
-Tools execution of the TECoSim agent
+Execution of tools that TECoSim agent can call
 ------------------------------------------------------------------------------------------------------------------------
 """
 import json
@@ -27,7 +27,7 @@ import logging
 from src.constants import MAJOR_COLOR1
 from src.tool import tool_def
 from typing import Any
-from src.context.session import AgentContext
+from src.context.agent_context import AgentContext
 from rich.progress import Progress
 
 sys_log = logging.getLogger('logger')

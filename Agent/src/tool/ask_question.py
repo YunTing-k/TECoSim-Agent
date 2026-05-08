@@ -14,7 +14,7 @@ Revision:
 2026.4.23      Yu Huang     1.1               Multi-select support and render optimization\n
 
 Details:
-Simple ask user question TUI based on Rich and prompt_toolkit.
+Ask user question TUI that TECoSim agent can call
 ------------------------------------------------------------------------------------------------------------------------
 """
 import logging

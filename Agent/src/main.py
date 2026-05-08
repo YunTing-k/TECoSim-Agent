@@ -16,18 +16,20 @@ Revision:
 2026.4.25-26   Yu Huang     1.3               Reasoning support\n
 2026.4.26      Yu Huang     1.4               Quick interrupt support\n
 2026.4.28      Yu Huang     1.5               Exit TUI support\n
+2026.4.29      Yu Huang     1.6               Builtin commands support\n
+
 Details:
 Main entry point of the TECoSim agent
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
-import sys
 import openai
 
-from src.utility import sys_logger, cli_args, ui_info, client
+from src.utility import sys_logger, cli_args, ui_info, client, command
 from rich.console import Console
 from rich.markdown import Markdown
 from src.context import session, prompt
+from src.context.agent_context import AgentContext
 from src.tool import tool_def, tool_execute
 from src.constants import *
 
@@ -46,7 +48,8 @@ if __name__ == '__main__':
     ui_info.console_tecosim_agent_info(console)
 
     """create agent context"""
-    ctx = session.AgentContext()
+    ctx = AgentContext()
+    ctx.console = console
     sys_log.debug("Context of TECoSim Agent created")
     console.print(f"Context of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
 
@@ -70,7 +73,7 @@ if __name__ == '__main__':
     """load Agent configs and query prompts"""
     ctx.agent_configs = client.load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
     ctx.messages = prompt.query_prompts(ctx, ctx.args.resume, console)
-    ctx.tools = tool_def.create_tools_prompts()
+    ctx.tools = tool_def.create_tools_prompts(ctx)
 
     """core agent loop"""
     while True:
@@ -78,7 +81,13 @@ if __name__ == '__main__':
             if ctx.task_end:
                 """user prompts & request"""
                 user_input = agent_session.prompt("> ")
-                ctx.messages.append({"role": "user", "content": user_input})
+                results = session.cmd_lexer(user_input)
+                if results is not None:  # command input
+                    command.execute_cmd(results[0], results[1], ctx, console)
+                    continue
+                else:  # plain text input
+                    ctx.messages.append({"role": "user", "content": user_input})
+                    ctx.user_prompts += 1
             else:
                 """second response with previous loop's tool results"""
                 pass
@@ -99,8 +108,11 @@ if __name__ == '__main__':
             """check the usage"""
             usage = response.usage
             ctx.total_input_tokens += usage.prompt_tokens
+            ctx.last_input_tokens = usage.prompt_tokens
             ctx.total_output_tokens += usage.completion_tokens
+            ctx.last_output_tokens = usage.completion_tokens
             ctx.total_tokens += usage.total_tokens
+            ctx.last_tokens = usage.total_tokens
             cached_tokens = usage.prompt_tokens_details.cached_tokens
             uncached_tokens = usage.prompt_tokens - usage.prompt_tokens_details.cached_tokens  # uncached input tokens
             ctx.total_uncached_tokens += uncached_tokens
@@ -134,6 +146,7 @@ if __name__ == '__main__':
 
             """display reasoning"""
             if assistant_reasoning is not None and not "":
+                ctx.reasoning_prompts += 1
                 console.print("\n")
                 if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
                     console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
@@ -143,6 +156,7 @@ if __name__ == '__main__':
                     console.print("\n")
             """display chat"""
             if assistant_chat is not None:
+                ctx.content_prompts += 1
                 if assistant_reasoning is None and not "":
                     console.print("\n")
                 if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
@@ -155,15 +169,19 @@ if __name__ == '__main__':
             if assistant_tool_calls is not None:
                 ctx.task_end = False
                 sys_log.debug("Tools call start")
+                ctx.tool_calls_prompts += len(assistant_tool_calls)
                 with ui_info.loading_spinner(waiting_desc="Tools calling", done_desc="Tools execution done") as progress:
                     tools_response = tool_execute.execute_tools(tool_calls=assistant_tool_calls, ctx=ctx, progress=progress)
                     ctx.messages.extend(tools_response)
+                    ctx.tool_results_prompts += len(tools_response)
             else:
                 ctx.task_end = True
         except openai.APITimeoutError:
             """API timeout"""
             if ctx.task_end:  # no tool calls, only user prompt, so pop it
                 ctx.messages.pop()
+                if ctx.user_prompts >= 1:
+                    ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
             sys_log.warning(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
@@ -173,6 +191,8 @@ if __name__ == '__main__':
             """LLM API request cancelled"""
             if ctx.task_end:  # no tool calls, only user prompt, so pop it
                 ctx.messages.pop()
+                if ctx.user_prompts >= 1:
+                    ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
             sys_log.warning(f"LLM request canceled, but the connection is not killed, token consumption can't be avoided")

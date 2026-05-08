@@ -36,7 +36,7 @@ from contextlib import contextmanager
 from typing import Callable, Any
 from src.utility.client import RequestLLMCancelled
 from src.context import prompt
-from src.context.session import AgentContext
+from src.context.agent_context import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -152,7 +152,7 @@ def llm_request_with_spinner(func: Callable, *args,
                              **kwargs) -> Any:
     """LLM request with spinner and signal"""
     result = [None]
-    exception = [None]
+    exception: list[Exception | None] = [None]
     interrupted = False
 
     def sigint_handler(signum, frame):
