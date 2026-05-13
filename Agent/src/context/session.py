@@ -15,6 +15,7 @@ Revision:
 2026.4.16      Yu Huang     1.2               Agent context realization with logic merge\n
 2026.4.28      Yu Huang     1.3               Permission request support\n
 2026.4.29      Yu Huang     1.4               Builtin commands support\n
+2026.5.13      Yu Huang     1.5               Bugfix of Mouse scrolling\n
 
 Details:
 Session management with create, resume
@@ -125,7 +126,7 @@ def get_prompt_session(path: str) -> PromptSession:
     session = PromptSession(
         history=FileHistory(path + "/user_history"),
         auto_suggest=AutoSuggestFromHistory(),
-        mouse_support=True,
+        mouse_support=False,
         show_frame=True,
         cursor=cursor_shapes.CursorShape.BLINKING_UNDERLINE,
         validator=PromptValidator(),

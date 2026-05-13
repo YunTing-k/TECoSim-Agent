@@ -1,7 +1,7 @@
 {
     "API_URL": "http://localhost:8080/openai",
     "API_KEY": "sk-1234",
-    "MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "MODEL_NAME": "dpsko/deepseek-v4-pro",
     "MODEL_CONTEXT": 1000000,
     "MODEL_TEMPERATURE": 0.3,
     "MODEL_ENABLE_REASONING": false,

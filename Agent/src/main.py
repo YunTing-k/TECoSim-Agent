@@ -17,6 +17,7 @@ Revision:
 2026.4.26      Yu Huang     1.4               Quick interrupt support\n
 2026.4.28      Yu Huang     1.5               Exit TUI support\n
 2026.4.29      Yu Huang     1.6               Builtin commands support\n
+2026.5.13      Yu Huang     1.7               Bugfix of LLM context detection\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -136,11 +137,11 @@ if __name__ == '__main__':
                 else:
                     sys_log.warning(f"There is only reasoning content in LLM's message")
                     console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
-            if ctx.total_input_tokens >= ctx.api_configs["MODEL_CONTEXT"]:
+            if ctx.last_input_tokens >= ctx.api_configs["MODEL_CONTEXT"]:
                 sys_log.error(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
                 console.print(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens", style="bold red")
                 raise RuntimeError(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
-            if ctx.total_input_tokens >= ctx.api_configs["MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
+            if ctx.last_input_tokens >= ctx.api_configs["MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
                 sys_log.warning(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
                 console.print(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context", style="bold yellow")
 

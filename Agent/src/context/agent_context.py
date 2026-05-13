@@ -12,11 +12,13 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.29      Yu Huang     1.0               Separate from session module\n
 2026.4.29      Yu Huang     1.1               Builtin commands support\n
+2026.5.12      Yu Huang     1.2               Edit file support\n
 
 Details:
 Agent's context management with save/load
 ------------------------------------------------------------------------------------------------------------------------
 """
+import os
 import uuid
 import json
 import logging
@@ -61,6 +63,7 @@ class AgentContext:
         self.last_tokens: int = 0
         self.simulation_launched: int = 0
         self.design_created: list[int] = []
+        self.files_read: dict[str, int] = {}
         # signals
         self.task_end: bool = True  # (don't dump)
         self.permissions: dict[str, bool] = {
@@ -70,6 +73,7 @@ class AgentContext:
             "read_log": False,
             "read_file": False,
             "write_file": False,
+            "edit_file": False,
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,
@@ -85,6 +89,14 @@ class AgentContext:
             f"{BASH_UNKNOWN_LABEL}": False,
             f"{BASH_SAFE_LABEL}": False
         }
+
+    def file_read_log(self, path: str):
+        """read-in file log"""
+        file_path = os.path.abspath(path)
+        if path not in self.files_read.keys():
+            self.files_read[file_path] = 1
+        else:
+            self.files_read[file_path] += 1
 
     def to_dict(self, console: Console) -> dict:
         """convert class to dict"""
@@ -104,6 +116,7 @@ class AgentContext:
             "last_tokens": self.last_tokens,
             "simulation_launched": self.simulation_launched,
             "design_created": self.design_created,
+            "files_read": self.files_read,
             "permissions": self.permissions
         }
 
@@ -129,6 +142,7 @@ class AgentContext:
             self.last_tokens = in_dict["last_tokens"]
             self.simulation_launched = in_dict["simulation_launched"]
             self.design_created = in_dict["design_created"]
+            self.files_read = in_dict["files_read"]
             self.permissions = in_dict["permissions"]
 
             sys_log.debug(f"Context of session {self.session_uuid} converted from dict")

@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.22      Yu Huang     1.0               First implementation\n
 2026.4.23      Yu Huang     1.1               Multi-select support and render optimization\n
+2026.5.12      Yu Huang     1.2               TUI event trigger support\n
 
 Details:
 Ask user question TUI that TECoSim agent can call
@@ -229,18 +230,26 @@ def ask_user_question_tui(questions: list[dict[str, Any]], console: Console, age
             with input_device.raw_mode():
                 input_device.flush_keys()
                 with Live(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache),
-                          console=console, refresh_per_second=TUI_REFRESH_RATE, transient=True) as live:
+                          console=console, auto_refresh=False, transient=True) as live:
                     while True:
                         key_press = input_device.read_keys()
                         for key in key_press:
                             if key.key == Keys.Up:
                                 selected_indices[active_idx] = (selected_indices[active_idx] - 1) % len(questions_normalized[active_idx]["options"])
+                                live.update(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache))
+                                live.refresh()
                             elif key.key == Keys.Down:
                                 selected_indices[active_idx] = (selected_indices[active_idx] + 1) % len(questions_normalized[active_idx]["options"])
+                                live.update(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache))
+                                live.refresh()
                             elif key.key == Keys.Left:
                                 active_idx = (active_idx - 1) % len(questions_normalized)
+                                live.update(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache))
+                                live.refresh()
                             elif key.key == Keys.Right:
                                 active_idx = (active_idx + 1) % len(questions_normalized)
+                                live.update(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache))
+                                live.refresh()
                             elif key.key == Keys.Enter:
                                 option = questions_normalized[active_idx]["options"][selected_indices[active_idx]]
                                 if option.get("label") == OTHER_LABEL:
@@ -255,7 +264,6 @@ def ask_user_question_tui(questions: list[dict[str, Any]], console: Console, age
                                 raise AskUserCancelled("ask question cancelled by user")
                         if action is not None:  # no action no break
                             break
-                        live.update(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache))
         finally:
             input_device.close()
 

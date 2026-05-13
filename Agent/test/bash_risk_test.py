@@ -1,15 +1,15 @@
-from src.tool import tool_def
+from src.tool.bash_support import split_commands, get_bash_risk
 
 def evaluate_bash_risk(commands: str):
     """evaluate the risk of given bash commands"""
-    cmd_list = tool_def.split_commands(commands)
+    cmd_list = split_commands(commands)
     if len(cmd_list) == 0:
         return "N/A", "Empty command", 9
     cmd_level_list: list[int] = []
     cmd_risk_list: list[str] = []
     cmd_reason_list: list[str] = []
     for idx, cmd_str in enumerate(cmd_list):
-        risk, reason, level = tool_def.get_bash_risk(cmd_str)
+        risk, reason, level = get_bash_risk(cmd_str)
         cmd_risk_list.append(risk)
         cmd_reason_list.append(reason)
         cmd_level_list.append(level)
@@ -31,7 +31,7 @@ print(evaluate_bash_risk(cmd))
 cmd = '14aav 111'
 print(evaluate_bash_risk(cmd))
 
-cmd = 'rm -rf'
+cmd = 'rm -rf /'
 print(evaluate_bash_risk(cmd))
 
 cmd = 'chmod 676'
@@ -47,4 +47,13 @@ cmd = 'chmod7777'
 print(evaluate_bash_risk(cmd))
 
 cmd = 'dir'
+print(evaluate_bash_risk(cmd))
+
+cmd = 'curl 123.com'
+print(evaluate_bash_risk(cmd))
+
+cmd = 'sort > /dev/1.txt'
+print(evaluate_bash_risk(cmd))
+
+cmd = 'sort > /1.txt'
 print(evaluate_bash_risk(cmd))

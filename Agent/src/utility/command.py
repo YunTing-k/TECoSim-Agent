@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.29      Yu Huang     1.0               First implementation\n
+2026.5.12      Yu Huang     1.1               Add builtin command of querying read file\n
 
 Details:
 Realization of builtin commands
@@ -139,6 +140,25 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
+def cmd_query_fread(args: Any, ctx: AgentContext, console: Console):
+    """query the absolute paths of all read files"""
+    title = "TECoSim Agent Files Read"
+    cmd_str = Text()
+    cmd_str.append(f"{len(ctx.files_read)} ", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" files read by TECoSim Agent\n\n", style=f"white")
+
+    cmd_str.append("File list: \n", style=f"bold {MAJOR_COLOR2}")
+    for path, amount in ctx.files_read.items():
+        cmd_str.append(f"{path}: ", style=f"white")
+        cmd_str.append(f"{amount}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(" times\n", style=f"white")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
 def cmd_permission_list(args: Any, ctx: AgentContext, console: Console):
     """query the configs of always-allowed-configurable tool calls permission token"""
     title = "TECoSim Agent Tool Call Permission"
@@ -215,6 +235,7 @@ BUILTIN_COMMANDS = {
     "query_design": (cmd_query_design, "list designs", "query the list of current designs"),
     "query_run": (cmd_query_run, "list runs", "query the amount of launched simulation"),
     "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
+    "query_fread": (cmd_query_fread, "query all read files", "query the absolute paths of all read files"),
     "permission_list": (cmd_permission_list, "query permission info",
                         "query the configs of always-allowed-configurable tool calls permission token"),
     "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",

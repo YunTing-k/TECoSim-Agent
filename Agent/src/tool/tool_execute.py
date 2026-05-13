@@ -16,6 +16,7 @@ Revision:
                                               general read/write file\n
 2026.4.22      Yu Huang     1.3               Bash support\n
 2026.4.25-26   Yu Huang     1.4               Ask user support\n
+2026.5.13      Yu Huang     1.5               Edit file support\n
 
 Details:
 Execution of tools that TECoSim agent can call
@@ -73,6 +74,8 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
             results = tool_def.read_file(arguments, ctx, progress)
         elif func_name.lower() == "write_file":
             results = tool_def.write_file(arguments, ctx, progress)
+        elif func_name.lower() == "edit_file":
+            results = tool_def.edit_file(arguments, ctx, progress)
         elif func_name.lower() == "bash":
             results = tool_def.bash(arguments, ctx, progress)
         elif func_name.lower() == "ask_user_question":
