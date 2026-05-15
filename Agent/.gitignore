@@ -3,6 +3,7 @@
 /.idea
 /gateway.bat
 /session/*
+/skills/*
 /src/__pycache__
 /src/context/__pycache__
 /src/tool/__pycache__

@@ -13,6 +13,7 @@ Revision:
 2026.4.29      Yu Huang     1.0               Separate from session module\n
 2026.4.29      Yu Huang     1.1               Builtin commands support\n
 2026.5.12      Yu Huang     1.2               Edit file support\n
+2026.5.15      Yu Huang     1.3               Agent skills support\n
 
 Details:
 Agent's context management with save/load
@@ -41,6 +42,7 @@ class AgentContext:
         # prompts
         self.messages: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
         self.tools: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
+        self.skills: list[dict[str, str]] = []   # (don't dump)
         # objects
         self.agent_session: PromptSession | None = None  # (don't dump)
         self.console: Console | None = None  # (don't dump)
@@ -64,6 +66,7 @@ class AgentContext:
         self.simulation_launched: int = 0
         self.design_created: list[int] = []
         self.files_read: dict[str, int] = {}
+        self.loaded_skills: list[dict[str, str]] = []
         # signals
         self.task_end: bool = True  # (don't dump)
         self.permissions: dict[str, bool] = {
@@ -74,6 +77,7 @@ class AgentContext:
             "read_file": False,
             "write_file": False,
             "edit_file": False,
+            "skill": False,
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,
@@ -117,6 +121,7 @@ class AgentContext:
             "simulation_launched": self.simulation_launched,
             "design_created": self.design_created,
             "files_read": self.files_read,
+            "loaded_skills": self.loaded_skills,
             "permissions": self.permissions
         }
 
@@ -143,6 +148,7 @@ class AgentContext:
             self.simulation_launched = in_dict["simulation_launched"]
             self.design_created = in_dict["design_created"]
             self.files_read = in_dict["files_read"]
+            self.loaded_skills = in_dict["loaded_skills"]
             self.permissions = in_dict["permissions"]
 
             sys_log.debug(f"Context of session {self.session_uuid} converted from dict")

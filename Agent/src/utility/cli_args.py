@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.8       Yu Huang     1.0               First implementation\n
 2026.4.28      Yu Huang     1.1               Dangerously allow all permissions support\n
+2026.5.15      Yu Huang     1.2               Disable all skills support\n
 
 Details:
 Argument definitions of the TECoSim agent
@@ -26,6 +27,7 @@ def tecosim_agent_args() -> Namespace:
     parser = argparse.ArgumentParser(description='Thermo-Electric Coupling Cross-level Display Simulator (TECoSim) Agent')
     parser.add_argument('-l', '--log', help='To enable dev logger', action='store_true')
     parser.add_argument('-r', '--resume', type=str, help='Resume with session UUID', metavar='<UUID>')
+    parser.add_argument('--noskills', help='To disable all skills', action='store_true')
     parser.add_argument('--dangerously_allow_all', help='Dangerously allow all permissions, this may damage '
                                                         'your workspace or computer. Think twice before toggle this flag!',
                         action='store_true')

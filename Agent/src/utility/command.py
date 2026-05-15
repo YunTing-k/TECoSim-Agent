@@ -12,22 +12,26 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.4.29      Yu Huang     1.0               First implementation\n
 2026.5.12      Yu Huang     1.1               Add builtin command of querying read file\n
+2026.5.15      Yu Huang     1.2               Revise builtin command management\n
+2026.5.15      Yu Huang     1.3               Agent skills support\n
 
 Details:
 Realization of builtin commands
 ------------------------------------------------------------------------------------------------------------------------
 """
+import json
 import logging
-from typing import Callable, Any
 
+from functools import partial
+from typing import Callable, Any
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
 from src.context.agent_context import AgentContext
+from src.tool.skills_support import load_skill_content, get_skill_description
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
-BUILTIN_COMMANDS: dict[str, tuple[Callable[..., Any], str, str]]
 BUILTIN_UNKNOWN = "UNKNOWN"
 
 
@@ -37,22 +41,6 @@ def cmd_unknown(console: Console):
     cmd_str.append("Unknown command ", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("called, nothing happen", style=f"white")
     console.print(cmd_str)
-
-
-def cmd_help(args: Any, ctx: AgentContext, console: Console):
-    """print all available commands"""
-    title = "Available Commands"
-    cmd_str = Text()
-    for cmd, (func, label, desc) in BUILTIN_COMMANDS.items():
-        cmd_str.append(f"/{cmd}", style=f"bold {MAJOR_COLOR1}")
-        cmd_str.append(f": ", style=f"white")
-        cmd_str.append(f"{label}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f", {desc}\n", style=f"white")
-    if cmd_str.plain.endswith("\n"):
-        cmd_str.rstrip()
-    console.print(Panel.fit(cmd_str, title=title, title_align="left",
-                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
-    console.print("\n")
 
 
 def cmd_query_design(args: Any, ctx: AgentContext, console: Console):
@@ -97,7 +85,7 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append(f"{ctx.total_uncached_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", uncached: ", style=f"white")
     cmd_str.append(f"{uncached_rate} %", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(", cached: \n", style=f"white")
+    cmd_str.append(", cached: ", style=f"white")
     cmd_str.append(f"{100 - uncached_rate} %\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Total tokens consumption of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
@@ -107,7 +95,7 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append(f"{ctx.last_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Last dialogue total tokens of this session: ", style=f"white")
     cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("LLM API context usage based (last dialogue) of this session: ", style=f"white")
+    cmd_str.append("Last dialogue's context usage of this session: ", style=f"white")
     cmd_str.append(f"{ctx_usage} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
@@ -133,6 +121,24 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append(f"{ctx.tool_calls_prompts}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Tool results prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_results_prompts}\n", style=f"bold {MAJOR_COLOR2}")
+
+    cmd_str.append("\nAvailable skills amount: ", style=f"white")
+    cmd_str.append(f"{len(ctx.skills)}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append("Available skills: ", style=f"white")
+    for skill in ctx.skills:
+        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ,", style=f"white")
+    if cmd_str.plain.endswith(" ,"):
+        cmd_str.right_crop(2)
+    cmd_str.append("\nLoaded skills amount: ", style=f"white")
+    cmd_str.append(f"{len(ctx.loaded_skills)}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append("Loaded skills: ", style=f"white")
+    for skill in ctx.loaded_skills:
+        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ,", style=f"white")
+    if cmd_str.plain.endswith(" ,"):
+        cmd_str.right_crop(2)
+
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -229,26 +235,173 @@ def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
     console.print(f"Unknown permission name {arg_name}, toggle failed", style=f"bold yellow")
 
 
-"""builtin cmd definitions"""
-BUILTIN_COMMANDS = {
-    "help": (cmd_help, "help info", "print all available builtin commands"),
-    "query_design": (cmd_query_design, "list designs", "query the list of current designs"),
-    "query_run": (cmd_query_run, "list runs", "query the amount of launched simulation"),
-    "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
-    "query_fread": (cmd_query_fread, "query all read files", "query the absolute paths of all read files"),
-    "permission_list": (cmd_permission_list, "query permission info",
-                        "query the configs of always-allowed-configurable tool calls permission token"),
-    "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",
-                        "toggle the permission token of the tool calls permission with given name"),
-}
+def cmd_query_skills(args: Any, ctx: AgentContext, console: Console):
+    """query all available skills (truncate)"""
+    title = f"Available Skills ({len(ctx.skills)})"
+    limit = ctx.agent_configs["SKILL_DESCRIPTION_LIMIT"]
+    cmd_str = Text()
+    for skill in ctx.skills:
+        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f": ", style=f"white")
+        if len(skill["description"]) > limit:
+            cmd_str.append(f" {skill["description"][:limit]}...\n\n", style=f"white")
+        else:
+            cmd_str.append(f" {skill["description"]}\n\n", style=f"white")
+    if cmd_str.plain.endswith("\n\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
 
 
-def execute_cmd(cmd: str, args: list[str], ctx: AgentContext, console: Console):
-    """execute builtin command"""
-    if cmd == BUILTIN_UNKNOWN:
-        sys_log.debug("Unknown command called, nothing happen")
-        cmd_unknown(console)
-    else:
-        sys_log.debug(f"Command call: {cmd} with args {args} start")
-        BUILTIN_COMMANDS[cmd][0](args, ctx, console)
-        sys_log.debug(f"Command call: {cmd} done")
+def cmd_query_loaded_skills(args: Any, ctx: AgentContext, console: Console):
+    """query all loaded skills (no truncate)"""
+    title = f"Loaded Skills ({len(ctx.loaded_skills)})"
+    cmd_str = Text()
+    for skill in ctx.loaded_skills:
+        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f": ", style=f"white")
+        cmd_str.append(f" {skill["description"]}\n\n", style=f"white")
+    if cmd_str.plain.endswith("\n\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
+def skill_bound_command(name: str, func: Callable, *args, **kwargs):
+    """crete a partial function for loading skills"""
+    bound_func = partial(func, *args, **kwargs)
+    bound_func.__name__ = name
+    return bound_func
+
+
+def cmd_load_skills(skill_name: str, args: Any, ctx: AgentContext, console: Console):
+    """manually load the full prompts of skill to context immediately"""
+    try:
+        content = load_skill_content("./skills", skill_name, console, True)
+        if content is None:
+            sys_log.warning(f"Load skill {skill_name} manually failed")
+            console.print(f"Load skill {skill_name} manually failed", style=f"bold yellow")
+            ctx.messages.append(
+                {"role": "user", "content": f"<Load skill {skill_name} manually by user failed>"})
+        else:
+            ctx.messages.append({"role": "user", "content": json.dumps(content)})
+        if not any(item.get("name") == skill_name for item in ctx.loaded_skills):  # registered skills must be available
+            ctx.loaded_skills.append({
+                "name": skill_name,
+                "description": str(get_skill_description(skill_name, ctx.skills)),
+            })
+    except Exception as e:
+        sys_log.warning(f"Load skill {skill_name} manually failed with error {e}")
+        console.print(f"Load skill {skill_name} manually failed with error {e}", style=f"bold yellow")
+        ctx.messages.append(
+            {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
+
+
+class BuiltinCommands:
+    """builtin command class"""
+    def __init__(self, console: Console):
+        self._commands: dict[str, tuple[Callable[..., Any], str, str]] = {
+            "help": (self.cmd_help, "help info", "print all available builtin commands"),
+            "query_design": (cmd_query_design, "list designs", "query the list of current designs"),
+            "query_run": (cmd_query_run, "list runs", "query the amount of launched simulation"),
+            "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
+            "query_fread": (cmd_query_fread, "query all read files", "query the absolute paths of all read files"),
+            "permission_list": (cmd_permission_list, "query permission info",
+                                "query the configs of always-allowed-configurable tool calls permission token"),
+            "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",
+                                "toggle the permission token of the tool calls permission with given name"),
+            "query_skills": (cmd_query_skills, "query all available skills",
+                                               "query all the available skills with name and truncated description"),
+            "query_loaded_skills": (cmd_query_loaded_skills, "query all loaded skills",
+                                               "query all the loaded skills with name and full description"),
+        }
+        self._request_commands: list[str] = []
+        sys_log.debug(f"{len(self._commands)} builtin commands initialized")
+        console.print(f"[{MAJOR_COLOR2}]{len(self._commands)}[/{MAJOR_COLOR2}] builtin commands initialized")
+
+
+    def get_all_commands(self) -> dict[str, tuple[Callable, str, str]]:
+        """get copy of all available commands"""
+        return self._commands.copy()
+
+
+    def register(self, name: str, func: Callable, short_desc: str, long_desc: str, request_llm: bool):
+        """register a new command, raise error if function already exists"""
+        if name in self._commands:
+            raise ValueError(f"Command '{name}' already registered")
+
+        for cmd_name, (existing_func, _, _) in self._commands.items():
+            if existing_func.__name__ == func.__name__:
+                raise ValueError(f"Function '{func.__name__}' already registered as command '{cmd_name}'")
+        self._commands[name] = (func, short_desc, long_desc)
+        if request_llm:
+            self._request_commands.append(name)
+
+
+    def unregister(self, name: str):
+        """unregister a command"""
+        self._commands.pop(name, None)
+        if name in self._request_commands:
+            self._request_commands.remove(name)
+
+
+    def register_skills(self, skills: list[dict[str, str]], console: Console):
+        """register skills as builtin commands"""
+        registered_skills = 0
+        for skill in skills:
+            if skill["name"] in self._commands:
+                sys_log.warning(f"Skill with '{skill['name']}' is already registered")
+                console.print(f"Skill with '{skill['name']}' is already registered", style="bold yellow")
+            else:
+                self.register(skill["name"], skill_bound_command(skill["name"], cmd_load_skills, skill["name"]),
+                              "load skill immediately",
+                              f"load the skill {skill['name']} immediately to context", True)
+                registered_skills += 1
+        sys_log.debug(f"{registered_skills} skills registered as builtin commands, "
+                      f"{len(self._commands)} builtin commands available")
+        console.print(f"[{MAJOR_COLOR2}]{registered_skills}[/{MAJOR_COLOR2}] skills registered as builtin commands, "
+                      f"[{MAJOR_COLOR2}]{len(self._commands)}[/{MAJOR_COLOR2}] builtin commands available")
+
+
+    def cmd_help(self, args: Any, ctx: AgentContext, console: Console):
+        """print all available commands"""
+        title = "Available Commands"
+        cmd_str = Text()
+        for cmd, (func, label, desc) in self._commands.items():
+            cmd_str.append(f"/{cmd}", style=f"bold {MAJOR_COLOR1}")
+            cmd_str.append(f": ", style=f"white")
+            cmd_str.append(f"{label}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f", {desc}\n", style=f"white")
+        if cmd_str.plain.endswith("\n"):
+            cmd_str.rstrip()
+        console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                                padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+        console.print("\n")
+
+
+    def execute_cmd(self, cmd: str, args: list[str], ctx: AgentContext, console: Console) -> bool:
+        """execute builtin command, return if goto the LLM request"""
+        if cmd == BUILTIN_UNKNOWN:
+            sys_log.debug("Unknown command called, nothing happen")
+            cmd_unknown(console)
+            return False
+        else:
+            sys_log.debug(f"Command call: {cmd} with args {args} start")
+            self._commands[cmd][0](args, ctx, console)
+            sys_log.debug(f"Command call: {cmd} done")
+            if cmd in self._request_commands:
+                return True
+            else:
+                return False
+
+
+    def __contains__(self, name: str) -> bool:
+        """in operations"""
+        return name in self._commands
+
+
+    def __iter__(self):
+        """iterator"""
+        return iter(self._commands.items())

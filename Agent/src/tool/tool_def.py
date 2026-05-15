@@ -21,6 +21,8 @@ Revision:
 2026.5.12      Yu Huang     1.7               Move bash support to bash_support.py\n
 2026.5.12      Yu Huang     1.8               Edit file support\n
 2026.5.13      Yu Huang     1.9               Read file with truncation\n
+2026.5.14      Yu Huang     2.0               Move read lines/logs methods to file_io_support.py & revise tool defs\n
+2026.5.15      Yu Huang     2.1               Agent skills support\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -30,14 +32,13 @@ import os
 import subprocess
 import logging
 import shutil
-import re
 
 from typing import Any
 from rich.progress import Progress
 from src.constants import *
 from src.context.agent_context import AgentContext
-from src.tool import edit_file_support
-from src.tool.edit_file_support import ask_edit_tui
+from src.tool.file_io_support import read_line_with_limit, clean_stdout_log, clean_stderr_log, match_line_ranges, ask_edit_tui
+from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled, OTHER_LABEL, RECOMMEND_LABEL
@@ -48,18 +49,21 @@ sys_log = logging.getLogger('logger')
 def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """create prompts of all available tools"""
     prompts: list[dict[str, Any]] = [
+        # basic tools
+        tool_ask_user_question_def(),
+        tool_bash_def(),
+        tool_read_file_def(),
+        tool_write_file_def(),
+        tool_edit_file_def(),
+        tool_skill_def(),
+        # expert tools
         tool_check_simulator_def(),
         tool_init_design_def(),
         tool_copy_design_def(),
         tool_query_design_list_def(),
         tool_launch_simulator_def(),
-        (tool_query_run_num_def()),
-        (tool_read_log_def()),
-        (tool_read_file_def()),
-        (tool_write_file_def()),
-        (tool_edit_file_def()),
-        (tool_bash_def()),
-        (tool_ask_user_question_def())
+        tool_query_run_num_def(),
+        tool_read_log_def(),
     ]
     tool_num = len(prompts)
     ctx.tools_prompts = tool_num
@@ -68,11 +72,11 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
 
 
 def tool_get_agent_version_def() -> dict[str, Any]:
-    """tool definition of getting current version of TECoSim Agent (get_agent_version)"""
+    """tool definition of getting current version of TECoSim Agent (agent_version)"""
     tool_def = {
         "type": "function",
         "function": {
-            "name": "get_agent_version",
+            "name": "agent_version",
             "description": "Get the current version of the TECoSim Agent",
             "parameters": {
                 "type": "object",
@@ -85,13 +89,832 @@ def tool_get_agent_version_def() -> dict[str, Any]:
     return tool_def
 
 
-def get_agent_version(progress: Progress) -> dict[str, Any]:
+def agent_version(progress: Progress) -> dict[str, Any]:
     """tool realization of getting the dev version of TECoSim agent"""
     progress.console.print(f"get_agent_version SUCCESS: "
                            f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}",
                            style="bright_black")
     return {"status": "SUCCESS",
             "version": f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}"}
+
+
+def tool_ask_user_question_def() -> dict[str, Any]:
+    """tool definition of asking structured questions to the user (ask_user_question)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "ask_user_question",
+            "description": "Use this tool to ask the user questions when you need. This allows you to:\n"
+                           "1. Gather user preferences or requirements\n"
+                           "2. Clarify ambiguous instructions\n"
+                           "3. Get decisions on implementation choices as you work\n"
+                           "4. Offer choices to the user about what direction to take.\n"
+                           "Usage notes:\n"
+                           f"- User will always be able to select \"{OTHER_LABEL}\" to provide custom text input\n"
+                           f"- Use multi_select: true to allow multiple answers to be selected for a question\n"
+                           f"- If you recommend a specific option, make that the first option in the list and add \"({RECOMMEND_LABEL})\" "
+                           f"at the end of the label\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "description": "Questions to ask the user (1-4 questions).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": {
+                                    "type": "string",
+                                    "description": "The full question shown to the user."
+                                },
+                                "header": {
+                                    "type": "string",
+                                    "description": "Very short label displayed as a tag."
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 4,
+                                    "description": "The available options for this question. Must have 2-4 options. Each "
+                                                   "option should be a distinct, mutually exclusive choice (unless multi_select "
+                                                   f"is enabled). There should be no \"{OTHER_LABEL}\" option, that will be "
+                                                   f"provided automatically.",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {
+                                                "type": "string",
+                                                "description": "The display text for this option that the user will see "
+                                                               "and select. Should be concise and clearly describe the choice."
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "Explanation of what this option means or what will happen "
+                                                               "if chosen. Useful for providing context about trade-offs "
+                                                               "or implications."
+                                            }
+                                        },
+                                        "required": ["label", "description"],
+                                        "additionalProperties": False
+                                    }
+                                },
+                                "multi_select": {
+                                    "type": "boolean",
+                                    "description": "Set to true to allow the user to select multiple options instead of "
+                                                   "just one. Use when choices are not mutually exclusive",
+                                    "default": False
+                                }
+                            },
+                            "required": ["question", "header", "options", "multi_select"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["questions"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of asking structured questions to the user"""
+    try:
+        questions = arguments.get("questions", [])
+        if len(questions) == 0:
+            sys_log.error("ask_user_question FAIL: questions is empty")
+            progress.console.print("ask_user_question FAIL: questions is empty", style="bold red")
+            return {"status": "FAIL", "info": "questions is empty"}
+        if ctx.agent_session is None:
+            sys_log.error("ask_user_question FAIL: agent session is unavailable")
+            progress.console.print("ask_user_question FAIL: agent session is unavailable", style="bold red")
+            return {"status": "FAIL", "info": "agent session is unavailable"}
+        for idx, question in enumerate(questions, start=1):
+            options = question.get("options", [])
+            if len(options) == 0:
+                sys_log.error(f"ask_user_question FAIL: question {idx} has no options")
+                progress.console.print(f"ask_user_question FAIL: question {idx} has no options", style="bold red")
+                return {"status": "FAIL", "info": f"question {idx} has no options"}
+        progress.stop()
+        sys_log.debug(f"ask_user_question: waiting for user selection")
+        try:
+            answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
+        finally:
+            progress.start()
+        sys_log.debug(f"ask_user_question SUCCESS: {len(answers)} answers collected")
+        progress.console.print(f"ask_user_question SUCCESS: {len(answers)} answers collected", style="bright_black")
+        return {
+            "status": "SUCCESS",
+            "answers": answers,
+            "info": f"Collected {len(answers)} answers from user"
+        }
+    except AskUserCancelled as e:
+        sys_log.warning(f"ask_user_question FAIL: {e}")
+        progress.console.print(f"ask_user_question FAIL: {e}", style="bold yellow")
+        return {"status": "FAIL", "info": str(e)}
+    except KeyboardInterrupt:
+        sys_log.warning("ask_user_question FAIL: user cancelled")
+        progress.console.print("ask_user_question FAIL: user cancelled", style="bold yellow")
+        return {"status": "FAIL", "info": "user cancelled"}
+    except Exception as e:
+        sys_log.error(f"ask_user_question FAIL: Ask user question failed with error: {e}")
+        progress.console.print(f"ask_user_question FAIL: Ask user question failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Ask user question failed with error: {e}"}
+
+
+def tool_bash_def() -> dict[str, Any]:
+    """tool definition of bash (bash)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Executes a given bash command and returns its output. The working directory persists between "
+                           "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
+                           "IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, or `echo` commands, unless explicitly "
+                           "instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, "
+                           "use the appropriate dedicated tool as this will provide a much better experience for the user.\n"
+                           " - Read files: Prefer using `read_file` (NOT cat/head/tail)\n"
+                           " - Write files: Prefer using `write_file` (NOT echo >/cat <<EOF)\n"
+                           " - Edit files: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
+                           " - Communication: Output text directly (NOT echo/printf)\n"
+                           "While the Bash tool can do similar things, it’s better to use the built-in tools as they provide "
+                           "a better user experience and make it easier to review tool calls and give permission.\n"
+                           "# Instructions\n"
+                           " - If your command will create new directories or files, first use this tool to run `ls` to "
+                           "verify the parent directory exists and is the correct location.\n"
+                           " - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "
+                           "\"path with spaces/file.txt\")\n"
+                           " - Try to maintain your current working directory throughout the session by using absolute "
+                           "paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.\n"
+                           " - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, "
+                           "your command will timeout after 120000ms (2 minutes).\n"
+                           " - When issuing multiple commands:\n"
+                           "  - If the commands are independent and can run in parallel, make multiple Bash tool calls in"
+                           " a single message. Example: if you need to run `git status` and `git diff`, send a single "
+                           "message with two Bash tool calls in parallel.\n"
+                           "  - If the commands depend on each other and must run sequentially, use a single Bash call with "
+                           "\"&&\" to chain them together.\n"
+                           "  - Use \";\" only when you need to run commands sequentially but don't care if earlier commands fail.\n"
+                           "  - DO NOT use newlines to separate commands (newlines are ok in quoted strings).\n"
+                           " - Avoid unnecessary `sleep` commands:\n"
+                           "  - Do not sleep between commands that can run immediately — just run them.\n"
+                           "  - Do not retry failing commands in a sleep loop — diagnose the root cause.\n"
+                           "  - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command to execute",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Clear, concise description of what this command does in active voice. Never use "
+                                       "words like \"complex\" or \"risk\" in the description - just describe what it does. "
+                                       "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):\n"
+                                       "- ls → \"List files in current directory\"\n"
+                                       "- git status → \"Show working tree status\"\n"
+                                       "- npm install → \"Install package dependencies\"\n\n"
+                                       "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), "
+                                       "add enough context to clarify what it does:\n"
+                                       "- find . -name \"*.tmp\" -exec rm {} \\; → \"Find and delete all .tmp files recursively\"\n"
+                                       "- git reset --hard origin/main → \"Discard all local changes and match remote main\"\n"
+                                       "- curl -s url | jq '.data[]' → \"Fetch JSON from URL and extract data array elements\"",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "maximum": 600000,
+                        "description": "Optional timeout in milliseconds (max 600000, default 120000)",
+                        "default": 120000,
+                    }
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of bash command execution with arguments and AgentContext"""
+    try:
+        """evaluate the risk of bash command"""
+        risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
+        """request permission"""
+        progress.stop()
+        token = ask_permission_tui(ctx, risk, f"bash description: {arguments["description"]}, "
+                                   f"risk level: {level} with reason: {reason}. Full command: {arguments["command"]}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+        """execute command"""
+        command = arguments["command"]
+        description = arguments.get("description", "")
+        timeout = arguments.get("timeout", 120000)
+        sys_log.debug(f"bash: {description} start")
+        progress.console.print(f"bash: {description} start", style="bright_black")
+        proc = subprocess.Popen(["bash", "-c", command],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout / 1000)
+        except KeyboardInterrupt:
+            proc.terminate()
+            try:
+                proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+            sys_log.error(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted")
+            progress.console.print(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted", style="bold red")
+            return {"status": "CANCELLED",  # no need to return results if user cancel
+                    "info": "bash command is cancelled by user. Command interrupted"}
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                stdout, stderr = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+            sys_log.error(f"bash FAIL: "
+                          f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted")
+            progress.console.print(f"bash FAIL: "
+                                   f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
+            return {"status": "TIMEOUT",
+                    "return code": proc.returncode,
+                    "stdout": stdout.decode('utf-8'),
+                    "stderr": stderr.decode('utf-8')}
+        sys_log.debug(f"bash: {description} with command {command} done")
+        progress.console.print(f"bash: {description} with command {command} done", style="bright_black")
+        return {"status": "DONE",
+                "return code": proc.returncode,
+                "stdout": stdout.decode('utf-8'),
+                "stderr": stderr.decode('utf-8')}
+    except Exception as e:
+        sys_log.error(f"bash FAIL: Command execute with error: {e}")
+        progress.console.print(f"bash FAIL: Command execute with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Command execute with error: {e}"}
+
+
+def tool_read_file_def() -> dict[str, Any]:
+    """tool definition of reading the file (read_file)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Reads a file from the local filesystem with given path, method, line num and encoding method. "
+                           "You can access any file directly by using this tool. Results are returned using cat -n format, "
+                           "with line numbers starting from 1. This tool will also return the total line count of the file "
+                           "(regardless of read method).\n"
+                           "- IMPORTANT: Never start by reading the entire file (`all`) unless the file is known to be very "
+                           "short or instructed to do so\n"
+                           "- For any unfamiliar file, first use `from_top` with a moderate number of lines (e.g., 50-100) "
+                           "to see the file's header and structure\n"
+                           "- Once you know the total line count, you can use `from_top` or `from_bottom` to read additional "
+                           "chunks, or `offset` to jump to a specific area as needed",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the file (must be absolute, not relative).",
+                    },
+                    "method": {
+                        "type": "string",
+                        "enum": ["from_top", "from_bottom", "offset", "all"],
+                        "description":  "How to read the file:\n"
+                                        "- `from_top`: Reads the first N lines. Best for seeing file header, imports, or "
+                                        "initial structure.\n"
+                                        "- `from_bottom`: Reads the last N lines. Useful to check logs, trailing configuration, "
+                                        "or end of code.\n"
+                                        "- `offset`: Reads N lines starting at a given line number (1-based). Precise for "
+                                        "targeting known areas.\n"
+                                        "- `all`: Reads the entire file. WARNING: Use only when you are certain the file "
+                                        "is short or when you absolutely need every line. Otherwise, use the methods above "
+                                        "to avoid filling the context.",
+                    },
+                    "line_num": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000,
+                        "description": "Number of lines to read (for `from_top`, `from_bottom`, `offset`). Min 1, max 10000. "
+                                       "When unsure, a value of 50-100 is typically safe for an initial scan.",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The starting line number (1-based) when method is offset. Only used with the "
+                                       "`offset` method",
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "File encoding (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
+                        "default": "utf-8",
+                    }
+                },
+                "required": ["path", "method"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of reading the file with arguments and AgentContext"""
+    try:
+        """request permission"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "read_file",
+                                   f"path: {arguments["path"]}, "
+                                   f"method: {arguments["method"]}, "
+                                   f"read-in line: {arguments.get("line_num", "None")}, "
+                                   f"offset: {arguments.get("offset", "None")}, "
+                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+        """check the path"""
+        file_path = arguments["path"]
+        if not os.path.exists(file_path):
+            sys_log.error(f"read_file FAIL: Path: {file_path} doesn't exist.")
+            progress.console.print(f"read_file FAIL: Path: {file_path} doesn't exist", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Path: {file_path} doesn't exist"}
+        """check the file"""
+        if not os.path.isfile(file_path):
+            sys_log.error(f"read_file FAIL: Path: {file_path} is not a file")
+            progress.console.print(f"read_file FAIL: Path: {file_path} is not a file", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Path: {file_path} is not a file"}
+        """check the file size"""
+        file_size = os.path.getsize(file_path)
+        if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
+            sys_log.error(f"read_file FAIL: "
+                          f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
+                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
+            progress.console.print(f"read_file FAIL: "
+                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
+                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
+                            f"in agent_configs.json"}
+        """read the file"""
+        encoding = arguments.get("encoding", "utf-8")
+        with open(file_path, 'r', encoding=encoding) as f:
+            raw_line = f.readlines()
+        file_line: list[str] = []
+        for i, line in enumerate(raw_line, start=1):
+            file_line.append(f"{i}\t{line}")
+        total_line_num = len(file_line)
+        """prepare the content"""
+        read_line_num = arguments.get("line_num", 0)
+        offset_line_num = arguments.get("offset", 0)
+        method = str(arguments["method"]).lower()
+        byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
+        if method == "from_top":
+            if read_line_num < 1 or read_line_num is None:
+                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
+                # file_str = "".join(file_line)
+                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
+            else:
+                # file_str = "".join(file_line[0:read_line_num])
+                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, read_line_num - 1, byte_limit, encoding)
+        elif method == "from_bottom":
+            if read_line_num < 1 or read_line_num is None:
+                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
+            if total_line_num <= read_line_num:
+                # file_str = "".join(file_line)
+                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
+            else:
+                # file_str = "".join(file_line[-read_line_num:])
+                file_str, truncated, read_lines = read_line_with_limit(file_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, encoding)
+        elif method == "offset":
+            if offset_line_num < 1:
+                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} < 1")
+                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
+            if offset_line_num > total_line_num:
+                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
+                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
+                raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
+            if (offset_line_num - 1 + read_line_num) <= total_line_num:
+                # file_str = "".join(file_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
+                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, offset_line_num - 2 + read_line_num, byte_limit, encoding)
+            else:
+                # file_str = "".join(file_line[offset_line_num - 1:])
+                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, total_line_num - 1, byte_limit, encoding)
+        elif method == "all":
+            # file_str = "".join(file_line)
+            file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
+        else:
+            raise RuntimeError(f"Invalid method type: {method}")
+        ctx.file_read_log(file_path)
+        if not truncated:
+            sys_log.debug(f"read_file SUCCESS: "
+                          f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
+                          f"offset: {offset_line_num}, encoding: {encoding}")
+            progress.console.print(f"read_file SUCCESS: "
+                                   f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
+                                   f"offset: {offset_line_num}, encoding: {encoding}", style="bright_black")
+            return {"status": "SUCCESS",
+                    "total_line": total_line_num,
+                    "file_content": file_str}
+        else:
+            sys_log.warning(f"read_file TRUNCATED: "
+                          f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
+                          f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
+                          f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
+                          f"please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json")
+            progress.console.print(f"read_file TRUNCATED: "
+                                   f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
+                                   f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
+                                   f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB "
+                                   f"and truncated, please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json", style="bold yellow")
+            return {"status": "TRUNCATED",
+                    "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
+                            f"user should modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json",
+                    "total_line": read_lines,
+                    "file_content": file_str}
+    except UnicodeDecodeError as e:
+        sys_log.error(f"read_file FAIL: Can't read file with given encoding, error: {e}")
+        progress.console.print(f"read_file FAIL: Can't read file with given encoding, error: {e}", style="bold red")
+        return {"status": "FAIL",
+                "info": f"Can't read file with given encoding, error: {e}"}
+    except PermissionError as e:
+        sys_log.error(f"read_file FAIL: Can't read file, permission denied: {e}")
+        progress.console.print(f"read_file FAIL: Can't read file, permission denied: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't read file, permission denied: {e}"}
+    except OSError as e:
+        sys_log.error(f"read_file FAIL: Can't read file, OS error: {e}")
+        progress.console.print(f"read_file FAIL: Can't read file, OS error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't read file, OS error: {e}"}
+    except Exception as e:
+        sys_log.error(f"read_file FAIL: Read file failed with error: {e}")
+        progress.console.print(f"read_file FAIL: Read file failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Read file failed with error: {e}"}
+
+
+def tool_write_file_def() -> dict[str, Any]:
+    """tool definition of writing the file (write_file)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write a file or append content to a file to the local filesystem with given path, contents, writing "
+                           "mode and encoding method. Supports creating parent directories automatically",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the file (must be absolute, not relative).",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file. Can be plain text, json, html, code, etc."
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["write", "append"],
+                        "description": "Optional write mode: `write` overwrites the file (default), `append` adds content "
+                                       "to the end.",
+                        "default": "write"
+                    },
+                    "create_dirs": {
+                        "type": "boolean",
+                        "description": "Optional flag. If true (default), automatically create missing parent directories.",
+                        "default": True
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
+                        "default": "utf-8",
+                    }
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of writing the file with arguments and AgentContext"""
+    try:
+        """request permission"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "write_file",
+                                   f"path: {arguments["path"]}, "
+                                   f"mode: {arguments.get("mode", "None")}, "
+                                   f"create_dirs: {arguments.get("create_dirs", "None")}, "
+                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+        """check the path"""
+        file_path = arguments["path"]
+        create_dirs = arguments.get("create_dirs", True)
+        if create_dirs:
+            parent_dir = os.path.dirname(file_path)
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+                sys_log.debug(f"write_file: Parent directory: {parent_dir} created")
+                progress.console.print(f"write_file: Parent directory: {parent_dir} created", style="bright_black")
+        """write the file"""
+        mode = arguments.get("mode", "write")
+        w_mode = 'w' if mode == "write" else 'a'
+        encoding = arguments.get("encoding", "utf-8")
+        content: str = arguments["content"]
+        with open(file=file_path, mode=w_mode, encoding=encoding) as f:
+            f.write(content)
+        content_bytes = content.encode(encoding)
+        byte_count = len(content_bytes)
+        sys_log.debug(f"write_file SUCCESS: "
+                      f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}")
+        progress.console.print(f"write_file SUCCESS: "
+                               f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}", style="bright_black")
+        return {"status": "SUCCESS",
+                "bytes_written": byte_count,
+                "info": f"Write content to {file_path} done successfully"}
+    except UnicodeDecodeError as e:
+        sys_log.error(f"write_file FAIL: Can't write file with given encoding, error: {e}")
+        progress.console.print(f"write_file FAIL: Can't write file with given encoding, error: {e}", style="bold red")
+        return {"status": "FAIL",
+                "info": f"Can't write file with given encoding, error: {e}"}
+    except PermissionError as e:
+        sys_log.error(f"write_file FAIL: Can't write file, permission denied: {e}")
+        progress.console.print(f"write_file FAIL: Can't write file, permission denied: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't write file, permission denied: {e}"}
+    except OSError as e:
+        sys_log.error(f"write_file FAIL: Can't write file, OS error: {e}")
+        progress.console.print(f"write_file FAIL: Can't write file, OS error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't write file, OS error: {e}"}
+    except Exception as e:
+        sys_log.error(f"write_file FAIL: Write file failed with error: {e}")
+        progress.console.print(f"write_file FAIL: Write file failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Write file failed with error: {e}"}
+
+
+def tool_edit_file_def() -> dict[str, Any]:
+    """tool definition of editing the file (edit_file)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Edit the file with exact string replacement. Prefer editing files with this tool rather than "
+                           "using `bash` tool or other shell/script tools unless explicitly required. You must use `read_file` "
+                           "tool at least once before editing. This tool will error if you attempt an edit without reading "
+                           "the file.\n"
+                           "- When editing text from `read_file` tool output, ensure you preserve the exact indentation "
+                           "(tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: "
+                           "line number + tab (e.g., \"123\\t\"). Everything after that is the actual file content to match. "
+                           "Never include any part of the line number prefix in the old_string or new_string\n"
+                           "- For targeted edits (a specific line/block): ALWAYS include the exact leading whitespace to "
+                           "match the precise scope. This is essential in languages like Python where indentation changes meaning\n"
+                           "- For simple, scope-independent replacements (renaming a variable, fixing a typo in a comment, "
+                           "changing a string literal everywhere): you may use the minimal unique string (e.g., just the identifier) "
+                           "and set `replace_all` to true, without worrying about indentation. Be careful that the short string "
+                           "does not accidentally match unrelated text\n"
+                           "- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string "
+                           "with more surrounding context to make it unique or use `replace_all` to change every instance "
+                           "of `old_string`\n"
+                           "- Prefer editing existing files and don't write new files unless explicitly required",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the file (must be absolute, not relative).",
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "The text to replace."
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "The text to replace it with (must be different from old_string)."
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences of old_string (default false).",
+                        "default": False
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
+                        "default": "utf-8",
+                    }
+                },
+                "required": ["path", "old_string", "new_string"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of editing the file with arguments and AgentContext"""
+    try:
+        """check the path"""
+        file_path = arguments["path"]
+        if not os.path.exists(file_path):
+            sys_log.error(f"edit_file FAIL: Path: {file_path} doesn't exist.")
+            progress.console.print(f"edit_file FAIL: Path: {file_path} doesn't exist", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Path: {file_path} doesn't exist"}
+        """check the file"""
+        if not os.path.isfile(file_path):
+            sys_log.error(f"edit_file FAIL: Path: {file_path} is not a file")
+            progress.console.print(f"edit_file FAIL: Path: {file_path} is not a file", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Path: {file_path} is not a file"}
+        """check if the file is read"""
+        if os.path.abspath(file_path) not in ctx.files_read:
+            sys_log.error(f"edit_file FAIL: File: {file_path} is never read before editing")
+            progress.console.print(f"edit_file FAIL: File: {file_path} is never read before editing", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"File: {file_path} is never read before editing"}
+        """check the file size"""
+        file_size = os.path.getsize(file_path)
+        if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
+            sys_log.error(f"edit_file FAIL: "
+                          f"File: {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
+                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
+            progress.console.print(f"edit_file FAIL: "
+                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
+                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json",
+                                   style="bold red")
+            return {"status": "FAIL",
+                    "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
+                            f"in agent_configs.json"}
+        """read the file"""
+        encoding = arguments.get("encoding", "utf-8")
+        with open(file_path, 'r', encoding=encoding) as f:
+            raw_line = f.readlines()
+        raw_str = ''.join(raw_line)
+        """find the string to replace"""
+        old_string:str = arguments["old_string"]
+        new_string:str = arguments["new_string"]
+        replace_all:bool = arguments.get("replace_all", False)
+        match_lines = match_line_ranges(raw_str, old_string, True)
+        count = len(match_lines)
+        if count == 0:
+            sys_log.error("edit_file FAIL: No match of the string to replace")
+            progress.console.print("edit_file FAIL: No match of the string to replace", style="bold red")
+            return {"status": "FAIL",
+                    "info": "No match of the string to replace"}
+        elif count > 1 and not replace_all:
+            sys_log.error(f"edit_file FAIL: Found {count} matches of the string to replace, but replace_all is false")
+            progress.console.print(f"edit_file FAIL: Found {count} matches of the string to replace, but replace_all is false", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Found {count} matches of the string to replace, but replace_all is false. To replace all occurrences, "
+                            f"set replace_all to true. To replace only one occurrence, please provide more context to uniquely "
+                            f"identify the instance."}
+        multi_match = True if (count > 1 and replace_all) else False
+        """request permission"""
+        progress.stop()
+        token = ask_edit_tui(file_path, old_string, new_string, raw_line, match_lines, multi_match, ctx, progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+        """apply edit with replacement"""
+        if count > 1 and replace_all:  # multiple replace
+            edit_str = raw_str.replace(old_string, new_string)
+        else:
+            edit_str = raw_str.replace(old_string, new_string, 1)
+        """write the file"""
+        encoding = arguments.get("encoding", "utf-8")
+        with open(file=file_path, mode='w', encoding=encoding) as f:
+            f.write(edit_str)
+        sys_log.debug(f"edit_file SUCCESS: Path: {file_path}, replace_all: {replace_all}, encoding: {encoding},"
+                      f" count: {count}")
+        progress.console.print(f"edit_file SUCCESS: Path: {file_path}, replace_all: {replace_all}, encoding: {encoding},"
+                               f" count: {count}", style="bright_black")
+        return {"status": "SUCCESS",
+                "info": f"File {file_path} updated successfully"}
+    except UnicodeDecodeError as e:
+        sys_log.error(f"edit_file FAIL: Can't edit file with given encoding, error: {e}")
+        progress.console.print(f"edit_file FAIL: Can't edit file with given encoding, error: {e}", style="bold red")
+        return {"status": "FAIL",
+                "info": f"Can't edit file with given encoding, error: {e}"}
+    except PermissionError as e:
+        sys_log.error(f"edit_file FAIL: Can't edit file, permission denied: {e}")
+        progress.console.print(f"edit_file FAIL: Can't edit file, permission denied: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't edit file, permission denied: {e}"}
+    except OSError as e:
+        sys_log.error(f"edit_file FAIL: Can't edit file, OS error: {e}")
+        progress.console.print(f"edit_file FAIL: Can't edit file, OS error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Can't edit file, OS error: {e}"}
+    except Exception as e:
+        sys_log.error(f"edit_file FAIL: Edit file failed with error: {e}")
+        progress.console.print(f"edit_file FAIL: Edit file failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Edit file failed with error: {e}"}
+
+
+def tool_skill_def() -> dict[str, Any]:
+    """tool definition of launching skills (skill)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "skill",
+            "description": "Execute a skill within the main conversation. When users ask you to perform tasks, check if any "
+                           "of the available skills match. Skills provide specialized capabilities and domain knowledge.\n"
+                           "How to invoke:\n"
+                           "- Use this tool with the skill name and optional arguments\n"
+                           "- Examples:\n"
+                           "  - `skill: \"pdf\"` - invoke the pdf skill\n"
+                           "  - `skill: \"review-pr\", args: \"123\"` - invoke with arguments\n"
+                           "  - `skill: \"ms-office-suite:pdf\"` - invoke using fully qualified name\n"
+                           "Important:\n"
+                           "- Available skills and their description are listed in system messages\n"
+                           "- When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the relevant "
+                           "`skill` tool BEFORE generating any other response about the task\n"
+                           "- NEVER mention a skill without actually calling this tool\n"
+                           "- Do not invoke a skill that is already running\n"
+                           "- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)\n"
+                           "- If the skill has ALREADY been loaded (by you or user), this tool will error, follow the "
+                           "instructions directly instead of calling this tool again\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "args": {
+                        "type": "string",
+                        "description": "Optional arguments for the skill.",
+                    },
+                    "skill": {
+                        "type": "string",
+                        "description": "The skill name. E.g., \"translate\", \"review-pr\", or \"pdf\"."
+                    }
+                },
+                "required": ["skill"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> tuple[dict[str, Any], dict[str, str] | None]:
+    """tool realization of launching skill with AgentContext"""
+    try:
+        name = str(arguments["skill"])
+        args = arguments.get("args", "")
+        """permission request"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "skill",
+                                   f"skill name: {arguments["skill"]}, "
+                                   f"args: {arguments.get("args", "None")}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}, None
+        """load skill"""
+        # check if loaded (skill can be loaded by previous conversation but is removed in this one)
+        if any(item.get("name") == name for item in ctx.loaded_skills):
+            sys_log.error(f"skill FAIL: Skill {name} is already loaded")
+            progress.console.print(f"skill FAIL: Skill {name} is already loaded", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Skill {name} is already loaded, follow the instructions directly instead of calling this tool again"}, None
+        # if not loaded, check if the skill is available
+        elif not any(item.get("name") == name for item in ctx.skills):
+            sys_log.error(f"skill FAIL: Skill {name} is not available")
+            progress.console.print(f"skill FAIL: Skill {name} is not available", style="bold red")
+            return {"status": "FAIL",
+                    "info": f"Skill {name} is not available"}, None
+        else:
+            # load the content
+            content = load_skill_content("./skills", name, progress.console)
+            if content is None:
+                sys_log.error(f"skill FAIL: Read content of skill {name} failed")
+                progress.console.print(f"skill FAIL: Read content of skill {name} failed", style="bold red")
+                return {"status": "FAIL", "info": f"Read content of skill {name} failed"}, None
+            else:
+                ctx.loaded_skills.append({
+                    "name": name,
+                    "description": str(get_skill_description(name, ctx.skills)),
+                })
+                sys_log.debug(f"skill SUCCESS: Skill {name} is launching")
+                progress.console.print(f"skill SUCCESS: Skill {name} is launching", style="bright_black")
+                return {"status": "SUCCESS", "info": f"Skill {name} is launching"}, content
+    except Exception as e:
+        sys_log.error(f"skill FAIL: Load skill failed with error: {e}")
+        progress.console.print(f"skill FAIL: Load skill failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Load skill failed with error: {e}"}, None
 
 
 def tool_check_simulator_def() -> dict[str, Any]:
@@ -508,53 +1331,6 @@ def query_run_num(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
             "total_num": f"{ctx.simulation_launched}"}
 
 
-def clean_stdout_log(content: str) -> list[str]:
-    """remove the redundancy in the input stdout log str"""
-    pattern = re.compile(r'\[(debug|info|warning|error)]', re.IGNORECASE)
-    lines = content.splitlines()
-    cleaned_lines = []
-    for line in lines:
-        if not line.strip():
-            continue
-        if "print_start_banner" in line:
-            continue
-        if "print_end_banner" in line:
-            continue
-        if "print_error_banner" in line:
-            continue
-        if "print_abort_banner" in line:
-            continue
-        match = pattern.search(line)
-        if match:
-            start = match.start()
-            line = line[start:]
-        cleaned_lines.append(line)
-    # return "\n".join(cleaned_lines)
-    return cleaned_lines
-
-
-def clean_stderr_log(content: str) -> list[str]:
-    """remove the redundancy in the input stderr log str"""
-    lines = content.splitlines()
-    cleaned_lines = []
-    for line in lines:
-        if not line.strip():
-            continue
-        if "libx264 @" in line:
-            continue
-        if "psnr @" in line:
-            continue
-        if "ssim @" in line:
-            continue
-        if "vmaf @" in line:
-            continue
-        if "std::cerr abort_banner" in line:
-            continue
-        cleaned_lines.append(line)
-    # return "\n".join(cleaned_lines)
-    return cleaned_lines
-
-
 def tool_read_log_def() -> dict[str, Any]:
     """tool definition of reading the log of the given run (read_log)"""
     tool_def = {
@@ -616,26 +1392,6 @@ def tool_read_log_def() -> dict[str, Any]:
         }
     }
     return tool_def
-
-
-def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_limit: int, encoding: str) -> tuple[str, bool, int]:
-    """read string lines with line range start from 0 and byte limits"""
-    truncated = False
-    accumulated_bytes = 0
-    formatted_lines: list[str] = []
-    lines_count = 0
-
-    for i, line in enumerate(lines, start=0):
-        if line_start <= i <= line_end:
-            segment_bytes = len(line.encode(encoding))
-            if accumulated_bytes + segment_bytes > byte_limit:
-                truncated = True
-                break
-            formatted_lines.append(line)
-            accumulated_bytes += segment_bytes
-            lines_count += 1
-    output = "".join(formatted_lines)
-    return output, truncated, lines_count
 
 
 def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
@@ -767,731 +1523,3 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         sys_log.error(f"read_log FAIL: Read log failed with error: {e}")
         progress.console.print(f"read_log FAIL: Read log failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Read log failed with error: {e}"}
-
-
-def tool_read_file_def() -> dict[str, Any]:
-    """tool definition of reading the file (read_file)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Reads a file from the local filesystem with given path, method, line num and encoding method. "
-                           "You can access any file directly by using this tool. Results are returned using cat -n format, "
-                           "with line numbers starting from 1. This tool will also return the total line count of the file "
-                           "(regardless of read method).\n"
-                           "- IMPORTANT: Never start by reading the entire file (`all`) unless the file is known to be very "
-                           "short or instructed to do so\n"
-                           "- For any unfamiliar file, first use `from_top` with a moderate number of lines (e.g., 50-100) "
-                           "to see the file's header and structure\n"
-                           "- Once you know the total line count, you can use `from_top` or `from_bottom` to read additional "
-                           "chunks, or `offset` to jump to a specific area as needed",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path of the file (must be absolute, not relative).",
-                    },
-                    "method": {
-                        "type": "string",
-                        "enum": ["from_top", "from_bottom", "offset", "all"],
-                        "description":  "How to read the file:\n"
-                                        "- `from_top`: Reads the first N lines. Best for seeing file header, imports, or "
-                                        "initial structure.\n"
-                                        "- `from_bottom`: Reads the last N lines. Useful to check logs, trailing configuration, "
-                                        "or end of code.\n"
-                                        "- `offset`: Reads N lines starting at a given line number (1-based). Precise for "
-                                        "targeting known areas.\n"
-                                        "- `all`: Reads the entire file. WARNING: Use only when you are certain the file "
-                                        "is short or when you absolutely need every line. Otherwise, use the methods above "
-                                        "to avoid filling the context.",
-                    },
-                    "line_num": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10000,
-                        "description": "Number of lines to read (for `from_top`, `from_bottom`, `offset`). Min 1, max 10000. "
-                                       "When unsure, a value of 50-100 is typically safe for an initial scan.",
-                    },
-                    "offset": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "The starting line number (1-based) when method is offset. Only used with the "
-                                       "`offset` method",
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "File encoding (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
-                    }
-                },
-                "required": ["path", "method"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of reading the file with arguments and AgentContext"""
-    try:
-        """request permission"""
-        progress.stop()
-        token = ask_permission_tui(ctx, "read_file",
-                                   f"path: {arguments["path"]}, "
-                                   f"method: {arguments["method"]}, "
-                                   f"read-in line: {arguments.get("line_num", "None")}, "
-                                   f"offset: {arguments.get("offset", "None")}, "
-                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
-        progress.start()
-        if not token:
-            return {"status": "FAIL",
-                    "info": f"Permission request denied by user"}
-        """check the path"""
-        file_path = arguments["path"]
-        if not os.path.exists(file_path):
-            sys_log.error(f"read_file FAIL: Path: {file_path} doesn't exist.")
-            progress.console.print(f"read_file FAIL: Path: {file_path} doesn't exist", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"Path: {file_path} doesn't exist"}
-        """check the file"""
-        if not os.path.isfile(file_path):
-            sys_log.error(f"read_file FAIL: Path: {file_path} is not a file")
-            progress.console.print(f"read_file FAIL: Path: {file_path} is not a file", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"Path: {file_path} is not a file"}
-        """check the file size"""
-        file_size = os.path.getsize(file_path)
-        if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
-            sys_log.error(f"read_file FAIL: "
-                          f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
-            progress.console.print(f"read_file FAIL: "
-                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
-                            f"in agent_configs.json"}
-        """read the file"""
-        encoding = arguments.get("encoding", "utf-8")
-        with open(file_path, 'r', encoding=encoding) as f:
-            raw_line = f.readlines()
-        file_line: list[str] = []
-        for i, line in enumerate(raw_line, start=1):
-            file_line.append(f"{i}\t{line}")
-        total_line_num = len(file_line)
-        """prepare the content"""
-        read_line_num = arguments.get("line_num", 0)
-        offset_line_num = arguments.get("offset", 0)
-        method = str(arguments["method"]).lower()
-        byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
-        if method == "from_top":
-            if read_line_num < 1 or read_line_num is None:
-                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if total_line_num <= read_line_num:
-                # file_str = "".join(file_line)
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
-            else:
-                # file_str = "".join(file_line[0:read_line_num])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, read_line_num - 1, byte_limit, encoding)
-        elif method == "from_bottom":
-            if read_line_num < 1 or read_line_num is None:
-                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if total_line_num <= read_line_num:
-                # file_str = "".join(file_line)
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
-            else:
-                # file_str = "".join(file_line[-read_line_num:])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, encoding)
-        elif method == "offset":
-            if offset_line_num < 1:
-                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} < 1")
-                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
-            if offset_line_num > total_line_num:
-                sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}")
-                progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
-                raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
-            if (offset_line_num - 1 + read_line_num) <= total_line_num:
-                # file_str = "".join(file_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, offset_line_num - 2 + read_line_num, byte_limit, encoding)
-            else:
-                # file_str = "".join(file_line[offset_line_num - 1:])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, total_line_num - 1, byte_limit, encoding)
-        elif method == "all":
-            # file_str = "".join(file_line)
-            file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
-        else:
-            raise RuntimeError(f"Invalid method type: {method}")
-        ctx.file_read_log(file_path)
-        if not truncated:
-            sys_log.debug(f"read_file SUCCESS: "
-                          f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                          f"offset: {offset_line_num}, encoding: {encoding}")
-            progress.console.print(f"read_file SUCCESS: "
-                                   f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                                   f"offset: {offset_line_num}, encoding: {encoding}", style="bright_black")
-            return {"status": "SUCCESS",
-                    "total_line": total_line_num,
-                    "file_content": file_str}
-        else:
-            sys_log.warning(f"read_file TRUNCATED: "
-                          f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                          f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
-                          f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                          f"please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json")
-            progress.console.print(f"read_file TRUNCATED: "
-                                   f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                                   f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
-                                   f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB "
-                                   f"and truncated, please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json", style="bold yellow")
-            return {"status": "TRUNCATED",
-                    "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                            f"user should modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json",
-                    "total_line": read_lines,
-                    "file_content": file_str}
-    except UnicodeDecodeError as e:
-        sys_log.error(f"read_file FAIL: Can't read file with given encoding, error: {e}")
-        progress.console.print(f"read_file FAIL: Can't read file with given encoding, error: {e}", style="bold red")
-        return {"status": "FAIL",
-                "info": f"Can't read file with given encoding, error: {e}"}
-    except PermissionError as e:
-        sys_log.error(f"read_file FAIL: Can't read file, permission denied: {e}")
-        progress.console.print(f"read_file FAIL: Can't read file, permission denied: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't read file, permission denied: {e}"}
-    except OSError as e:
-        sys_log.error(f"read_file FAIL: Can't read file, OS error: {e}")
-        progress.console.print(f"read_file FAIL: Can't read file, OS error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't read file, OS error: {e}"}
-    except Exception as e:
-        sys_log.error(f"read_file FAIL: Read file failed with error: {e}")
-        progress.console.print(f"read_file FAIL: Read file failed with error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Read file failed with error: {e}"}
-
-
-def tool_write_file_def() -> dict[str, Any]:
-    """tool definition of writing the file (write_file)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write a file or append content to a file to the local filesystem with given path, contents, writing "
-                           "mode and encoding method. Supports creating parent directories automatically",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path of the file (must be absolute, not relative).",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The content to write to the file. Can be plain text, json, html, code, etc."
-                    },
-                    "mode": {
-                        "type": "string",
-                        "enum": ["write", "append"],
-                        "description": "Optional write mode: `write` overwrites the file (default), `append` adds content "
-                                       "to the end.",
-                        "default": "write"
-                    },
-                    "create_dirs": {
-                        "type": "boolean",
-                        "description": "Optional flag. If true (default), automatically create missing parent directories.",
-                        "default": True
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
-                    }
-                },
-                "required": ["path", "content"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of writing the file with arguments and AgentContext"""
-    try:
-        """request permission"""
-        progress.stop()
-        token = ask_permission_tui(ctx, "write_file",
-                                   f"path: {arguments["path"]}, "
-                                   f"mode: {arguments.get("mode", "None")}, "
-                                   f"create_dirs: {arguments.get("create_dirs", "None")}, "
-                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
-        progress.start()
-        if not token:
-            return {"status": "FAIL",
-                    "info": f"Permission request denied by user"}
-        """check the path"""
-        file_path = arguments["path"]
-        create_dirs = arguments.get("create_dirs", True)
-        if create_dirs:
-            parent_dir = os.path.dirname(file_path)
-            if not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
-                sys_log.debug(f"write_file: Parent directory: {parent_dir} created")
-                progress.console.print(f"write_file: Parent directory: {parent_dir} created", style="bright_black")
-        """write the file"""
-        mode = arguments.get("mode", "write")
-        w_mode = 'w' if mode == "write" else 'a'
-        encoding = arguments.get("encoding", "utf-8")
-        content: str = arguments["content"]
-        with open(file=file_path, mode=w_mode, encoding=encoding) as f:
-            f.write(content)
-        content_bytes = content.encode(encoding)
-        byte_count = len(content_bytes)
-        sys_log.debug(f"write_file SUCCESS: "
-                      f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}")
-        progress.console.print(f"write_file SUCCESS: "
-                               f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}", style="bright_black")
-        return {"status": "SUCCESS",
-                "bytes_written": byte_count,
-                "info": f"Write content to {file_path} done successfully"}
-    except UnicodeDecodeError as e:
-        sys_log.error(f"write_file FAIL: Can't write file with given encoding, error: {e}")
-        progress.console.print(f"write_file FAIL: Can't write file with given encoding, error: {e}", style="bold red")
-        return {"status": "FAIL",
-                "info": f"Can't write file with given encoding, error: {e}"}
-    except PermissionError as e:
-        sys_log.error(f"write_file FAIL: Can't write file, permission denied: {e}")
-        progress.console.print(f"write_file FAIL: Can't write file, permission denied: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't write file, permission denied: {e}"}
-    except OSError as e:
-        sys_log.error(f"write_file FAIL: Can't write file, OS error: {e}")
-        progress.console.print(f"write_file FAIL: Can't write file, OS error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't write file, OS error: {e}"}
-    except Exception as e:
-        sys_log.error(f"write_file FAIL: Write file failed with error: {e}")
-        progress.console.print(f"write_file FAIL: Write file failed with error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Write file failed with error: {e}"}
-
-
-def tool_edit_file_def() -> dict[str, Any]:
-    """tool definition of editing the file (edit_file)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": "edit_file",
-            "description": "Edit the file with exact string replacement. Prefer editing files with this tool rather than "
-                           "using `bash` tool or other shell/script tools unless explicitly required. You must use `read_file` "
-                           "tool at least once before editing. This tool will error if you attempt an edit without reading "
-                           "the file.\n"
-                           "- When editing text from `read_file` tool output, ensure you preserve the exact indentation "
-                           "(tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: "
-                           "line number + tab (e.g., \"123\\t\"). Everything after that is the actual file content to match. "
-                           "Never include any part of the line number prefix in the old_string or new_string\n"
-                           "- For targeted edits (a specific line/block): ALWAYS include the exact leading whitespace to "
-                           "match the precise scope. This is essential in languages like Python where indentation changes meaning\n"
-                           "- For simple, scope-independent replacements (renaming a variable, fixing a typo in a comment, "
-                           "changing a string literal everywhere): you may use the minimal unique string (e.g., just the identifier) "
-                           "and set `replace_all` to true, without worrying about indentation. Be careful that the short string "
-                           "does not accidentally match unrelated text\n"
-                           "- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string "
-                           "with more surrounding context to make it unique or use `replace_all` to change every instance "
-                           "of `old_string`\n"
-                           "- Prefer editing existing files and don't write new files unless explicitly required",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path of the file (must be absolute, not relative).",
-                    },
-                    "old_string": {
-                        "type": "string",
-                        "description": "The text to replace."
-                    },
-                    "new_string": {
-                        "type": "string",
-                        "description": "The text to replace it with (must be different from old_string)."
-                    },
-                    "replace_all": {
-                        "type": "boolean",
-                        "description": "Replace all occurrences of old_string (default false).",
-                        "default": False
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
-                    }
-                },
-                "required": ["path", "old_string", "new_string"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of editing the file with arguments and AgentContext"""
-    try:
-        """check the path"""
-        file_path = arguments["path"]
-        if not os.path.exists(file_path):
-            sys_log.error(f"edit_file FAIL: Path: {file_path} doesn't exist.")
-            progress.console.print(f"edit_file FAIL: Path: {file_path} doesn't exist", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"Path: {file_path} doesn't exist"}
-        """check the file"""
-        if not os.path.isfile(file_path):
-            sys_log.error(f"edit_file FAIL: Path: {file_path} is not a file")
-            progress.console.print(f"edit_file FAIL: Path: {file_path} is not a file", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"Path: {file_path} is not a file"}
-        """check if the file is read"""
-        if os.path.abspath(file_path) not in ctx.files_read:
-            sys_log.error(f"edit_file FAIL: File: {file_path} is never read before editing")
-            progress.console.print(f"edit_file FAIL: File: {file_path} is never read before editing", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"File: {file_path} is never read before editing"}
-        """check the file size"""
-        file_size = os.path.getsize(file_path)
-        if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
-            sys_log.error(f"edit_file FAIL: "
-                          f"File: {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
-            progress.console.print(f"edit_file FAIL: "
-                                   f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json",
-                                   style="bold red")
-            return {"status": "FAIL",
-                    "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
-                            f"in agent_configs.json"}
-        """read the file"""
-        encoding = arguments.get("encoding", "utf-8")
-        with open(file_path, 'r', encoding=encoding) as f:
-            raw_line = f.readlines()
-        raw_str = ''.join(raw_line)
-        """find the string to replace"""
-        old_string:str = arguments["old_string"]
-        new_string:str = arguments["new_string"]
-        replace_all:bool = arguments.get("replace_all", False)
-        match_lines = edit_file_support.match_line_ranges(raw_str, old_string, True)
-        count = len(match_lines)
-        if count == 0:
-            sys_log.error("edit_file FAIL: No match of the string to replace")
-            progress.console.print("edit_file FAIL: No match of the string to replace", style="bold red")
-            return {"status": "FAIL",
-                    "info": "No match of the string to replace"}
-        elif count > 1 and not replace_all:
-            sys_log.error(f"edit_file FAIL: Found {count} matches of the string to replace, but replace_all is false")
-            progress.console.print(f"edit_file FAIL: Found {count} matches of the string to replace, but replace_all is false", style="bold red")
-            return {"status": "FAIL",
-                    "info": f"Found {count} matches of the string to replace, but replace_all is false. To replace all occurrences, "
-                            f"set replace_all to true. To replace only one occurrence, please provide more context to uniquely "
-                            f"identify the instance."}
-        multi_match = True if (count > 1 and replace_all) else False
-        """request permission"""
-        progress.stop()
-        token = ask_edit_tui(file_path, old_string, new_string, raw_line, match_lines, multi_match, ctx, progress.console)
-        progress.start()
-        if not token:
-            return {"status": "FAIL",
-                    "info": f"Permission request denied by user"}
-        """apply edit with replacement"""
-        if count > 1 and replace_all:  # multiple replace
-            edit_str = raw_str.replace(old_string, new_string)
-        else:
-            edit_str = raw_str.replace(old_string, new_string, 1)
-        """write the file"""
-        encoding = arguments.get("encoding", "utf-8")
-        with open(file=file_path, mode='w', encoding=encoding) as f:
-            f.write(edit_str)
-        sys_log.debug(f"edit_file SUCCESS: Path: {file_path}, replace_all: {replace_all}, encoding: {encoding},"
-                      f" count: {count}")
-        progress.console.print(f"edit_file SUCCESS: Path: {file_path}, replace_all: {replace_all}, encoding: {encoding},"
-                               f" count: {count}", style="bright_black")
-        return {"status": "SUCCESS",
-                "info": f"File {file_path} updated successfully"}
-    except UnicodeDecodeError as e:
-        sys_log.error(f"edit_file FAIL: Can't edit file with given encoding, error: {e}")
-        progress.console.print(f"edit_file FAIL: Can't edit file with given encoding, error: {e}", style="bold red")
-        return {"status": "FAIL",
-                "info": f"Can't edit file with given encoding, error: {e}"}
-    except PermissionError as e:
-        sys_log.error(f"edit_file FAIL: Can't edit file, permission denied: {e}")
-        progress.console.print(f"edit_file FAIL: Can't edit file, permission denied: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't edit file, permission denied: {e}"}
-    except OSError as e:
-        sys_log.error(f"edit_file FAIL: Can't edit file, OS error: {e}")
-        progress.console.print(f"edit_file FAIL: Can't edit file, OS error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Can't edit file, OS error: {e}"}
-    except Exception as e:
-        sys_log.error(f"edit_file FAIL: Edit file failed with error: {e}")
-        progress.console.print(f"edit_file FAIL: Edit file failed with error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Edit file failed with error: {e}"}
-
-
-def tool_bash_def() -> dict[str, Any]:
-    """tool definition of bash (bash)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": "bash",
-            "description": "Executes a given bash command and returns its output. The working directory persists between "
-                           "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
-                           "IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, or `echo` commands, unless explicitly "
-                           "instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, "
-                           "use the appropriate dedicated tool as this will provide a much better experience for the user.\n"
-                           " - Read files: Prefer using `read_file` (NOT cat/head/tail)\n"
-                           " - Write files: Prefer using `write_file` (NOT echo >/cat <<EOF)\n"
-                           " - Edit files: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
-                           " - Communication: Output text directly (NOT echo/printf)\n"
-                           "While the Bash tool can do similar things, it’s better to use the built-in tools as they provide "
-                           "a better user experience and make it easier to review tool calls and give permission.\n"
-                           "# Instructions\n"
-                           " - If your command will create new directories or files, first use this tool to run `ls` to "
-                           "verify the parent directory exists and is the correct location.\n"
-                           " - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "
-                           "\"path with spaces/file.txt\")\n"
-                           " - Try to maintain your current working directory throughout the session by using absolute "
-                           "paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.\n"
-                           " - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, "
-                           "your command will timeout after 120000ms (2 minutes).\n"
-                           " - When issuing multiple commands:\n"
-                           "  - If the commands are independent and can run in parallel, make multiple Bash tool calls in"
-                           " a single message. Example: if you need to run `git status` and `git diff`, send a single "
-                           "message with two Bash tool calls in parallel.\n"
-                           "  - If the commands depend on each other and must run sequentially, use a single Bash call with "
-                           "\"&&\" to chain them together.\n"
-                           "  - Use \";\" only when you need to run commands sequentially but don't care if earlier commands fail.\n"
-                           "  - DO NOT use newlines to separate commands (newlines are ok in quoted strings).\n"
-                           " - Avoid unnecessary `sleep` commands:\n"
-                           "  - Do not sleep between commands that can run immediately — just run them.\n"
-                           "  - Do not retry failing commands in a sleep loop — diagnose the root cause.\n"
-                           "  - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.\n",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The command to execute",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Clear, concise description of what this command does in active voice. Never use "
-                                       "words like \"complex\" or \"risk\" in the description - just describe what it does. "
-                                       "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):\n"
-                                       "- ls → \"List files in current directory\"\n"
-                                       "- git status → \"Show working tree status\"\n"
-                                       "- npm install → \"Install package dependencies\"\n\n"
-                                       "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), "
-                                       "add enough context to clarify what it does:\n"
-                                       "- find . -name \"*.tmp\" -exec rm {} \\; → \"Find and delete all .tmp files recursively\"\n"
-                                       "- git reset --hard origin/main → \"Discard all local changes and match remote main\"\n"
-                                       "- curl -s url | jq '.data[]' → \"Fetch JSON from URL and extract data array elements\"",
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "maximum": 600000,
-                        "description": "Optional timeout in milliseconds (max 600000, default 120000)",
-                        "default": 120000,
-                    }
-                },
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of bash command execution with arguments and AgentContext"""
-    try:
-        """evaluate the risk of bash command"""
-        risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
-        """request permission"""
-        progress.stop()
-        token = ask_permission_tui(ctx, risk, f"bash description: {arguments["description"]}, "
-                                   f"risk level: {level} with reason: {reason}. Full command: {arguments["command"]}", progress.console)
-        progress.start()
-        if not token:
-            return {"status": "FAIL",
-                    "info": f"Permission request denied by user"}
-        """execute command"""
-        command = arguments["command"]
-        description = arguments.get("description", "")
-        timeout = arguments.get("timeout", 120000)
-        sys_log.debug(f"bash: {description} start")
-        progress.console.print(f"bash: {description} start", style="bright_black")
-        proc = subprocess.Popen(["bash", "-c", command],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout / 1000)
-        except KeyboardInterrupt:
-            proc.terminate()
-            try:
-                proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-            sys_log.error(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted")
-            progress.console.print(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted", style="bold red")
-            return {"status": "CANCELLED",  # no need to return results if user cancel
-                    "info": "bash command is cancelled by user. Command interrupted"}
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                stdout, stderr = proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-            sys_log.error(f"bash FAIL: "
-                          f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted")
-            progress.console.print(f"bash FAIL: "
-                                   f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
-            return {"status": "TIMEOUT",
-                    "return code": proc.returncode,
-                    "stdout": stdout.decode('utf-8'),
-                    "stderr": stderr.decode('utf-8')}
-        sys_log.debug(f"bash: {description} with command {command} done")
-        progress.console.print(f"bash: {description} with command {command} done", style="bright_black")
-        return {"status": "DONE",
-                "return code": proc.returncode,
-                "stdout": stdout.decode('utf-8'),
-                "stderr": stderr.decode('utf-8')}
-    except Exception as e:
-        sys_log.error(f"bash FAIL: Command execute with error: {e}")
-        progress.console.print(f"bash FAIL: Command execute with error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Command execute with error: {e}"}
-
-
-def tool_ask_user_question_def() -> dict[str, Any]:
-    """tool definition of asking structured questions to the user (ask_user_question)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": "ask_user_question",
-            "description": "Use this tool to ask the user questions when you need. This allows you to:\n"
-                           "1. Gather user preferences or requirements\n"
-                           "2. Clarify ambiguous instructions\n"
-                           "3. Get decisions on implementation choices as you work\n"
-                           "4. Offer choices to the user about what direction to take.\n"
-                           "Usage notes:\n"
-                           f"- User will always be able to select \"{OTHER_LABEL}\" to provide custom text input\n"
-                           f"- Use multi_select: true to allow multiple answers to be selected for a question\n"
-                           f"- If you recommend a specific option, make that the first option in the list and add \"({RECOMMEND_LABEL})\" "
-                           f"at the end of the label\n",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "questions": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 4,
-                        "description": "Questions to ask the user (1-4 questions).",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "question": {
-                                    "type": "string",
-                                    "description": "The full question shown to the user."
-                                },
-                                "header": {
-                                    "type": "string",
-                                    "description": "Very short label displayed as a tag."
-                                },
-                                "options": {
-                                    "type": "array",
-                                    "minItems": 2,
-                                    "maxItems": 4,
-                                    "description": "The available options for this question. Must have 2-4 options. Each "
-                                                   "option should be a distinct, mutually exclusive choice (unless multi_select "
-                                                   f"is enabled). There should be no \"{OTHER_LABEL}\" option, that will be "
-                                                   f"provided automatically.",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "label": {
-                                                "type": "string",
-                                                "description": "The display text for this option that the user will see "
-                                                               "and select. Should be concise and clearly describe the choice."
-                                            },
-                                            "description": {
-                                                "type": "string",
-                                                "description": "Explanation of what this option means or what will happen "
-                                                               "if chosen. Useful for providing context about trade-offs "
-                                                               "or implications."
-                                            }
-                                        },
-                                        "required": ["label", "description"],
-                                        "additionalProperties": False
-                                    }
-                                },
-                                "multi_select": {
-                                    "type": "boolean",
-                                    "description": "Set to true to allow the user to select multiple options instead of "
-                                                   "just one. Use when choices are not mutually exclusive",
-                                    "default": False
-                                }
-                            },
-                            "required": ["question", "header", "options", "multi_select"],
-                            "additionalProperties": False
-                        }
-                    }
-                },
-                "required": ["questions"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of asking structured questions to the user"""
-    try:
-        questions = arguments.get("questions", [])
-        if len(questions) == 0:
-            sys_log.error("ask_user_question FAIL: questions is empty")
-            progress.console.print("ask_user_question FAIL: questions is empty", style="bold red")
-            return {"status": "FAIL", "info": "questions is empty"}
-        if ctx.agent_session is None:
-            sys_log.error("ask_user_question FAIL: agent session is unavailable")
-            progress.console.print("ask_user_question FAIL: agent session is unavailable", style="bold red")
-            return {"status": "FAIL", "info": "agent session is unavailable"}
-        for idx, question in enumerate(questions, start=1):
-            options = question.get("options", [])
-            if len(options) == 0:
-                sys_log.error(f"ask_user_question FAIL: question {idx} has no options")
-                progress.console.print(f"ask_user_question FAIL: question {idx} has no options", style="bold red")
-                return {"status": "FAIL", "info": f"question {idx} has no options"}
-        progress.stop()
-        sys_log.debug(f"ask_user_question: waiting for user selection")
-        try:
-            answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
-        finally:
-            progress.start()
-        sys_log.debug(f"ask_user_question SUCCESS: {len(answers)} answers collected")
-        progress.console.print(f"ask_user_question SUCCESS: {len(answers)} answers collected", style="bright_black")
-        return {
-            "status": "SUCCESS",
-            "answers": answers,
-            "info": f"Collected {len(answers)} answers from user"
-        }
-    except AskUserCancelled as e:
-        sys_log.warning(f"ask_user_question FAIL: {e}")
-        progress.console.print(f"ask_user_question FAIL: {e}", style="bold yellow")
-        return {"status": "FAIL", "info": str(e)}
-    except KeyboardInterrupt:
-        sys_log.warning("ask_user_question FAIL: user cancelled")
-        progress.console.print("ask_user_question FAIL: user cancelled", style="bold yellow")
-        return {"status": "FAIL", "info": "user cancelled"}
-    except Exception as e:
-        sys_log.error(f"ask_user_question FAIL: Ask user question failed with error: {e}")
-        progress.console.print(f"ask_user_question FAIL: Ask user question failed with error: {e}", style="bold red")
-        return {"status": "FAIL", "info": f"Ask user question failed with error: {e}"}

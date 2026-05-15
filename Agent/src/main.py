@@ -18,6 +18,7 @@ Revision:
 2026.4.28      Yu Huang     1.5               Exit TUI support\n
 2026.4.29      Yu Huang     1.6               Builtin commands support\n
 2026.5.13      Yu Huang     1.7               Bugfix of LLM context detection\n
+2026.5.15      Yu Huang     1.8               Agent skills support\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -31,7 +32,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from src.context import session, prompt
 from src.context.agent_context import AgentContext
-from src.tool import tool_def, tool_execute
+from src.tool import tool_def, tool_execute, skills_support
 from src.constants import *
 
 """program's parser"""
@@ -50,31 +51,42 @@ if __name__ == '__main__':
 
     """create agent context"""
     ctx = AgentContext()
+    ctx.args = arguments
     ctx.console = console
     sys_log.debug("Context of TECoSim Agent created")
     console.print(f"Context of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
-
-    """create/resume session"""
-    [session_uuid, agent_session] = session.query_session(session_uuid=arguments.resume, console=console)
-    ctx.session_uuid = session_uuid
-    ctx.agent_session = agent_session
-
-    """config agent context"""
-    # read context
-    if arguments.resume is not None:
-        ctx.load_context(console=console)
-    # config other filed of context
-    ctx.args = arguments
-    ctx.task_end = True  # previous task is ended
 
     """load API configs and config LLM client"""
     ctx.api_configs = client.load_configs(configs_path="./config/api_configs.json", name="API", console=console)
     llm_client = client.config_client(ctx=ctx, console=console)
 
-    """load Agent configs and query prompts"""
+    """load agent configs"""
     ctx.agent_configs = client.load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
+
+    """load skills and query prompts"""
+    if not ctx.args.noskills:
+        ctx.skills = skills_support.load_all_skill_metas(skills_root="./skills", console=console)
+
+    """initialize builtin commands"""
+    cmd_object = command.BuiltinCommands(console)  # basic commands
+    cmd_object.register_skills(ctx.skills, console)  # tools to commands
+
+    """query prompts"""
     ctx.messages = prompt.query_prompts(ctx, ctx.args.resume, console)
+
+    """create/resume session"""
+    [session_uuid, agent_session] = session.query_session(session_uuid=ctx.args.resume, console=console, cmd_object=cmd_object)
+    ctx.session_uuid = session_uuid
+    ctx.agent_session = agent_session
+
+    """config agent context"""
+    # resume context
+    if ctx.args.resume is not None:
+        ctx.load_context(console=console)
+    # get tools
     ctx.tools = tool_def.create_tools_prompts(ctx)
+    # config other filed of context
+    ctx.task_end = True  # previous task is ended
 
     """core agent loop"""
     while True:
@@ -82,10 +94,11 @@ if __name__ == '__main__':
             if ctx.task_end:
                 """user prompts & request"""
                 user_input = agent_session.prompt("> ")
-                results = session.cmd_lexer(user_input)
+                results = session.cmd_lexer(user_input, cmd_object)
                 if results is not None:  # command input
-                    command.execute_cmd(results[0], results[1], ctx, console)
-                    continue
+                    request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, console)
+                    if not request_llm:
+                        continue
                 else:  # plain text input
                     ctx.messages.append({"role": "user", "content": user_input})
                     ctx.user_prompts += 1

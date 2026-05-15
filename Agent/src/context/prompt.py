@@ -16,6 +16,7 @@ Revision:
 2026.4.22      Yu Huang     1.3               Bash support\n
 2026.4.26      Yu Huang     1.4               Reasoning support\n
 2026.4.29      Yu Huang     1.5               Builtin commands support\n
+2026.5.15      Yu Huang     1.3               Agent skills support\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
@@ -46,16 +47,18 @@ def create_system_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """system: agent guideline"""
     prompts2 = get_agent_guideline_prompts()
     """system: dynamic boundaries"""
-    prompts3 = get_agent_dynamic_prompts(ctx)
+    prompts3 = get_agent_environment_prompts(ctx)
+    prompts4 = get_agent_skills_prompts(ctx)
     sys_log.debug("System prompts generated")
     if ctx.agent_configs["MERGE_SYSTEM_PROMPTS"]:
         prompts = prompts1
         prompts[0]["content"] += (prompts2[0]["content"])
         prompts[0]["content"] += (prompts3[0]["content"])
+        prompts[0]["content"] += (prompts4[0]["content"])
         ctx.system_prompts = 1
     else:
-        prompts = prompts1 + prompts2 + prompts3
-        ctx.system_prompts = 3
+        prompts = prompts1 + prompts2 + prompts3 + prompts4
+        ctx.system_prompts = 4
     sys_log.debug("System prompts assembled")
     return prompts
 
@@ -139,11 +142,20 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 " - High-level status updates at natural milestones\n"
                 " - Errors or blockers that change the plan\n"
                 "If you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. "
-                "This does not apply to code or tool calls.\n"}]
+                "This does not apply to code or tool calls.\n"
+                "# Session-specific guidance\n"
+                " - If you do not understand why the user has denied a tool call, use the `ask_user_question` to ask them\n"
+                " - IMPORTANT: Only use `skill` for skills listed in user-invocable skills section, do not guess\n"
+                " - User can manually load full prompt of skill to context with /<skill-name> (e.g., /translate)\n"}]
+                # " - Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
+                # "Subagents are valuable for parallelizing independent queries or for protecting the main context window "
+                # "from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating "
+                # "work that subagents are already doing - if you delegate research to a subagent, do not also perform the "
+                # "same searches yourself.\n"
     return prompts
 
 
-def get_agent_dynamic_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
+def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's dynamic boundaries with AgentContext"""
     prompts = [{"role": "system", "content":
                 "# Environment\n"
@@ -153,7 +165,27 @@ def get_agent_dynamic_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
                 f"  - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
                 f" - Is bash available: {is_bash_available()}\n"
                 f" - Path of simulator: {ctx.agent_configs["SIMULATOR_PATH"]}\n"
-                f" - You are powered by the LLM: {ctx.api_configs["MODEL_NAME"]}"}]
+                f" - You are powered by the LLM: {ctx.api_configs["MODEL_NAME"]}\n"}]
+    return prompts
+
+
+def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
+    """get system prompts of TECoSim agent's skills with AgentContext"""
+    limit = ctx.agent_configs["SKILL_DESCRIPTION_LIMIT"]
+    skill_list_str = ""
+    for skill in ctx.skills:
+        if len(skill['description']) > limit:
+            skill_list_str += f" - {skill["name"]}: {skill['description'][:limit]}...\n"
+        else:
+            skill_list_str += f" - {skill["name"]}: {skill['description']}\n"
+    if len(ctx.skills) > 0:
+        prompts = [{"role": "system", "content":
+                    "The following skills are user-invocable with the `skill` tool:\n"
+                    f"{skill_list_str}"}]
+    else:
+        prompts = [{"role": "system", "content":
+                    "The following skills are user-invocable with the `skill` tool:\n"
+                    f"(No available skills)\n)"}]
     return prompts
 
 
@@ -230,6 +262,9 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
+                if "skill_directory" in msg["content"] and "skill_content" in msg["content"]:
+                    console.print(Panel("<A skill is invoked, content is not displayed>", box=rich.box.SQUARE))
+                    continue
                 console.print(Panel("> " + msg["content"], box=rich.box.SQUARE))
             elif msg["role"] == "assistant":
                 assistant_reasoning = get_reasoning(msg)
@@ -295,6 +330,8 @@ def get_reasoning(message: dict[str, Any]) -> str | None:
     """get the reasoning contents of input message"""
     if "reasoning" in message:
         return message.get('reasoning')
+    if "reasoning_details" in message:
+        return message.get('reasoning_details')
     if "reasoning_content" in message:
         return message.get('reasoning_content')
     return None
@@ -304,8 +341,11 @@ def deepseek_support(message: dict[str, Any]) -> dict[str, Any]:
     """convert the input message with deepseek supported format"""
     if "reasoning_details" in message:
         del message["reasoning_details"]
+        # print("reasoning_details")
     if "reasoning" in message:
+        # print("reasoning")
         if "reasoning_content" in message:
+            # print("reasoning_content")
             del message["reasoning"]
         else:
             message["reasoning_content"] = message["reasoning"]

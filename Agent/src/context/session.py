@@ -16,6 +16,8 @@ Revision:
 2026.4.28      Yu Huang     1.3               Permission request support\n
 2026.4.29      Yu Huang     1.4               Builtin commands support\n
 2026.5.13      Yu Huang     1.5               Bugfix of Mouse scrolling\n
+2026.5.15      Yu Huang     1.6               Revise builtin command management with class\n
+2026.5.15      Yu Huang     1.7               Agent skills support\n
 
 Details:
 Session management with create, resume
@@ -32,7 +34,7 @@ from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from rich.console import Console
-from src.utility.command import BUILTIN_COMMANDS, BUILTIN_UNKNOWN
+from src.utility.command import BuiltinCommands, BUILTIN_UNKNOWN
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -93,7 +95,7 @@ class CmdCompleter(Completer):
             )
 
 
-def cmd_lexer(cmd_in: str) -> tuple[str, list[str]] | None:
+def cmd_lexer(cmd_in: str, cmd_object: BuiltinCommands) -> tuple[str, list[str]] | None:
     """builtin commands lexer"""
     clean_cmd = cmd_in.strip()
     """empty"""
@@ -110,7 +112,7 @@ def cmd_lexer(cmd_in: str) -> tuple[str, list[str]] | None:
     cmd_args = parts[1:]
 
     """check if the cmd is valid"""
-    for cmd, (_, _, _) in BUILTIN_COMMANDS.items():
+    for cmd, (_, _, _) in cmd_object:
         if cmd == cmd_name:
             return cmd, cmd_args
 
@@ -118,11 +120,10 @@ def cmd_lexer(cmd_in: str) -> tuple[str, list[str]] | None:
     return BUILTIN_UNKNOWN, cmd_args
 
 
-
-def get_prompt_session(path: str) -> PromptSession:
+def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
     """get the prompt session"""
-    cmd_completer = CmdCompleter(commands=[cmd for cmd, (_, _, _) in BUILTIN_COMMANDS.items()],
-                                 meta_dict={cmd: label for cmd, (_, label, _) in BUILTIN_COMMANDS.items()})
+    cmd_completer = CmdCompleter(commands=[cmd for cmd, (_, _, _) in cmd_object],
+                                 meta_dict={cmd: label for cmd, (_, label, _) in cmd_object})
     session = PromptSession(
         history=FileHistory(path + "/user_history"),
         auto_suggest=AutoSuggestFromHistory(),
@@ -135,15 +136,15 @@ def get_prompt_session(path: str) -> PromptSession:
     return session
 
 
-def query_session(session_uuid: str | None, console: Console) -> tuple[str, PromptSession[Any]]:
+def query_session(session_uuid: str | None, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
     """create a session or resume a session with given UUID"""
     if session_uuid is None:
-        return create_session(console)
+        return create_session(console, cmd_object)
     else:
-        return resume_session(session_uuid, console)
+        return resume_session(session_uuid, console, cmd_object)
 
 
-def create_session(console: Console) -> tuple[str, PromptSession[Any]]:
+def create_session(console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
     """create a session"""
     uuid_obj = uuid.uuid4()
     uuid_str = uuid_obj.__str__()
@@ -152,7 +153,7 @@ def create_session(console: Console) -> tuple[str, PromptSession[Any]]:
         try:
             os.makedirs(path)
             sys_log.debug(f"Session of {uuid_str}'s folder created in {path}")
-            session = get_prompt_session(path)
+            session = get_prompt_session(path, cmd_object)
             sys_log.debug(f"Session of {uuid_str} created")
             console.print(f"Session of [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] created")
             return uuid_str, session
@@ -166,7 +167,7 @@ def create_session(console: Console) -> tuple[str, PromptSession[Any]]:
         raise RuntimeError(f"Path of session with UUID: {uuid_str} already exists")
 
 
-def resume_session(session_uuid: str, console: Console) -> tuple[str, PromptSession[Any]]:
+def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
     """resume a session with given UUID"""
     try:
         uuid_obj = uuid.UUID(session_uuid)
@@ -177,7 +178,7 @@ def resume_session(session_uuid: str, console: Console) -> tuple[str, PromptSess
             console.print(f"Resuming session of {uuid_str}'s path not exist", style="bold red")
             raise RuntimeError(f"Resuming session of {uuid_str}'s path not exists")
         try:
-            session = get_prompt_session(path)
+            session = get_prompt_session(path, cmd_object)
             sys_log.debug(f"Session of {uuid_str} resumed")
             console.print(f"Session of [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] resumed")
             return uuid_str, session

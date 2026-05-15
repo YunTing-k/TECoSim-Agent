@@ -53,7 +53,7 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
             base_url=ctx.api_configs["API_URL"]
         )
         sys_log.debug("Config client with API configs done")
-        console.print(f"LLM client model: [{MAJOR_COLOR2}]{ctx.api_configs["MODEL_NAME"]}[{MAJOR_COLOR2}]")
+        console.print(f"LLM client model: [{MAJOR_COLOR2}]{ctx.api_configs["MODEL_NAME"]}[/{MAJOR_COLOR2}]")
         return client
     except Exception as e:
         sys_log.error(f"Failed to config client with API configs with error: {e}")
