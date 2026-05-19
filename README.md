@@ -62,3 +62,54 @@ This project is still under development. The basic goals are as follows:
     The agent is able to invoke neural network-based agent models to further accelerate the solution of time-consuming physical field and circuit simulations.
 3. 智能体能基于BO等方法，实现高效的设计空间探索以及多目标的设计优化
     The agent is capable of efficient design space exploration and multi-objective design optimization using methods such as Bayesian Optimization (BO).
+
+---
+
+## 项目进度 | Project Progress
+
+### IR Drop 神经网络代理模型 | IR Drop Neural Network Surrogate Model (Jan 2026)
+- **数据集生成流水线** (`IRDropNN/src/gen_dataset.py`)：随机生成 PDN 案例，调用 TECoSim 仿真器批量产生原始数据
+  **Dataset generation pipeline**: Randomly generates PDN cases and invokes the TECoSim simulator for batch raw data production
+- **数据集打包** (`IRDropNN/src/pack_dataset.py`)：将原始数据（图像、电压场、距离场）打包为 HDF5 格式，含归一化、预随机化
+  **Dataset packaging**: Packs raw data (images, voltage fields, distance fields) into HDF5 format with normalization and pre-shuffling
+- **数据集验证** (`IRDropNN/src/dataset_test.py`)：读写正确性检查与分块读取性能测试
+  **Dataset validation**: Read/write correctness checks and chunked reading performance tests
+- **UNet 模型定义与实现** (`IRDropNN/src/nn_model.py`)：多层编码器-解码器结构，GroupNorm + ReLU 激活
+  **UNet model definition & implementation**: Multi-layer encoder-decoder architecture with GroupNorm + ReLU activation
+- **UNet 训练/推理流水线** (`IRDropNN/src/nn_pipeline.py`, `unet_model.py`)：CosineAnnealingLR 学习率调度，支持训练/测试/批量测试模式
+  **UNet training/inference pipeline**: CosineAnnealingLR scheduler, supports train/test/batch-test modes
+- **UnetLand 增强架构** (`IRDropNN/src/unetland_model.py`)：改进的 UNet 景观模型，含距离场约束，进一步优化预测精度
+  **UnetLand enhanced architecture**: Improved UNet landscape model with distance field constraints for further prediction accuracy optimization
+- **MATLAB 可视化脚本** (`IRDropNN/script/`)：PDN 布局绘制、UNet/UnetLand 预测结果对比
+  **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
+
+### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
+- **当前版本**: 0.0.10
+  **Current version**: 0.0.10
+- **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
+  **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
+- **工具系统（14个工具） | Tool system (14 tools)** (`Agent/src/tool/`)：
+  - 用户交互：`ask_user_question` | User interaction
+  - 文件操作：`read_file`, `write_file`, `edit_file`（含 TUI diff 编辑视图） | File operations (with TUI diff editing view)
+  - Shell 执行：`bash`（含命令风险检测分级系统） | Shell execution (with risk-level detection system)
+  - 网页获取：`web_fetch`（URL 安全校验、私有网络拦截、HTML-to-Markdown 转换、可配置缓存） | Web fetching (URL security check, private network interception, HTML-to-Markdown conversion, configurable cache)
+  - 技能调用：`skill`（标准技能接口） | Skill invocation (standard skill interface)
+  - 仿真器接口：`check_simulator`, `init_design`, `copy_design`, `query_design_list`, `launch_simulator`, `query_run_num`, `read_log` | Simulator interface
+- **会话管理** (`Agent/src/context/session.py`)：创建/恢复会话，TUI 历史记录、自动补全、验证器
+  **Session management**: Create/resume sessions, TUI history, auto-completion, validators
+- **提示词管理** (`Agent/src/context/prompt.py`)：系统提示词组装（角色、指南、环境边界、技能）、DeepSeek 推理支持、消息历史管理
+  **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management
+- **上下文管理** (`Agent/src/context/agent_context.py`)：完整状态序列化（save/load/resume），含 Token 用量统计、权限状态、设计列表
+  **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
+- **内置命令系统** (`Agent/src/context/command.py`)：14+ 内置命令（查询设计/运行、列出/加载技能、查看缓存 URL 等）
+  **Built-in command system**: 14+ built-in commands (query designs/runs, list/load skills, view cached URLs, etc.)
+- **权限控制** (`Agent/src/tool/ask_permission.py`)：所有敏感操作（文件修改、仿真启动、bash 命令）均需用户确认
+  **Permission control**: All sensitive operations (file modification, simulation launch, bash commands) require user confirmation
+- **模型分类** (`Agent/src/utility/client.py`)：主模型（复杂/模糊任务）+ 快速模型（简单/确定任务）双模型支持
+  **Model classification**: Dual-model support — primary model (complex/ambiguous tasks) + fast model (simple/deterministic tasks)
+- **Agent 技能** (`Agent/skills/`)：标准 Anthropic 式技能框架，支持渐进式披露与按需加载
+  **Agent skills**: Standard Anthropic-style skill framework with progressive disclosure and on-demand loading
+- **工具执行引擎** (`Agent/src/tool/tool_execute.py`)：统一调度与异常捕获
+  **Tool execution engine**: Unified scheduling and exception handling
+- **配置文件** (`Agent/config/`)：API 连接配置、Agent 运行参数配置
+  **Configuration files**: API connection configuration, Agent runtime parameter configuration
