@@ -16,7 +16,7 @@ Revision:
 2026.4.22      Yu Huang     1.3               Bash support\n
 2026.4.26      Yu Huang     1.4               Reasoning support\n
 2026.4.29      Yu Huang     1.5               Builtin commands support\n
-2026.5.15      Yu Huang     1.3               Agent skills support\n
+2026.5.15      Yu Huang     1.6               Agent skills support\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
@@ -165,13 +165,13 @@ def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
                 f"  - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
                 f" - Is bash available: {is_bash_available()}\n"
                 f" - Path of simulator: {ctx.agent_configs["SIMULATOR_PATH"]}\n"
-                f" - You are powered by the LLM: {ctx.api_configs["MODEL_NAME"]}\n"}]
+                f" - You are powered by the LLM: {ctx.api_configs["MAIN_MODEL_NAME"]}\n"}]
     return prompts
 
 
 def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's skills with AgentContext"""
-    limit = ctx.agent_configs["SKILL_DESCRIPTION_LIMIT"]
+    limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
     skill_list_str = ""
     for skill in ctx.skills:
         if len(skill['description']) > limit:
@@ -210,7 +210,8 @@ def is_git_repo(path: str = None) -> bool:
             text=True
         )
         return result.returncode == 0
-    except FileNotFoundError:
+    except Exception as e:
+        sys_log.error(f"Call git failed with error {e}")
         return False
 
 
@@ -224,7 +225,8 @@ def is_bash_available() -> bool:
             timeout=5
         )
         return result.returncode == 0
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+    except Exception as e:
+        sys_log.error(f"Call bash failed with error {e}")
         return False
 
 

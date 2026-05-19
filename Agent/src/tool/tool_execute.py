@@ -18,6 +18,7 @@ Revision:
 2026.4.25-26   Yu Huang     1.4               Ask user support\n
 2026.5.13      Yu Huang     1.5               Edit file support\n
 2026.5.15      Yu Huang     1.6               Agent skills support\n
+2026.5.19      Yu Huang     1.7               Webpage fetch support & fix non-ASCII results dump bug\n
 
 Details:
 Execution of tools that TECoSim agent can call
@@ -47,12 +48,12 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, progress:
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call["id"],
-            "content": json.dumps(results),
+            "content": json.dumps(results, ensure_ascii=False),
         })
         if user_addons is not None:
             messages.append({
                 "role": "user",
-                "content": json.dumps(user_addons),
+                "content": json.dumps(user_addons, ensure_ascii=False),
             })
     return messages
 
@@ -81,6 +82,9 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
             user_addons = None
         elif func_name.lower() == "skill":
             results, user_addons = tool_def.skill(arguments, ctx, progress)
+        elif func_name.lower() == "web_fetch":
+            results = tool_def.web_fetch(arguments, ctx, progress)
+            user_addons = None
         elif func_name.lower() == "check_simulator":
             results = tool_def.check_simulator(ctx, progress)
             user_addons = None

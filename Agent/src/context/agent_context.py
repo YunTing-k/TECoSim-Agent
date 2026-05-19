@@ -14,6 +14,7 @@ Revision:
 2026.4.29      Yu Huang     1.1               Builtin commands support\n
 2026.5.12      Yu Huang     1.2               Edit file support\n
 2026.5.15      Yu Huang     1.3               Agent skills support\n
+2026.5.19      Yu Huang     1.4               Webpage fetch support\n
 
 Details:
 Agent's context management with save/load
@@ -24,13 +25,23 @@ import uuid
 import json
 import logging
 
+from openai import OpenAI
+from datetime import datetime
 from argparse import Namespace
 from prompt_toolkit import PromptSession
-from typing import Any
+from typing import Any, TypedDict
 from rich.console import Console
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+class URLCache(TypedDict):
+    """URL cache with time and content"""
+    url: str
+    time: datetime
+    content: str
+
 
 class AgentContext:
     """context of TECoSim agent"""
@@ -45,7 +56,8 @@ class AgentContext:
         self.skills: list[dict[str, str]] = []   # (don't dump)
         # objects
         self.agent_session: PromptSession | None = None  # (don't dump)
-        self.console: Console | None = None  # (don't dump)
+        self.llm_client: OpenAI | None = None  # (don't dump)
+        self.url_caches: list[URLCache] = []  # (don't dump)
         # params
         self.session_uuid: str = ""  # (don't dump)
         self.system_prompts: int = 0  # (don't dump)
@@ -78,6 +90,7 @@ class AgentContext:
             "write_file": False,
             "edit_file": False,
             "skill": False,
+            "web_fetch": False,
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,

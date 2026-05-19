@@ -14,6 +14,7 @@ Revision:
 2026.5.12      Yu Huang     1.1               Add builtin command of querying read file\n
 2026.5.15      Yu Huang     1.2               Revise builtin command management\n
 2026.5.15      Yu Huang     1.3               Agent skills support\n
+2026.5.19      Yu Huang     1.4               Webpage fetch support\n
 
 Details:
 Realization of builtin commands
@@ -70,10 +71,10 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
         uncached_rate = 100
     else:
         uncached_rate = 100 * ctx.total_uncached_tokens / ctx.total_input_tokens
-    if ctx.api_configs["MODEL_CONTEXT"] <= 0:
+    if ctx.api_configs["MAIN_MODEL_CONTEXT"] <= 0:
         ctx_usage = 100
     else:
-        ctx_usage = 100 * ctx.last_input_tokens / ctx.api_configs["MODEL_CONTEXT"]
+        ctx_usage = 100 * ctx.last_input_tokens / ctx.api_configs["MAIN_MODEL_CONTEXT"]
     cmd_str = Text()
     cmd_str.append("Session UUID: ", style=f"white")
     cmd_str.append(f"{ctx.session_uuid}\n", style=f"bold {MAJOR_COLOR2}")
@@ -89,37 +90,37 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append(f"{100 - uncached_rate} %\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Total tokens consumption of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue input tokens of this session: ", style=f"white")
+    cmd_str.append("Last dialogue input tokens of this session (main model): ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue output tokens of this session: ", style=f"white")
+    cmd_str.append("Last dialogue output tokens of this session (main model): ", style=f"white")
     cmd_str.append(f"{ctx.last_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue total tokens of this session: ", style=f"white")
+    cmd_str.append("Last dialogue total tokens of this session (main model): ", style=f"white")
     cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue's context usage of this session: ", style=f"white")
+    cmd_str.append("Last dialogue's context usage of this session (main model): ", style=f"white")
     cmd_str.append(f"{ctx_usage} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" out of ", style=f"white")
-    cmd_str.append(f"{ctx.api_configs["MODEL_CONTEXT"] / 1000} K", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{ctx.api_configs["MAIN_MODEL_CONTEXT"] / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" were used\n", style=f"white")
 
     cmd_str.append("\nTotal LLM API request num: ", style=f"white")
     cmd_str.append(f"{ctx.total_llm_requests}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total messages num: ", style=f"white")
+    cmd_str.append("Total messages num (main model): ", style=f"white")
     cmd_str.append(f"{len(ctx.messages)}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("System prompts num: ", style=f"white")
+    cmd_str.append("System prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.system_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Tools prompts num: ", style=f"white")
+    cmd_str.append("Tools prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.tools_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("User prompts num: ", style=f"white")
+    cmd_str.append("User prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.user_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant content prompts num: ", style=f"white")
+    cmd_str.append("Assistant content prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.content_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant reasoning content prompts num: ", style=f"white")
+    cmd_str.append("Assistant reasoning content prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.reasoning_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant tool calls prompts num: ", style=f"white")
+    cmd_str.append("Assistant tool calls prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.tool_calls_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Tool results prompts num: ", style=f"white")
+    cmd_str.append("Tool results prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.tool_results_prompts}\n", style=f"bold {MAJOR_COLOR2}")
 
     cmd_str.append("\nAvailable skills amount: ", style=f"white")
@@ -238,7 +239,7 @@ def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
 def cmd_query_skills(args: Any, ctx: AgentContext, console: Console):
     """query all available skills (truncate)"""
     title = f"Available Skills ({len(ctx.skills)})"
-    limit = ctx.agent_configs["SKILL_DESCRIPTION_LIMIT"]
+    limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
     cmd_str = Text()
     for skill in ctx.skills:
         cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR1}")
@@ -299,6 +300,32 @@ def cmd_load_skills(skill_name: str, args: Any, ctx: AgentContext, console: Cons
             {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
 
 
+def cmd_query_url_caches(args: Any, ctx: AgentContext, console: Console):
+    """query all cached URLs"""
+    title = f"Cached URLs ({len(ctx.url_caches)})"
+    cmd_str = Text()
+    view_limit = URL_CACHE_VIEW_MAX
+    char_limit = URL_CACHE_CONTENT_CHAR_MAX
+    view_left = len(ctx.url_caches) - view_limit if len(ctx.url_caches) >= view_limit else  0
+    for idx, url_cache in enumerate(ctx.url_caches):
+        cmd_str.append(f"URL: ", style=f"white")
+        cmd_str.append(f"{url_cache["url"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f", timestamp: ", style=f"white")
+        cmd_str.append(f"{url_cache["time"].strftime("%Y-%m-%d %H:%M:%S")}\n", style=f"bold {MAJOR_COLOR2}")
+        content = url_cache["content"]
+        if len(content) > char_limit:
+            content = content[:char_limit] + "..."
+        cmd_str.append(f"Cached content: ", style=f"white")
+        cmd_str.append(f"{content}\n\n", style=f"bright_black")
+        if idx + 1 >= view_limit:
+            break
+    cmd_str.append(f"Remaining cached URLs not-displayed: ", style=f"white")
+    cmd_str.append(f"{view_left}", style=f"bold {MAJOR_COLOR2}")
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
 class BuiltinCommands:
     """builtin command class"""
     def __init__(self, console: Console):
@@ -316,6 +343,8 @@ class BuiltinCommands:
                                                "query all the available skills with name and truncated description"),
             "query_loaded_skills": (cmd_query_loaded_skills, "query all loaded skills",
                                                "query all the loaded skills with name and full description"),
+            "query_url_caches": (cmd_query_url_caches, "query all cached URLs",
+                                               "query all the cached URLs with timestamp and truncated content"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")
@@ -356,7 +385,7 @@ class BuiltinCommands:
                 console.print(f"Skill with '{skill['name']}' is already registered", style="bold yellow")
             else:
                 self.register(skill["name"], skill_bound_command(skill["name"], cmd_load_skills, skill["name"]),
-                              "load skill immediately",
+                              "load this skill immediately",
                               f"load the skill {skill['name']} immediately to context", True)
                 registered_skills += 1
         sys_log.debug(f"{registered_skills} skills registered as builtin commands, "

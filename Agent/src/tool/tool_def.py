@@ -23,6 +23,7 @@ Revision:
 2026.5.13      Yu Huang     1.9               Read file with truncation\n
 2026.5.14      Yu Huang     2.0               Move read lines/logs methods to file_io_support.py & revise tool defs\n
 2026.5.15      Yu Huang     2.1               Agent skills support\n
+2026.5.19      Yu Huang     2.2               Webpage fetch support\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -39,6 +40,7 @@ from src.constants import *
 from src.context.agent_context import AgentContext
 from src.tool.file_io_support import read_line_with_limit, clean_stdout_log, clean_stderr_log, match_line_ranges, ask_edit_tui
 from src.tool.skills_support import load_skill_content, get_skill_description
+from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled, OTHER_LABEL, RECOMMEND_LABEL
@@ -56,6 +58,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_write_file_def(),
         tool_edit_file_def(),
         tool_skill_def(),
+        tool_web_fetch_def(),
         # expert tools
         tool_check_simulator_def(),
         tool_init_design_def(),
@@ -239,6 +242,7 @@ def tool_bash_def() -> dict[str, Any]:
                            " - Read files: Prefer using `read_file` (NOT cat/head/tail)\n"
                            " - Write files: Prefer using `write_file` (NOT echo >/cat <<EOF)\n"
                            " - Edit files: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
+                           " - Fetch webpage: Prefer using `web_fetch` (NOT curl/wget or other shell/script tools)\n"
                            " - Communication: Output text directly (NOT echo/printf)\n"
                            "While the Bash tool can do similar things, it’s better to use the built-in tools as they provide "
                            "a better user experience and make it easier to review tool calls and give permission.\n"
@@ -915,6 +919,101 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
         sys_log.error(f"skill FAIL: Load skill failed with error: {e}")
         progress.console.print(f"skill FAIL: Load skill failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Load skill failed with error: {e}"}, None
+
+
+def tool_web_fetch_def() -> dict[str, Any]:
+    """tool definition of launching skills (web_fetch)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Use this tool when you need to retrieve and analyze web content. `web_fetch` WILL FAIL for "
+                           "authenticated or private URLs. Before using this tool, check if the URL points to an authenticated "
+                           "service (e.g. Google Docs, Confluence, Jira, GitHub). If so, look for a specialized MCP tool "
+                           "that provides authenticated access.\n"
+                           "Usage:\n"
+                           "- Takes a URL and a prompt (describe what information you want to extract) as input\n"
+                           "- Fetches the URL content, converts HTML to markdown and processes it using another AI model with "
+                           "given prompt\n"
+                           "- Returns the model's response about the content\n"
+                           "IMPORTANT: If an MCP-provided web fetch tool is available, prefer using that tool instead "
+                           "of this one, as it may have fewer restrictions.\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "format": "url",
+                        "description": "The URL to fetch content from.\n"
+                                       "- The URL must be a fully-formed valid URL\n"
+                                       "- HTTP URLs will be automatically upgraded to HTTPS\n",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "The prompt for another AI model to process the fetched content."
+                    }
+                },
+                "required": ["url", "prompt"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of launching skill with AgentContext"""
+    try:
+        url = arguments["url"]
+        prompt = arguments["prompt"]
+        """permission request"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "web_fetch",
+                                   f"URL: {arguments["url"]}, "
+                                   f"prompt: {arguments["prompt"]}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL", "info": f"Permission request denied by user"}
+
+        """check URL"""
+        check_info, check_success = check_url(url, progress.console)
+        if not check_success:
+            sys_log.error(f"web_fetch FAIL: URL {url} is not valid. Detail: {check_info}")
+            progress.console.print(f"web_fetch FAIL: URL {url} is not valid. Detail: {check_info}", style="bold red")
+            return {"status": "FAIL", "info": f"URL {url} is not valid. Detail: {check_info}"}
+
+        """fetch content"""
+        content, content_info, if_redirect, final_url = web_single_fetch(url, ctx, progress.console)
+        if content is None:
+            sys_log.error(f"web_fetch FAIL: Failed to fetch content from URL {url}. If redirect: {if_redirect}, final URL: "
+                          f"{final_url}. Error detail: {content_info}")
+            progress.console.print(f"web_fetch FAIL: Failed to fetch content from URL {url}. If redirect: {if_redirect}, final URL: "
+                                   f"{final_url}. Error detail: {content_info}", style="bold red")
+            return {"status": "FAIL", "info": f"Failed to fetch content from URL {url}. If redirect: {if_redirect}, final URL: "
+                                              f"{final_url}. Error detail: {content_info}"}
+
+        """route to LLM to process the content"""
+        process_content, if_success = web_fetch_process(prompt, content, ctx, progress.console)
+        if if_success:
+            sys_log.debug(f"web_fetch SUCCESS: URL {url} fetched and processed successfully. If redirect: {if_redirect}, "
+                          f"final URL: {final_url}")
+            progress.console.print(f"web_fetch SUCCESS: URL {url} fetched and processed successfully. If redirect: "
+                                   f"{if_redirect}, final URL: {final_url}", style="bright_black")
+            if if_redirect:
+                return {"status": "SUCCESS", "content": f"URL {url} is redirected to {final_url}.\n\n" + f"{process_content}"}
+            else:
+                return {"status": "SUCCESS", "content": f"{process_content}"}
+        else:
+            sys_log.error(f"web_fetch FAIL: Failed to process content from URL {url} with LLM. If redirect: {if_redirect}, "
+                          f"final URL: {final_url}. Error detail: {process_content}")
+            progress.console.print(f"web_fetch FAIL: Failed to process content from URL {url} with LLM. If redirect: "
+                                   f"{if_redirect}, final URL: {final_url}. Error detail: {process_content}", style="bold red")
+            return {"status": "FAIL", "info": f"Failed to process content from URL {url} with LLM. If redirect: {if_redirect}, "
+                                              f"final URL: {final_url}. Error detail: {process_content}"}
+    except Exception as e:
+        sys_log.error(f"web_fetch FAIL: Fetch content from URL failed with error: {e}")
+        progress.console.print(f"web_fetch FAIL: Fetch content from URL failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Fetch content from URL failed with error: {e}"}
 
 
 def tool_check_simulator_def() -> dict[str, Any]:

@@ -19,6 +19,7 @@ Revision:
 2026.4.29      Yu Huang     1.6               Builtin commands support\n
 2026.5.13      Yu Huang     1.7               Bugfix of LLM context detection\n
 2026.5.15      Yu Huang     1.8               Agent skills support\n
+2026.5.19      Yu Huang     1.9               Model classification support\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -58,7 +59,7 @@ if __name__ == '__main__':
 
     """load API configs and config LLM client"""
     ctx.api_configs = client.load_configs(configs_path="./config/api_configs.json", name="API", console=console)
-    llm_client = client.config_client(ctx=ctx, console=console)
+    ctx.llm_client = client.config_client(ctx=ctx, console=console)
 
     """load agent configs"""
     ctx.agent_configs = client.load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
@@ -106,7 +107,7 @@ if __name__ == '__main__':
                 """second response with previous loop's tool results"""
                 pass
             sys_log.debug("LLM request start")
-            response = ui_info.llm_request_with_spinner(client.create_request, llm_client, ctx)
+            response = ui_info.llm_request_with_spinner(client.request_loop_main, ctx.llm_client, ctx)
             sys_log.debug("LLM request end")
 
             """check finish reason"""
@@ -128,7 +129,7 @@ if __name__ == '__main__':
             ctx.total_tokens += usage.total_tokens
             ctx.last_tokens = usage.total_tokens
             cached_tokens = usage.prompt_tokens_details.cached_tokens
-            uncached_tokens = usage.prompt_tokens - usage.prompt_tokens_details.cached_tokens  # uncached input tokens
+            uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
             ctx.total_uncached_tokens += uncached_tokens
             sys_log.debug(f"Token usage: input= +{usage.prompt_tokens} ({ctx.total_input_tokens}), "
                           f"output= +{usage.completion_tokens} ({ctx.total_output_tokens}), "
@@ -150,11 +151,11 @@ if __name__ == '__main__':
                 else:
                     sys_log.warning(f"There is only reasoning content in LLM's message")
                     console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
-            if ctx.last_input_tokens >= ctx.api_configs["MODEL_CONTEXT"]:
-                sys_log.error(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
-                console.print(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens", style="bold red")
-                raise RuntimeError(f"LLM out of context: {ctx.api_configs["MODEL_CONTEXT"]} tokens")
-            if ctx.last_input_tokens >= ctx.api_configs["MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
+            if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
+                sys_log.error(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
+                console.print(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens", style="bold red")
+                raise RuntimeError(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
+            if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
                 sys_log.warning(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
                 console.print(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context", style="bold yellow")
 
@@ -184,7 +185,8 @@ if __name__ == '__main__':
                 ctx.task_end = False
                 sys_log.debug("Tools call start")
                 ctx.tool_calls_prompts += len(assistant_tool_calls)
-                with ui_info.loading_spinner(waiting_desc="Tools calling", done_desc="Tools execution done") as progress:
+                with ui_info.loading_spinner(waiting_desc="Tools calling", done_desc="Tools execution done",
+                                             spinner="bouncingBall") as progress:
                     tools_response = tool_execute.execute_tools(tool_calls=assistant_tool_calls, ctx=ctx, progress=progress)
                     ctx.messages.extend(tools_response)
                     ctx.tool_results_prompts += len(tools_response)
