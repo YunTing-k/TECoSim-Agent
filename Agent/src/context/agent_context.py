@@ -15,6 +15,7 @@ Revision:
 2026.5.12      Yu Huang     1.2               Edit file support\n
 2026.5.15      Yu Huang     1.3               Agent skills support\n
 2026.5.19      Yu Huang     1.4               Webpage fetch support\n
+2026.5.20      Yu Huang     1.5               Web search support\n
 
 Details:
 Agent's context management with save/load
@@ -34,6 +35,16 @@ from rich.console import Console
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+class RequestLLMCancelled(Exception):
+    """Raised when user cancels requesting LLM"""
+
+class WebFetchCancelled(Exception):
+    """Raised when user cancels web fetch"""
+
+class WebSearchCancelled(Exception):
+    """Raised when user cancels web search"""
 
 
 class URLCache(TypedDict):
@@ -91,6 +102,7 @@ class AgentContext:
             "edit_file": False,
             "skill": False,
             "web_fetch": False,
+            "web_search": False,
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,

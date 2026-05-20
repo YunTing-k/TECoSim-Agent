@@ -16,6 +16,7 @@ Revision:
 2026.4.26      Yu Huang     1.3               More LLM configs support\n
 2026.4.29      Yu Huang     1.4               Builtin commands support\n
 2026.5.19      Yu Huang     1.5               Model classification support\n
+2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
 
 Details:
 Client configuration, creation
@@ -26,9 +27,11 @@ import json
 
 from openai import OpenAI
 from rich.console import Console
-from typing import Any
-from src.constants import *
+from typing import Callable, Any
+from src.utility.ui_info import loading_spinner_rap
+from src.context.agent_context import RequestLLMCancelled
 from src.context.agent_context import AgentContext
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
@@ -61,6 +64,16 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
         sys_log.error(f"Failed to config client with API configs with error: {e}")
         console.print(f"Failed to config client with API configs with error: {e}", style="bold red")
         raise RuntimeError(e)
+
+
+def llm_request_with_spinner(func: Callable, *args,
+                             waiting_desc: str = "Brain (but not mine) using ...", done_desc: str = "LLM response latency",
+                             spinner: str = "dots2", **kwargs) -> Any:
+    """LLM request with spinner through loading_spinner_rap"""
+    result = loading_spinner_rap(func, *args,
+                                 waiting_desc=waiting_desc, done_desc=done_desc, spinner=spinner,
+                                 out_except=RequestLLMCancelled("Cancelled by user"), **kwargs)
+    return result
 
 
 def request_loop_main(client: OpenAI, ctx: AgentContext):
@@ -104,7 +117,3 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
             params["extra_body"] = {"thinking": {"type": "disabled"}}
     response = client.chat.completions.create(**params)
     return response
-
-
-class RequestLLMCancelled(Exception):
-    """Raised when user cancels requesting LLM."""

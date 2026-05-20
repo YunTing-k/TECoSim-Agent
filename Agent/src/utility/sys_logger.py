@@ -25,7 +25,6 @@ Colorful logger, output the logging information to the console and the file, the
 'ERROR': 'light_red'\n
 'CRITICAL': 'red'
 """
-import io
 import logging
 import datetime
 import colorlog

@@ -19,6 +19,7 @@ Revision:
 2026.5.13      Yu Huang     1.5               Edit file support\n
 2026.5.15      Yu Huang     1.6               Agent skills support\n
 2026.5.19      Yu Huang     1.7               Webpage fetch support & fix non-ASCII results dump bug\n
+2026.5.20      Yu Huang     1.8               Web search support\n
 
 Details:
 Execution of tools that TECoSim agent can call
@@ -84,6 +85,9 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
             results, user_addons = tool_def.skill(arguments, ctx, progress)
         elif func_name.lower() == "web_fetch":
             results = tool_def.web_fetch(arguments, ctx, progress)
+            user_addons = None
+        elif func_name.lower() == "web_search":
+            results = tool_def.web_search(arguments, ctx, progress)
             user_addons = None
         elif func_name.lower() == "check_simulator":
             results = tool_def.check_simulator(ctx, progress)

@@ -84,15 +84,16 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.10
-  **Current version**: 0.0.10
+- **当前版本**: 0.0.11
+  **Current version**: 0.0.11
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
-- **工具系统（14个工具） | Tool system (14 tools)** (`Agent/src/tool/`)：
+- **工具系统（15个工具） | Tool system (15 tools)** (`Agent/src/tool/`)：
   - 用户交互：`ask_user_question` | User interaction
   - 文件操作：`read_file`, `write_file`, `edit_file`（含 TUI diff 编辑视图） | File operations (with TUI diff editing view)
   - Shell 执行：`bash`（含命令风险检测分级系统） | Shell execution (with risk-level detection system)
-  - 网页获取：`web_fetch`（URL 安全校验、私有网络拦截、HTML-to-Markdown 转换、可配置缓存） | Web fetching (URL security check, private network interception, HTML-to-Markdown conversion, configurable cache)
+  - 网页获取：`web_fetch`（URL 安全校验、私有网络拦截、HTML-to-Markdown 转换、可配置缓存）、主agent-loop上下文隔离 | Web fetching (URL security check, private network interception, HTML-to-Markdown conversion, configurable cache, main agent-loop context isolation)
+  - 网络搜索：`web_search`（Domain黑名单/白名单、可配置代理和搜索模式的四种不同的后端`Exa`/`Tavily`/`Linkup`（需要API key）与`DDGS`（不需要key），主agent-loop上下文隔离 | Web fetching (Domain blacklist/whitelist, four configurable backends: `Exa`/`Tavily`/`Linkup` (API key required) and `DDGS` (no key), with proxy and search mode, main agent-loop context isolation)
   - 技能调用：`skill`（标准技能接口） | Skill invocation (standard skill interface)
   - 仿真器接口：`check_simulator`, `init_design`, `copy_design`, `query_design_list`, `launch_simulator`, `query_run_num`, `read_log` | Simulator interface
 - **会话管理** (`Agent/src/context/session.py`)：创建/恢复会话，TUI 历史记录、自动补全、验证器

@@ -24,6 +24,7 @@ Revision:
 2026.5.14      Yu Huang     2.0               Move read lines/logs methods to file_io_support.py & revise tool defs\n
 2026.5.15      Yu Huang     2.1               Agent skills support\n
 2026.5.19      Yu Huang     2.2               Webpage fetch support\n
+2026.5.20      Yu Huang     2.3               Web search support & Interrupt support for web fetch/search\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -35,15 +36,18 @@ import logging
 import shutil
 
 from typing import Any
+from datetime import datetime
 from rich.progress import Progress
-from src.constants import *
-from src.context.agent_context import AgentContext
+from src.utility import ui_info
+from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.file_io_support import read_line_with_limit, clean_stdout_log, clean_stderr_log, match_line_ranges, ask_edit_tui
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
+from src.tool.web_support import web_search_top, web_search_process
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled, OTHER_LABEL, RECOMMEND_LABEL
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
@@ -59,6 +63,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_edit_file_def(),
         tool_skill_def(),
         tool_web_fetch_def(),
+        tool_web_search_def(),
         # expert tools
         tool_check_simulator_def(),
         tool_init_design_def(),
@@ -877,7 +882,6 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
     """tool realization of launching skill with AgentContext"""
     try:
         name = str(arguments["skill"])
-        args = arguments.get("args", "")
         """permission request"""
         progress.stop()
         token = ask_permission_tui(ctx, "skill",
@@ -922,7 +926,7 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
 
 
 def tool_web_fetch_def() -> dict[str, Any]:
-    """tool definition of launching skills (web_fetch)"""
+    """tool definition of fetching contents of webpage (web_fetch)"""
     tool_def = {
         "type": "function",
         "function": {
@@ -937,7 +941,7 @@ def tool_web_fetch_def() -> dict[str, Any]:
                            "given prompt\n"
                            "- Returns the model's response about the content\n"
                            "IMPORTANT: If an MCP-provided web fetch tool is available, prefer using that tool instead "
-                           "of this one, as it may have fewer restrictions.\n",
+                           "of this one, as it may provide better web fetch quality.\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -962,7 +966,7 @@ def tool_web_fetch_def() -> dict[str, Any]:
 
 
 def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of launching skill with AgentContext"""
+    """tool realization of fetching contents of webpage with AgentContext"""
     try:
         url = arguments["url"]
         prompt = arguments["prompt"]
@@ -983,7 +987,11 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             return {"status": "FAIL", "info": f"URL {url} is not valid. Detail: {check_info}"}
 
         """fetch content"""
-        content, content_info, if_redirect, final_url = web_single_fetch(url, ctx, progress.console)
+        content, content_info, if_redirect, final_url = ui_info.loading_spinner_rap(
+            web_single_fetch, url, ctx, progress.console,
+            waiting_desc="Web fetching ...", done_desc="Web fetch time cost",
+            spinner="arrow3", out_except=WebFetchCancelled("Cancelled by user"))
+        # content, content_info, if_redirect, final_url = web_single_fetch(url, ctx, progress.console)
         if content is None:
             sys_log.error(f"web_fetch FAIL: Failed to fetch content from URL {url}. If redirect: {if_redirect}, final URL: "
                           f"{final_url}. Error detail: {content_info}")
@@ -1010,10 +1018,106 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                    f"{if_redirect}, final URL: {final_url}. Error detail: {process_content}", style="bold red")
             return {"status": "FAIL", "info": f"Failed to process content from URL {url} with LLM. If redirect: {if_redirect}, "
                                               f"final URL: {final_url}. Error detail: {process_content}"}
+    except WebFetchCancelled:
+        sys_log.warning(f"web_fetch FAIL: Web fetch is cancelled by user")
+        progress.console.print(f"web_fetch FAIL: Web fetch is cancelled by user", style="bold yellow")
+        return {"status": "FAIL", "info": f"Web fetch is cancelled by user"}
     except Exception as e:
         sys_log.error(f"web_fetch FAIL: Fetch content from URL failed with error: {e}")
         progress.console.print(f"web_fetch FAIL: Fetch content from URL failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Fetch content from URL failed with error: {e}"}
+
+
+def tool_web_search_def() -> dict[str, Any]:
+    """tool definition of searching query on web (web_search)"""
+    now = datetime.now()
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Use this tool when you need to search the web or access information beyond your knowledge cutoff. "
+                           "IMPORTANT: If an MCP-provided web search tool is available, prefer using that tool instead "
+                           "of this one, as it may provide better web search quality.\n"
+                           "Usage:\n"
+                           "- Takes query (list of key words you want to search on the web) as input\n"
+                           "- The search results will be processed by another AI model, and final results are formatted "
+                           "as markdown with hyperlinks\n"
+                           "CRITICAL REQUIREMENT. You MUST follow:\n  "
+                           "- After answering the user's question, you MUST include a \"Sources:\" section at the end of "
+                           "your response\n"
+                           "- In the \"Sources:\" section, list all relevant URLs from the search results as markdown "
+                           "hyperlinks: [Title](URL)\n"
+                           "  - Example format:\n"
+                           "    [Your answer here]\n"
+                           "    Sources:\n"
+                           "    - [Source Title 1](https://example.com/1)\n"
+                           "    - [Source Title 2](https://example.com/2)\n"
+                           " - This is MANDATORY: never skip including \"Sources:\" in your response\n"
+                           "IMPORTANT - Use the correct year in search queries:\n"
+                           f"- The current month is {now.strftime("%B-%Y")}. You MUST use this year when searching for "
+                           f"recent information, documentation, or current events.\n"
+                           "- Example: If the user asks for \"latest React docs\", "
+                           "search for \"React documentation\" with the current year, NOT last year\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "minLength": 2,
+                        "description": "key words you want to search on the web",
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of searching query on web with AgentContext"""
+    try:
+        query = arguments["query"]
+        """permission request"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "web_search",
+                                   f"Web search with keywords {query}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL", "info": f"Permission request denied by user"}
+
+        """web search"""
+        content, content_info = ui_info.loading_spinner_rap(
+            web_search_top, query, ctx, progress.console,
+            waiting_desc="Web searching ...", done_desc="Web search time cost",
+            spinner="arrow3", out_except=WebSearchCancelled("Cancelled by user"))
+        # content, content_info = web_search_top(query, ctx, progress.console)
+        if content is None:
+            sys_log.error(f"web_search FAIL: Failed to search on web with query: {query}. Error detail: {content_info}")
+            progress.console.print(f"web_search FAIL: Failed to search on web with query: {query}. Error detail: "
+                                   f"{content_info}", style="bold red")
+            return {"status": "FAIL", "info": f"Failed to search on web with query: {query}. Error detail: {content_info}"}
+
+        """route to LLM to process the content"""
+        process_content, if_success = web_search_process(query, content, ctx, progress.console)
+        if if_success:
+            sys_log.debug(f"web_search SUCCESS: {query} searched and processed successfully")
+            progress.console.print(f"web_search SUCCESS: {query} searched and processed successfully", style="bright_black")
+            return {"status": "SUCCESS", "content": f"{process_content}"}
+        else:
+            sys_log.error(f"web_search FAIL: Failed to search query with {query} with LLM. Error detail: {process_content}")
+            progress.console.print(f"web_search FAIL: Failed to search query with {query} with LLM. "
+                                   f"Error detail: {process_content}", style="bold red")
+            return {"status": "FAIL", "info": f"Failed to search query with {query} with LLM. Error detail: {process_content}"}
+    except WebSearchCancelled:
+        sys_log.warning(f"web_search FAIL: Web search is cancelled by user")
+        progress.console.print(f"web_search FAIL: Web search is cancelled by user", style="bold yellow")
+        return {"status": "FAIL", "info": f"Web search is cancelled by user"}
+    except Exception as e:
+        sys_log.error(f"web_search FAIL: Web search failed with error: {e}")
+        progress.console.print(f"web_search FAIL: Web search failed failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Web search failed failed with error: {e}"}
 
 
 def tool_check_simulator_def() -> dict[str, Any]:

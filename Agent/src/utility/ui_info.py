@@ -16,6 +16,7 @@ Revision:
 2026.4.28      Yu Huang     1.3               Exit TUI support\n
 2026.5.12      Yu Huang     1.4               Move ask permission to ask_permission.py\n
 2026.5.12      Yu Huang     1.5               TUI event trigger support\n
+2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
 
 Details:
 UI information of agent dev version, ASCII art banner of start, error
@@ -36,7 +37,6 @@ from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from contextlib import contextmanager
 from typing import Callable, Any
-from src.utility.client import RequestLLMCancelled
 from src.context import prompt
 from src.context.agent_context import AgentContext
 from src.constants import *
@@ -135,7 +135,7 @@ class GradientTextColumn(ProgressColumn):
 
 @contextmanager
 def loading_spinner(waiting_desc: str, done_desc: str, spinner: str = "dots2"):
-    """context manager for rich.Progress with any time-consuming operation"""
+    """context manager for rich.Progress with any time-consuming operation (no rapid interrupt)"""
     with Progress(
         GradientTextColumn(start_rgb=(255, 159, 243), end_rgb=(84, 160, 255)),
         SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
@@ -147,12 +147,8 @@ def loading_spinner(waiting_desc: str, done_desc: str, spinner: str = "dots2"):
         progress.update(task, description=done_desc)
 
 
-def llm_request_with_spinner(func: Callable, *args,
-                             waiting_desc: str = "Brain (but not mine) using ...",
-                             done_desc: str = "LLM response latency",
-                             spinner: str = "dots2",
-                             **kwargs) -> Any:
-    """LLM request with spinner and signal"""
+def loading_spinner_rap(func: Callable, *args, waiting_desc: str, done_desc: str, spinner: str, out_except: Exception, **kwargs) -> Any:
+    """Spinner for any time-consuming operation with signal"""
     result = [None]
     exception: list[Exception | None] = [None]
     interrupted = False
@@ -188,7 +184,7 @@ def llm_request_with_spinner(func: Callable, *args,
         if interrupted:
             # set SIGINT handler with original_handler
             signal.signal(signal.SIGINT, original_handler)
-            raise RequestLLMCancelled("cancelled by user")
+            raise out_except
         progress.update(task, description=done_desc)
 
     # set SIGINT handler with original_handler

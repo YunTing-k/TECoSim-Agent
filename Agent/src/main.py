@@ -20,6 +20,7 @@ Revision:
 2026.5.13      Yu Huang     1.7               Bugfix of LLM context detection\n
 2026.5.15      Yu Huang     1.8               Agent skills support\n
 2026.5.19      Yu Huang     1.9               Model classification support\n
+2026.5.20      Yu Huang     2.0               Refactor llm_request_with_spinner and move to client.py\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -32,7 +33,7 @@ from src.utility import sys_logger, cli_args, ui_info, client, command
 from rich.console import Console
 from rich.markdown import Markdown
 from src.context import session, prompt
-from src.context.agent_context import AgentContext
+from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool import tool_def, tool_execute, skills_support
 from src.constants import *
 
@@ -107,7 +108,7 @@ if __name__ == '__main__':
                 """second response with previous loop's tool results"""
                 pass
             sys_log.debug("LLM request start")
-            response = ui_info.llm_request_with_spinner(client.request_loop_main, ctx.llm_client, ctx)
+            response = client.llm_request_with_spinner(client.request_loop_main, ctx.llm_client, ctx)
             sys_log.debug("LLM request end")
 
             """check finish reason"""
@@ -203,7 +204,7 @@ if __name__ == '__main__':
             sys_log.warning(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
             console.print(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
             continue
-        except ui_info.RequestLLMCancelled:
+        except RequestLLMCancelled:
             """LLM API request cancelled"""
             if ctx.task_end:  # no tool calls, only user prompt, so pop it
                 ctx.messages.pop()
