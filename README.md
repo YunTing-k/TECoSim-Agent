@@ -84,8 +84,8 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.11
-  **Current version**: 0.0.11
+- **当前版本**: 0.0.12
+  **Current version**: 0.0.12
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
 - **工具系统（15个工具） | Tool system (15 tools)** (`Agent/src/tool/`)：
@@ -102,15 +102,17 @@ This project is still under development. The basic goals are as follows:
   **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management
 - **上下文管理** (`Agent/src/context/agent_context.py`)：完整状态序列化（save/load/resume），含 Token 用量统计、权限状态、设计列表
   **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
-- **内置命令系统** (`Agent/src/context/command.py`)：14+ 内置命令（查询设计/运行、列出/加载技能、查看缓存 URL 等）
-  **Built-in command system**: 14+ built-in commands (query designs/runs, list/load skills, view cached URLs, etc.)
+- **内置命令系统** (`Agent/src/context/command.py`)：内置命令查询设计/运行、列出/加载技能、查看缓存 URL 等
+  **Built-in command system**: built-in commands with query designs/runs, list/load skills, view cached URLs, etc.
 - **权限控制** (`Agent/src/tool/ask_permission.py`)：所有敏感操作（文件修改、仿真启动、bash 命令）均需用户确认
   **Permission control**: All sensitive operations (file modification, simulation launch, bash commands) require user confirmation
 - **模型分类** (`Agent/src/utility/client.py`)：主模型（复杂/模糊任务）+ 快速模型（简单/确定任务）双模型支持
   **Model classification**: Dual-model support — primary model (complex/ambiguous tasks) + fast model (simple/deterministic tasks)
 - **Agent 技能** (`Agent/skills/`)：标准 Anthropic 式技能框架，支持渐进式披露与按需加载
   **Agent skills**: Standard Anthropic-style skill framework with progressive disclosure and on-demand loading
+- **Agent MCP支持** (`Agent/mcps/`)：基于`FastMCP`库，支持 `stdio`，`http`，`sse`传输的MCP协议的添加，禁用与移除，内建命令查询MCP配置情况，支持规避同名工具以及多MCP下工具调用的正确路由
+  **Agent MCP support**: Based on the `FastMCP` library, supporting `stdio`, `http`, and `sse` transports MCP protocol — adding, disabling, and removing, with built-in commands to query MCP configuration status, supporting avoidance of duplicate tool names and correct routing of tool calls under multiple MCPs
 - **工具执行引擎** (`Agent/src/tool/tool_execute.py`)：统一调度与异常捕获
   **Tool execution engine**: Unified scheduling and exception handling
-- **配置文件** (`Agent/config/`)：API 连接配置、Agent 运行参数配置
-  **Configuration files**: API connection configuration, Agent runtime parameter configuration
+- **配置文件** (`Agent/config/`)：API 连接配置、Agent 运行参数配置、MCP 配置
+  **Configuration files**: API connection configuration, Agent runtime parameter configuration, MCP configuration

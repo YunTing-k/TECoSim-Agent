@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 0
-TECOSIM_AGENT_UPDATE_VERSION: int = 11
+TECOSIM_AGENT_UPDATE_VERSION: int = 12
 """Bash command risk"""
 BASH_HIGH_RISK_LABEL = "BASH_HIGH_RISK"  # high-risk (0)
 BASH_PACKAGE_LABEL = "BASH_PACKAGE"  # high-risk (0)
@@ -20,8 +20,14 @@ BASH_UNKNOWN_LABEL = "BASH_UNKNOWN"  # unknown (7)
 BASH_SAFE_LABEL = "BASH_SAFE" # no-risk (8)
 BASH_EMPTY_LABEL = "BASH_EMPTY" # no-risk (9)
 """UI"""
-MAJOR_COLOR1: str = "#FF9FF3"
-MAJOR_COLOR2: str = "#54A0FF"
+AGENT_CONSOLE_ICON: str = "✦"
+DEFAULT_SESSION_TITLE: str = "(Empty session)"
+UNKNOWN_SESSION_TITLE: str = "(Unkown title)"
+ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
+PRGRESS_BAR_FULL: str = "█"  # █ ■
+PRGRESS_BAR_EMPTY: str = "░"  # ░ □
+MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
+MAJOR_COLOR2: str = "#54A0FF"  # common major color
 REASONING_COLOR: str = "#54A0FF"
 EDIT_VIEW_RMV_BG: str = "#5F0000"  # remove line bg color
 EDIT_VIEW_ADD_BG: str = "#005F00"  # add line bg color
@@ -31,3 +37,4 @@ EDIT_VIEW_LEFT_SPACE_MARGIN: int = 5
 EDIT_VIEW_LINE_SPACE_MARGIN: int = 1
 URL_CACHE_VIEW_MAX: int = 8
 URL_CACHE_CONTENT_CHAR_MAX: int = 100
+MCP_TOOL_DESC_CHAR_LIMIT: int =  250

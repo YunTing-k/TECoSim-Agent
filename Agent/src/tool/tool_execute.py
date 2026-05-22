@@ -20,6 +20,7 @@ Revision:
 2026.5.15      Yu Huang     1.6               Agent skills support\n
 2026.5.19      Yu Huang     1.7               Webpage fetch support & fix non-ASCII results dump bug\n
 2026.5.20      Yu Huang     1.8               Web search support\n
+2026.5.21      Yu Huang     1.9               Agent MCPs support\n
 
 Details:
 Execution of tools that TECoSim agent can call
@@ -110,10 +111,13 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
         elif func_name.lower() == "read_log":
             results = tool_def.read_log(arguments, ctx, progress)
             user_addons = None
+        elif func_name in ctx.mcp_router.tool_registry:
+            results = tool_def.call_mcp(func_name, arguments, ctx, progress)
+            user_addons = None
         else:
-            sys_log.warning(f"Undefined tool: {func_name}")
-            progress.console.print(f"Undefined tool: {func_name}\r", style="bold yellow")
-            results = {"status": "FAIL", "info": f"Undefined tool: {func_name}"}
+            sys_log.warning(f"Tool: {func_name} is undefined")
+            progress.console.print(f"Tool: {func_name} is undefined\r", style="bold yellow")
+            results = {"status": "FAIL", "info": f"Tool: {func_name} is undefined"}
             user_addons = None
         return results, user_addons
     except Exception as e:

@@ -2,8 +2,11 @@
 /.vscode
 /.idea
 /gateway.bat
+/update_requirements.bat
 /session/*
 /skills/*
+/mcps/mcps_configs.json
+/mcps/sources/*
 /src/__pycache__
 /src/context/__pycache__
 /src/tool/__pycache__

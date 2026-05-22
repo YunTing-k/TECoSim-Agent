@@ -25,6 +25,7 @@ Revision:
 2026.5.15      Yu Huang     2.1               Agent skills support\n
 2026.5.19      Yu Huang     2.2               Webpage fetch support\n
 2026.5.20      Yu Huang     2.3               Web search support & Interrupt support for web fetch/search\n
+2026.5.21-22   Yu Huang     2.4               Agent MCPs support & Revise tools prompts of read_file and skills\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -54,6 +55,7 @@ sys_log = logging.getLogger('logger')
 
 def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """create prompts of all available tools"""
+    # Agent tools
     prompts: list[dict[str, Any]] = [
         # basic tools
         tool_ask_user_question_def(),
@@ -73,6 +75,9 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_query_run_num_def(),
         tool_read_log_def(),
     ]
+    # MCP tools
+    prompts.extend(ctx.mcp_router.reg_tools)
+
     tool_num = len(prompts)
     ctx.tools_prompts = tool_num
     sys_log.debug(f"{tool_num} tools prompts assembled")
@@ -401,7 +406,8 @@ def tool_read_file_def() -> dict[str, Any]:
                                         "- `from_bottom`: Reads the last N lines. Useful to check logs, trailing configuration, "
                                         "or end of code.\n"
                                         "- `offset`: Reads N lines starting at a given line number (1-based). Precise for "
-                                        "targeting known areas.\n"
+                                        "targeting known areas. Useful for long file or exact string replacement in tool "
+                                        "`edit_file`.\n"
                                         "- `all`: Reads the entire file. WARNING: Use only when you are certain the file "
                                         "is short or when you absolutely need every line. Otherwise, use the methods above "
                                         "to avoid filling the context.",
@@ -916,9 +922,9 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
                     "name": name,
                     "description": str(get_skill_description(name, ctx.skills)),
                 })
-                sys_log.debug(f"skill SUCCESS: Skill {name} is launching")
-                progress.console.print(f"skill SUCCESS: Skill {name} is launching", style="bright_black")
-                return {"status": "SUCCESS", "info": f"Skill {name} is launching"}, content
+                sys_log.debug(f"skill SUCCESS: Skill {name} is loaded to context")
+                progress.console.print(f"skill SUCCESS: Skill {name} is loaded to context", style="bright_black")
+                return {"status": "SUCCESS", "info": f"Skill {name} is loaded to context"}, content
     except Exception as e:
         sys_log.error(f"skill FAIL: Load skill failed with error: {e}")
         progress.console.print(f"skill FAIL: Load skill failed with error: {e}", style="bold red")
@@ -1118,6 +1124,39 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         sys_log.error(f"web_search FAIL: Web search failed with error: {e}")
         progress.console.print(f"web_search FAIL: Web search failed failed with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Web search failed failed with error: {e}"}
+
+
+def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of call tools in MCP with AgentContext"""
+    try:
+        mcp_client = ctx.mcp_router.tool_registry.get(tool_name)
+        if mcp_client is None:
+            mcp_name = "Unknown"
+        else:
+            mcp_name = mcp_client.name
+        """permission request"""
+        progress.stop()
+        token = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL", "info": f"Permission request denied by user"}
+
+        """call tool"""
+        timeout = ctx.agent_configs["MCP_TIMEOUT_S"]
+        results, info = ctx.mcp_router.call_tool_sync(tool_name, arguments, timeout, progress.console)
+        if results is not None:
+            sys_log.debug(f"call_mcp SUCCESS: Tool call {tool_name} from MCP {mcp_name} called successfully")
+            progress.console.print(f"call_mcp SUCCESS: Tool call {tool_name} from MCP {mcp_name} called successfully", style="bright_black")
+            return {"status": "DONE", "results": results}
+        else:
+            sys_log.error(f"call_mcp FAIL: Failed to call {tool_name} from MCP {mcp_name}. Error detail: {info}")
+            progress.console.print(f"call_mcp FAIL: Failed to call {tool_name} from MCP {mcp_name}. "
+                                   f"Error detail: {info}", style="bold red")
+            return {"status": "FAIL", "info": f"Failed to call {tool_name} from MCP {mcp_name}. Error detail: {info}"}
+    except Exception as e:
+        sys_log.error(f"call_mcp FAIL: Call MCP tool {tool_name} failed with error: {e}")
+        progress.console.print(f"call_mcp FAIL: Call MCP tool {tool_name} failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Call MCP tool {tool_name} failed with error: {e}"}
 
 
 def tool_check_simulator_def() -> dict[str, Any]:

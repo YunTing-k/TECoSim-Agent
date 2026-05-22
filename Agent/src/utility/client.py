@@ -17,13 +17,13 @@ Revision:
 2026.4.29      Yu Huang     1.4               Builtin commands support\n
 2026.5.19      Yu Huang     1.5               Model classification support\n
 2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
+2026.5.21      Yu Huang     1.7               Move load_configs to basic_utils.py\n
 
 Details:
 Client configuration, creation
 ------------------------------------------------------------------------------------------------------------------------
 """
 import logging
-import json
 
 from openai import OpenAI
 from rich.console import Console
@@ -34,19 +34,6 @@ from src.context.agent_context import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
-
-
-def load_configs(configs_path: str, name: str, console: Console) -> dict[str, Any]:
-    """load JSON configs with given path"""
-    try:
-        with open(configs_path, 'r', encoding="utf-8") as file:
-            api_configs = json.load(file)
-            sys_log.debug(f"Load {name} configs from {configs_path} done")
-            return api_configs
-    except Exception as e:
-        sys_log.error(f"Failed to load {name} configs from {configs_path} with error: {e}")
-        console.print(f"Failed to load {name} configs from {configs_path} with error: {e}", style="bold red")
-        raise RuntimeError(e)
 
 
 def config_client(ctx: AgentContext, console: Console) -> OpenAI:

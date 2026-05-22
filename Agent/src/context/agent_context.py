@@ -16,6 +16,7 @@ Revision:
 2026.5.15      Yu Huang     1.3               Agent skills support\n
 2026.5.19      Yu Huang     1.4               Webpage fetch support\n
 2026.5.20      Yu Huang     1.5               Web search support\n
+2026.5.22      Yu Huang     1.6               Agent MCPs support & Summarize session title support\n
 
 Details:
 Agent's context management with save/load
@@ -32,6 +33,7 @@ from argparse import Namespace
 from prompt_toolkit import PromptSession
 from typing import Any, TypedDict
 from rich.console import Console
+from src.tool.mcps_support import MCPToolRouter
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -61,6 +63,7 @@ class AgentContext:
         self.args: Namespace = Namespace()  # (don't dump)
         self.api_configs: dict[str, Any] = {"None": None}  # (don't dump)
         self.agent_configs: dict[str, Any] = {"None": None}  # (don't dump)
+        self.mcps_configs: list[dict[str, Any]] = []  # (don't dump)
         # prompts
         self.messages: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
         self.tools: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
@@ -69,8 +72,10 @@ class AgentContext:
         self.agent_session: PromptSession | None = None  # (don't dump)
         self.llm_client: OpenAI | None = None  # (don't dump)
         self.url_caches: list[URLCache] = []  # (don't dump)
+        self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump)
         # params
         self.session_uuid: str = ""  # (don't dump)
+        self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
         self.tools_prompts: int = 0  # (don't dump)
         self.user_prompts: int = 0
@@ -119,6 +124,7 @@ class AgentContext:
             f"{BASH_SAFE_LABEL}": False
         }
 
+
     def file_read_log(self, path: str):
         """read-in file log"""
         file_path = os.path.abspath(path)
@@ -127,9 +133,11 @@ class AgentContext:
         else:
             self.files_read[file_path] += 1
 
-    def to_dict(self, console: Console) -> dict:
+
+    def to_dict(self, console: Console, mute: bool = False) -> dict:
         """convert class to dict"""
         out_dict = {
+            "session_title": self.session_title,
             "user_prompts": self.user_prompts,
             "content_prompts": self.content_prompts,
             "reasoning_prompts": self.reasoning_prompts,
@@ -149,14 +157,16 @@ class AgentContext:
             "loaded_skills": self.loaded_skills,
             "permissions": self.permissions
         }
-
-        sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
-        console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted to dict")
+        if not mute:
+            sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
+            console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted to dict")
         return out_dict
 
-    def from_dict(self, in_dict: dict[str, Any], console: Console):
+
+    def from_dict(self, in_dict: dict[str, Any], console: Console, mute: bool = False):
         """convert dict to class"""
         try:
+            self.session_title = in_dict["session_title"]
             self.user_prompts = in_dict["user_prompts"]
             self.content_prompts = in_dict["content_prompts"]
             self.reasoning_prompts = in_dict["reasoning_prompts"]
@@ -175,30 +185,33 @@ class AgentContext:
             self.files_read = in_dict["files_read"]
             self.loaded_skills = in_dict["loaded_skills"]
             self.permissions = in_dict["permissions"]
-
-            sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
-            console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted from dict")
+            if not mute:
+                sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
+                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted from dict")
         except Exception as e:
             sys_log.error(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}")
             console.print(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}", style="bold red")
             raise RuntimeError(e)
 
-    def save_context(self, console: Console):
+
+    def save_context(self, console: Console, mute: bool = False):
         """save TECoSim agent's context"""
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
             path = "./session/" + uuid_str + "/context.json"
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.to_dict(console), f, indent=2, ensure_ascii=False)
-            sys_log.debug(f"Context of session {self.session_uuid} saved")
-            console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
+                json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
+            if not mute:
+                sys_log.debug(f"Context of session {self.session_uuid} saved")
+                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
         except Exception as e:
             sys_log.error(f"Failed to save session {self.session_uuid}'s context with error: {e}")
             console.print(f"Failed to save session {self.session_uuid}'s context with error: {e}", style="bold red")
             raise RuntimeError(e)
 
-    def load_context(self, console: Console):
+
+    def load_context(self, console: Console, mute: bool = False):
         """load TECoSim agent's context"""
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
@@ -206,9 +219,10 @@ class AgentContext:
             path = "./session/" + uuid_str + "/context.json"
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
-            sys_log.debug(f"Context of session {self.session_uuid} loaded")
-            console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")
-            self.from_dict(in_dict, console)
+            if not mute:
+                sys_log.debug(f"Context of session {self.session_uuid} loaded")
+                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")
+            self.from_dict(in_dict, console, mute)
         except Exception as e:
             sys_log.error(f"Failed to load session {self.session_uuid}'s context with error: {e}")
             console.print(f"Failed to load session {self.session_uuid}'s context with error: {e}", style="bold red")

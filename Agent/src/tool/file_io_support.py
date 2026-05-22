@@ -29,10 +29,21 @@ from rich.text import Text
 from rich.live import Live
 from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
+from src.context import prompt
 from src.context.agent_context import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+def save_sessions(ctx: AgentContext, console: Console, mute: bool = False):
+    """save all session's files"""
+    try:
+        prompt.save_messages(ctx, console, mute)
+        ctx.save_context(console, mute)
+    except Exception as e:
+        sys_log.error(f"Save messages and context failed with error {e}")
+        console.print(f"Save messages and context failed with error {e}", style="bold red")
 
 
 def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_limit: int, encoding: str) -> tuple[str, bool, int]:

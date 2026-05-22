@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.19      Yu Huang     1.0               First implementation\n
 2026.5.20      Yu Huang     1.1               Web search support\n
+2026.5.21      Yu Huang     1.2               Bugfix of skipping URL caches when quering\n
 
 Details:
 Web fetch and web search support of the TECoSim agent
@@ -108,6 +109,7 @@ def query_url_cache(url: str, ctx: AgentContext) -> str | None:
                 return cache
             else:
                 del ctx.url_caches[idx]
+            break
     return None
 
 

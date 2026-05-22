@@ -15,11 +15,14 @@ Revision:
 2026.5.15      Yu Huang     1.2               Revise builtin command management\n
 2026.5.15      Yu Huang     1.3               Agent skills support\n
 2026.5.19      Yu Huang     1.4               Webpage fetch support\n
+2026.5.21-22   Yu Huang     1.5               Agent MCPs support & Revise the name of builtin commands\n
+2026.5.22      Yu Huang     1.6               Summarize session title support & Builtin command of list sessions\n
 
 Details:
 Realization of builtin commands
 ------------------------------------------------------------------------------------------------------------------------
 """
+import os
 import json
 import logging
 
@@ -28,7 +31,9 @@ from typing import Callable, Any
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
+from src.utility import ui_info, basic_utils
 from src.context.agent_context import AgentContext
+from src.tool import summarize_support
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.constants import *
 
@@ -44,7 +49,7 @@ def cmd_unknown(console: Console):
     console.print(cmd_str)
 
 
-def cmd_query_design(args: Any, ctx: AgentContext, console: Console):
+def cmd_design_list(args: Any, ctx: AgentContext, console: Console):
     """query the list of current designs"""
     cmd_str = Text()
     cmd_str.append("query_design", style=f"bold {MAJOR_COLOR1}")
@@ -55,7 +60,7 @@ def cmd_query_design(args: Any, ctx: AgentContext, console: Console):
     console.print(cmd_str)
 
 
-def cmd_query_run(args: Any, ctx: AgentContext, console: Console):
+def cmd_run_list(args: Any, ctx: AgentContext, console: Console):
     """query the amount of launched simulation"""
     cmd_str = Text()
     cmd_str.append("query_run", style=f"bold {MAJOR_COLOR1}")
@@ -111,7 +116,12 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append("System prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.system_prompts}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Tools prompts num (main model): ", style=f"white")
-    cmd_str.append(f"{ctx.tools_prompts}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{ctx.tools_prompts}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" (", style=f"white")
+    cmd_str.append(f"{len(ctx.tools) - len(ctx.mcp_router.reg_tools)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" agent tools, ", style=f"white")
+    cmd_str.append(f"{len(ctx.mcp_router.reg_tools)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" MCP tools)\n", style=f"white")
     cmd_str.append("User prompts num (main model): ", style=f"white")
     cmd_str.append(f"{ctx.user_prompts}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Assistant content prompts num (main model): ", style=f"white")
@@ -128,8 +138,8 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append("Available skills: ", style=f"white")
     for skill in ctx.skills:
         cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f" ,", style=f"white")
-    if cmd_str.plain.endswith(" ,"):
+        cmd_str.append(f", ", style=f"white")
+    if cmd_str.plain.endswith(", "):
         cmd_str.right_crop(2)
     cmd_str.append("\nLoaded skills amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.loaded_skills)}\n", style=f"bold {MAJOR_COLOR2}")
@@ -140,6 +150,23 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     if cmd_str.plain.endswith(" ,"):
         cmd_str.right_crop(2)
 
+    cmd_str.append("\nAvailable MCPs amount: ", style=f"white")
+    cmd_str.append(f"{len(ctx.mcps_configs)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" (", style=f"white")
+    cmd_str.append(f"{len(ctx.mcp_router.clients)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" MCPs active)\n", style=f"white")
+    for config in ctx.mcps_configs:
+        cmd_str.append(f"   - {config["name"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f", MCP transport type: ", style=f"white")
+        cmd_str.append(f"{config["type"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f", if enabled: ", style=f"white")
+        if not config["if_disabled"]:
+            cmd_str.append("True", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(", Registered tools: ", style=f"white")
+            cmd_str.append(f"{len(ctx.mcp_router.mcps_tools[config["name"]])}\n", style=f"bold {MAJOR_COLOR2}")
+        else:
+            cmd_str.append("False\n", style="bright_black")
+
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -147,7 +174,7 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_query_fread(args: Any, ctx: AgentContext, console: Console):
+def cmd_fread_list(args: Any, ctx: AgentContext, console: Console):
     """query the absolute paths of all read files"""
     title = "TECoSim Agent Files Read"
     cmd_str = Text()
@@ -189,16 +216,22 @@ def cmd_permission_list(args: Any, ctx: AgentContext, console: Console):
                 cmd_str.append("True\n", style=f"bold {MAJOR_COLOR1}")
             else:
                 cmd_str.append("False\n", style="bright_black")
-    cmd_str.append(f"\nYou can also toggle the permission config with following command: \n", style=f"white")
-    cmd_str.append(f"    /permission_toggle ", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(f"[NAME OF PERMISSION]", style=f"bold {MAJOR_COLOR1}")
-    cmd_str.append(f" (Swap ", style=f"white")
-    cmd_str.append(f"True", style=f"bold {MAJOR_COLOR1}")
-    cmd_str.append(f" and ", style=f"white")
-    cmd_str.append(f"False", style=f"bright_black")
-    cmd_str.append(f")\n", style=f"white")
+
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    hint = Text()
+    hint.append(f"  Tips: You can also toggle the permission config with following command: \n", style=f"bright_black")
+    hint.append(f"        /permission_toggle ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[NAME OF PERMISSION]", style=f"bold {MAJOR_COLOR1}")
+    hint.append(f" (Swap ", style=f"white")
+    hint.append(f"True", style=f"bold {MAJOR_COLOR1}")
+    hint.append(f" and ", style=f"white")
+    hint.append(f"False", style=f"bright_black")
+    hint.append(f")\n", style=f"white")
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
     console.print("\n")
 
 
@@ -236,7 +269,7 @@ def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
     console.print(f"Unknown permission name {arg_name}, toggle failed", style=f"bold yellow")
 
 
-def cmd_query_skills(args: Any, ctx: AgentContext, console: Console):
+def cmd_skill_list(args: Any, ctx: AgentContext, console: Console):
     """query all available skills (truncate)"""
     title = f"Available Skills ({len(ctx.skills)})"
     limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
@@ -255,7 +288,7 @@ def cmd_query_skills(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_query_loaded_skills(args: Any, ctx: AgentContext, console: Console):
+def cmd_skills_loaded(args: Any, ctx: AgentContext, console: Console):
     """query all loaded skills (no truncate)"""
     title = f"Loaded Skills ({len(ctx.loaded_skills)})"
     cmd_str = Text()
@@ -300,7 +333,7 @@ def cmd_load_skills(skill_name: str, args: Any, ctx: AgentContext, console: Cons
             {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
 
 
-def cmd_query_url_caches(args: Any, ctx: AgentContext, console: Console):
+def cmd_url_caches(args: Any, ctx: AgentContext, console: Console):
     """query all cached URLs"""
     title = f"Cached URLs ({len(ctx.url_caches)})"
     cmd_str = Text()
@@ -326,25 +359,141 @@ def cmd_query_url_caches(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
+def cmd_mcp_list(args: Any, ctx: AgentContext, console: Console):
+    """query MCPs info"""
+    mcps_configs = ctx.mcps_configs
+    mcps_ini_info = ctx.mcp_router.mcps_ini_info
+    mcps_tools = ctx.mcp_router.mcps_tools
+    title = f"MCP info ({len(mcps_configs)} available, {len(ctx.mcp_router.clients)} active)"
+
+    cmd_str = Text()
+    for config in mcps_configs:
+        # if the MCP is disabled
+        if config["if_disabled"]:
+            cmd_str.append(f"{config["name"]}", style=f"bold {MAJOR_COLOR1}")
+            cmd_str.append(f", MCP transport type: ", style=f"white")
+            cmd_str.append(f"{config["type"]}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f", if enabled: ", style=f"white")
+            cmd_str.append("False\n\n", style="bright_black")
+        # if the MCP is not disabled (list version info and tools info)
+        else:
+            cmd_str.append(f"{config["name"]}", style=f"bold {MAJOR_COLOR1}")
+            cmd_str.append(f", MCP transport type: ", style=f"white")
+            cmd_str.append(f"{config["type"]}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f", if enabled: ", style=f"white")
+            cmd_str.append("True", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(", Registered tools: ", style=f"white")
+            cmd_str.append(f"{len(mcps_tools[config["name"]])}\n", style=f"bold {MAJOR_COLOR2}")
+
+            mcp_ini_info = mcps_ini_info[config["name"]]
+            cmd_str.append(f"MCP initialize information: \n", style=f"bold {MAJOR_COLOR2}")
+            for key, value in mcp_ini_info.items():
+                cmd_str.append(f"  - {key}: ", style=f"white")
+                cmd_str.append(f"{value}\n", style=f"bright_black")
+
+            mcp_tools = mcps_tools[config["name"]]
+            cmd_str.append(f"MCP tools description: \n", style=f"bold {MAJOR_COLOR2}")
+            for tool in mcp_tools:
+                tool_desc = tool["description"]
+                if len(tool_desc) > MCP_TOOL_DESC_CHAR_LIMIT:
+                    tool_desc = tool_desc[:MCP_TOOL_DESC_CHAR_LIMIT] + "..."
+                cmd_str.append(f"  - {tool["name"]}: ", style=f"bold {MAJOR_COLOR1}")
+                cmd_str.append(f"{tool_desc}\n", style=f"white")
+            cmd_str.append("\n")
+
+    if cmd_str.plain.endswith("\n\n"):
+        cmd_str.rstrip()
+
+    hint = Text()
+    hint.append(f"  Tips: You can manage the MCPs with following command in shell: ", style=f"bright_black")
+    hint.append(f"python -m src.main mcp ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[list | add | toggle | remove]\n", style=f"bold {MAJOR_COLOR1}")
+    hint.append(f"        You can also manage the MCPs by manually editing the config file: ", style=f"bright_black")
+    hint.append(f"./mcps/mcps_configs.json", style=f"bold {MAJOR_COLOR2}")
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
+    console.print("\n")
+
+
+def cmd_update_title(args: Any, ctx: AgentContext, console: Console):
+    """update title of this session with history immediately"""
+    title = summarize_support.summarize_session(ctx=ctx, console=console)
+    ctx.session_title = title if title else ERROR_SESSION_TITLE
+    ui_info.set_terminal_title(ctx.session_title)
+
+
+def cmd_session_list(args: Any, ctx: AgentContext, console: Console):
+    """query all sessions"""
+    session_dir = "./session"
+    if not os.path.exists(session_dir):
+        sys_log.error(f"Session directory {session_dir} does not exist")
+        console.print(f"Session directory {session_dir} does not exist", style="bold red")
+        return
+
+    sessions_list:list[dict[str, str]] = []
+    current_uuid = ctx.session_uuid
+    for item in os.listdir(session_dir):
+        item_path = os.path.join(session_dir, item)
+        if not os.path.isdir(item_path):
+            continue
+        if not basic_utils.is_valid_uuid(item):
+            continue
+
+        context_file = os.path.join(item_path, "context.json")
+        try:
+            with open(context_file, 'r', encoding='utf-8') as f:
+                context = json.load(f)
+            # only append other sessions
+            if item != current_uuid:
+                sessions_list.append({"uuid": item, "title": context.get("session_title", UNKNOWN_SESSION_TITLE)})
+        except Exception as e:
+            sys_log.error(f"Failed to load session {item}'s context with error {e}")
+            console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
+
+    title = f"Available sessions ({len(sessions_list)})"
+    cmd_str = Text()
+    cmd_str.append(f"({AGENT_CONSOLE_ICON} This session)", style=f"bold {MAJOR_COLOR1}")
+    cmd_str.append(f" UUID: ", style=f"white")
+    cmd_str.append(f"{current_uuid}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f", Session title: ", style=f"white")
+    cmd_str.append(f"{ctx.session_title}\n", style=f"bold {MAJOR_COLOR2}")
+    for session in sessions_list:
+        cmd_str.append(f"Session UUID: ", style=f"white")
+        cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f", Session title: ", style=f"white")
+        cmd_str.append(f"{session["title"]}\n", style=f"bold {MAJOR_COLOR2}")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
 class BuiltinCommands:
     """builtin command class"""
     def __init__(self, console: Console):
         self._commands: dict[str, tuple[Callable[..., Any], str, str]] = {
             "help": (self.cmd_help, "help info", "print all available builtin commands"),
-            "query_design": (cmd_query_design, "list designs", "query the list of current designs"),
-            "query_run": (cmd_query_run, "list runs", "query the amount of launched simulation"),
+            "design_list": (cmd_design_list, "query all designs", "query the list of current designs"),
+            "run_list": (cmd_run_list, "query all runs", "query the amount of launched simulation"),
             "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
-            "query_fread": (cmd_query_fread, "query all read files", "query the absolute paths of all read files"),
+            "fread_list": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
             "permission_list": (cmd_permission_list, "query permission info",
                                 "query the configs of always-allowed-configurable tool calls permission token"),
             "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",
                                 "toggle the permission token of the tool calls permission with given name"),
-            "query_skills": (cmd_query_skills, "query all available skills",
+            "skill_list": (cmd_skill_list, "query all available skills",
                                                "query all the available skills with name and truncated description"),
-            "query_loaded_skills": (cmd_query_loaded_skills, "query all loaded skills",
+            "skills_loaded": (cmd_skills_loaded, "query all loaded skills",
                                                "query all the loaded skills with name and full description"),
-            "query_url_caches": (cmd_query_url_caches, "query all cached URLs",
+            "url_caches": (cmd_url_caches, "query all cached URLs",
                                                "query all the cached URLs with timestamp and truncated content"),
+            "mcp_list": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
+            "update_title": (cmd_update_title, "update session title", "update title of this session with history immediately"),
+            "session_list": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")

@@ -17,24 +17,23 @@ Revision:
 2026.4.26      Yu Huang     1.4               Reasoning support\n
 2026.4.29      Yu Huang     1.5               Builtin commands support\n
 2026.5.15      Yu Huang     1.6               Agent skills support\n
+2026.5.21      Yu Huang     1.7               Move get_platform_info, is_git_repo, is_bash_available to basic_utils.py\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
-import platform
-import subprocess
 import logging
 import json
+import rich.box
 
 from typing import Any
-
-import rich.box
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from src.context.agent_context import AgentContext
+from src.utility.basic_utils import get_platform_info, is_git_repo, is_bash_available
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -189,47 +188,6 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     return prompts
 
 
-def get_platform_info() -> list[str]:
-    """get the information of the running platform"""
-    system = platform.system()
-    release = platform.release()
-    version = platform.version()
-    return [system, release, version]
-
-
-def is_git_repo(path: str = None) -> bool:
-    """check if the given path is a git repository"""
-    if path is None:
-        path = os.getcwd()
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            cwd=path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        return result.returncode == 0
-    except Exception as e:
-        sys_log.error(f"Call git failed with error {e}")
-        return False
-
-
-def is_bash_available() -> bool:
-    """check if bash is available"""
-    try:
-        result = subprocess.run(
-            ["bash", "-c", "bash --version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=5
-        )
-        return result.returncode == 0
-    except Exception as e:
-        sys_log.error(f"Call bash failed with error {e}")
-        return False
-
-
 def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console) -> list[dict[str, Any]]:
     """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
     messages = create_system_prompts(ctx)
@@ -301,7 +259,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
         raise RuntimeError(e)
 
 
-def save_messages(ctx: AgentContext, console: Console):
+def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
     """save messages (exclude system) to persistence file of AgentContext"""
     try:
         serializable_messages = []
@@ -314,14 +272,16 @@ def save_messages(ctx: AgentContext, console: Console):
                 serializable_messages.append(msg.copy())
             else:
                 serializable_messages.append(dict(msg))
-        sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
-        console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] converted")
+        if not mute:
+            sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
+            console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] converted")
 
         path = "./session/" + ctx.session_uuid + "/messages.json"
         with open(path, "w", encoding="utf-8") as f:
             json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
-        sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
-        console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] saved")
+        if not mute:
+            sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
+            console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] saved")
     except Exception as e:
         sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
         console.print(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}", style="bold red")

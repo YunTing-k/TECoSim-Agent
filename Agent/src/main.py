@@ -21,6 +21,8 @@ Revision:
 2026.5.15      Yu Huang     1.8               Agent skills support\n
 2026.5.19      Yu Huang     1.9               Model classification support\n
 2026.5.20      Yu Huang     2.0               Refactor llm_request_with_spinner and move to client.py\n
+2026.5.21-22   Yu Huang     2.1               Agent MCPs support\n
+2026.5.22      Yu Huang     2.2               Summarize session title support & Save session with higher frequency\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -34,7 +36,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
-from src.tool import tool_def, tool_execute, skills_support
+from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support
+from src.utility.basic_utils import load_configs
 from src.constants import *
 
 """program's parser"""
@@ -47,6 +50,9 @@ sys_log = sys_logger.Logger(str(os.path.basename(__file__))[0:-3], arguments.log
 console = Console()
 
 if __name__ == '__main__':
+    """Entry commands for MCP operations"""
+    mcps_support.mcp_entry_cli(arguments, console)
+
     """start banner and TECoSim agent dev info"""
     ui_info.log_tecosim_agent_info()
     ui_info.console_tecosim_agent_info(console)
@@ -59,15 +65,23 @@ if __name__ == '__main__':
     console.print(f"Context of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
 
     """load API configs and config LLM client"""
-    ctx.api_configs = client.load_configs(configs_path="./config/api_configs.json", name="API", console=console)
+    ctx.api_configs = load_configs(configs_path="./config/api_configs.json", name="API", console=console)
     ctx.llm_client = client.config_client(ctx=ctx, console=console)
 
     """load agent configs"""
-    ctx.agent_configs = client.load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
+    ctx.agent_configs = load_configs(configs_path="./config/agent_configs.json", name="Agent", console=console)
 
     """load skills and query prompts"""
     if not ctx.args.noskills:
         ctx.skills = skills_support.load_all_skill_metas(skills_root="./skills", console=console)
+
+    """load MCPs configs and configure MCPs"""
+    if not ctx.args.nomcps:
+        ctx.mcps_configs = load_configs(configs_path="./mcps/mcps_configs.json", name="MCPs", console=console)
+    mcp_clients = mcps_support.config_mcps(configs=ctx.mcps_configs, init_timeout=ctx.agent_configs["MCP_INIT_TIMEOUT_S"],
+                                           timeout=ctx.agent_configs["MCP_TIMEOUT_S"], console=console)
+    ctx.mcp_router = mcps_support.MCPToolRouter(clients=mcp_clients)
+    ctx.mcp_router.reg_all_tools_sync(console=console)
 
     """initialize builtin commands"""
     cmd_object = command.BuiltinCommands(console)  # basic commands
@@ -85,16 +99,25 @@ if __name__ == '__main__':
     # resume context
     if ctx.args.resume is not None:
         ctx.load_context(console=console)
+    # set MCP permission
+    ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)
     # get tools
     ctx.tools = tool_def.create_tools_prompts(ctx)
     # config other filed of context
     ctx.task_end = True  # previous task is ended
 
+    """set the terminal title"""
+    ui_info.set_terminal_title(ctx.session_title)
+
     """core agent loop"""
     while True:
         try:
+            """save messages and context"""
+            file_io_support.save_sessions(ctx, console, True)
+
             if ctx.task_end:
                 """user prompts & request"""
+                ui_info.usage_bar(ctx=ctx, console=console)
                 user_input = agent_session.prompt("> ")
                 results = session.cmd_lexer(user_input, cmd_object)
                 if results is not None:  # command input
@@ -104,6 +127,10 @@ if __name__ == '__main__':
                 else:  # plain text input
                     ctx.messages.append({"role": "user", "content": user_input})
                     ctx.user_prompts += 1
+                    if ctx.user_prompts == 1:  # summarize according to user's first prompts
+                        title = summarize_support.summarize_session(ctx=ctx, console=console)
+                        ctx.session_title = title if title else ERROR_SESSION_TITLE
+                        ui_info.set_terminal_title(ctx.session_title)
             else:
                 """second response with previous loop's tool results"""
                 pass

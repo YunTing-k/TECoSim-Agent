@@ -17,6 +17,7 @@ Revision:
 2026.5.12      Yu Huang     1.4               Move ask permission to ask_permission.py\n
 2026.5.12      Yu Huang     1.5               TUI event trigger support\n
 2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
+2026.5.22      Yu Huang     1.7               Add usage bar for main model & Summarize session title support\n
 
 Details:
 UI information of agent dev version, ASCII art banner of start, error
@@ -42,6 +43,38 @@ from src.context.agent_context import AgentContext
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+def set_terminal_title(title: str):
+    """set the terminal's title"""
+    if title != DEFAULT_SESSION_TITLE and title != ERROR_SESSION_TITLE:
+        print(f"\033]0;{AGENT_CONSOLE_ICON} {title}\007", end="", flush=True)
+    else:
+        print(f"\033]0;{AGENT_CONSOLE_ICON} TECoSim Agent\007", end="", flush=True)
+
+
+def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """convert hex color to rgb"""
+    hex_color = hex_color.lstrip('#').upper()
+
+    if not all(c in '0123456789ABCDEF' for c in hex_color):
+        sys_log.error(f"Invalid hex color: {hex_color}")
+        raise ValueError(f"Invalid hex color: {hex_color}")
+
+    if len(hex_color) == 3:
+        hex_color = ''.join(c * 2 for c in hex_color)
+    elif len(hex_color) != 6:
+        sys_log.error(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
+        raise ValueError(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
+
+    try:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return r, g, b
+    except Exception as e:
+        sys_log.error(f"Failed to convert hex color: {hex_color} to RGB tuples")
+        raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples")
 
 
 def vertical_color_grad_text(text: str, start_rgb: tuple, end_rgb: tuple) -> Text:
@@ -101,13 +134,13 @@ def console_tecosim_agent_info(console: Console):
         "   ██║   ███████╗╚██████╗╚██████╔╝███████║██║██║ ╚═╝ ██║    ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║\n"
         "   ╚═╝   ╚══════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝╚═╝     ╚═╝    ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝"
     )
-    colored_banner = vertical_color_grad_text(banner, (255, 159, 243), (84, 160, 255))
+    colored_banner = vertical_color_grad_text(banner, hex_to_rgb(MAJOR_COLOR1), hex_to_rgb(MAJOR_COLOR2))
 
     dev_info = (
         "\n\nCopyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. All Rights Reserved.\n"
         "Developed by Yu Huang at SMIL Lab, School of Integrated Circuits, Shanghai Jiao Tong University."
     )
-    colored_dev_info = vertical_color_grad_text(dev_info, (84, 160, 255), (84, 160, 255))
+    colored_dev_info = vertical_color_grad_text(dev_info, hex_to_rgb(MAJOR_COLOR2), hex_to_rgb(MAJOR_COLOR2))
     agent_info = colored_banner.append(colored_dev_info)
 
     title = "Thermo-Electric Coupling Cross-level Display Simulator (TECoSim) Agent"
@@ -116,6 +149,39 @@ def console_tecosim_agent_info(console: Console):
                             subtitle=subtitle, subtitle_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
     console.print("\n")
+
+
+def usage_bar(ctx: AgentContext, console: Console, length: int = 20, prefix1: str = "[", prefix2: str = "]"):
+    """print the usage bar from the agent context"""
+    input_tokens = ctx.last_input_tokens
+    total_input_tokens = ctx.total_input_tokens
+    total_output_tokens = ctx.total_output_tokens
+    total_context = ctx.api_configs["MAIN_MODEL_CONTEXT"]
+    ratio = input_tokens / total_context
+    start_color = hex_to_rgb(MAJOR_COLOR2)
+    target_color = hex_to_rgb(MAJOR_COLOR1)
+    stop_color = (int(start_color[0] + (target_color[0] - start_color[0]) * ratio),
+                  int(start_color[1] + (target_color[1] - start_color[1]) * ratio),
+                  int(start_color[2] + (target_color[2] - start_color[2]) * ratio),)
+    len_full = int(length * ratio)
+    progress_str = horizontal_color_grad_text(prefix1 + PRGRESS_BAR_FULL * len_full, start_color, stop_color)
+    progress_str.append(PRGRESS_BAR_EMPTY * (length - len_full), style="bright_black")
+    progress_str.append(prefix2, style=f"bold {MAJOR_COLOR1}")
+
+    bar_str = Text()
+    bar_str.append(f"Main: ", style="bright_black")
+    bar_str.append(f"{ctx.api_configs["MAIN_MODEL_NAME"]}", style=f"bold {MAJOR_COLOR2}")
+    bar_str.append(f" Usage: ", style="bright_black")
+    bar_str.append(progress_str)
+    bar_str.append(f" {100 * ratio:.1f} %", style="bright_black")
+    bar_str.append(f" ({input_tokens / 1000.0:.1f} K / {total_context / 1000.0:.1f} K)", style="bright_black")
+    bar_str.append(f" Total: ", style="bright_black")
+    bar_str.append(f"↑", style=f"bold {MAJOR_COLOR2}")
+    bar_str.append(f" {total_input_tokens / 1000.0:.1f} K, ", style="bright_black")
+    bar_str.append(f"↓", style=f"bold {MAJOR_COLOR1}")
+    bar_str.append(f" {total_output_tokens / 1000.0:.1f} K", style="bright_black")
+
+    console.print(bar_str)
 
 
 class GradientTextColumn(ProgressColumn):
