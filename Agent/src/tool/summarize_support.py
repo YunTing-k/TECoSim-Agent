@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.22      Yu Huang     1.0               First implementation\n
+2026.5.23      Yu Huang     1.1               Bugfix of possible none usage update\n
 
 Details:
 Support of summarizing the title of session history
@@ -19,6 +20,7 @@ Support of summarizing the title of session history
 import logging
 
 from typing import Any
+from openai.types.chat import ChatCompletion
 from rich.console import Console
 from src.utility import client
 from src.utility.basic_utils import get_field
@@ -99,18 +101,20 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
     """summarize the session with prompt through LLM"""
     messages = create_summarize_session_prompts(ctx.messages)
     try:
-        response = client.llm_request_with_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                    ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
                                                    waiting_desc="Session summarizing ...",
                                                    done_desc="LLM response latency", spinner="arrow3")
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
-        ctx.total_input_tokens += usage.prompt_tokens
-        ctx.total_output_tokens += usage.completion_tokens
-        ctx.total_tokens += usage.total_tokens
-        cached_tokens = usage.prompt_tokens_details.cached_tokens
-        uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
-        ctx.total_uncached_tokens += uncached_tokens
+        if usage is not None:
+            ctx.total_input_tokens += usage.prompt_tokens
+            ctx.total_output_tokens += usage.completion_tokens
+            ctx.total_tokens += usage.total_tokens
+            if usage.prompt_tokens_details is not None:
+                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
+                ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
         if ctx.agent_configs["DEEPSEEK_SUPPORT"]:

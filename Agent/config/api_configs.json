@@ -4,6 +4,7 @@
     "TIMEOUT_MS": 1000000,
 
     "MAIN_MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "MAIN_MODEL_STREAM": true,
     "MAIN_MODEL_CONTEXT": 1000000,
     "MAIN_MODEL_TEMPERATURE": 0.3,
     "MAIN_MODEL_ENABLE_REASONING": true,

@@ -84,8 +84,8 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.12
-  **Current version**: 0.0.12
+- **当前版本**: 0.0.13
+  **Current version**: 0.0.13
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
 - **工具系统（15个工具） | Tool system (15 tools)** (`Agent/src/tool/`)：
@@ -98,8 +98,8 @@ This project is still under development. The basic goals are as follows:
   - 仿真器接口：`check_simulator`, `init_design`, `copy_design`, `query_design_list`, `launch_simulator`, `query_run_num`, `read_log` | Simulator interface
 - **会话管理** (`Agent/src/context/session.py`)：创建/恢复会话，TUI 历史记录、自动补全、验证器
   **Session management**: Create/resume sessions, TUI history, auto-completion, validators
-- **提示词管理** (`Agent/src/context/prompt.py`)：系统提示词组装（角色、指南、环境边界、技能）、DeepSeek 推理支持、消息历史管理
-  **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management
+- **提示词管理** (`Agent/src/context/prompt.py`)：系统提示词组装（角色、指南、环境边界、技能）、DeepSeek 推理支持、消息历史管理、LLM流式响应支持与实时显示
+  **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management, stream LLM response support and real-time display
 - **上下文管理** (`Agent/src/context/agent_context.py`)：完整状态序列化（save/load/resume），含 Token 用量统计、权限状态、设计列表
   **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
 - **内置命令系统** (`Agent/src/context/command.py`)：内置命令查询设计/运行、列出/加载技能、查看缓存 URL 等

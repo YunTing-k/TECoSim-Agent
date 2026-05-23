@@ -23,6 +23,7 @@ Revision:
 2026.5.20      Yu Huang     2.0               Refactor llm_request_with_spinner and move to client.py\n
 2026.5.21-22   Yu Huang     2.1               Agent MCPs support\n
 2026.5.22      Yu Huang     2.2               Summarize session title support & Save session with higher frequency\n
+2026.5.23      Yu Huang     2.3               Stream response display update & Move response management to prompt.py\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -33,7 +34,6 @@ import openai
 
 from src.utility import sys_logger, cli_args, ui_info, client, command
 from rich.console import Console
-from rich.markdown import Markdown
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support
@@ -115,6 +115,7 @@ if __name__ == '__main__':
             """save messages and context"""
             file_io_support.save_sessions(ctx, console, True)
 
+            """user input or tool results"""
             if ctx.task_end:
                 """user prompts & request"""
                 ui_info.usage_bar(ctx=ctx, console=console)
@@ -134,79 +135,14 @@ if __name__ == '__main__':
             else:
                 """second response with previous loop's tool results"""
                 pass
+
+            """send LLM request"""
             sys_log.debug("LLM request start")
             response = client.llm_request_with_spinner(client.request_loop_main, ctx.llm_client, ctx)
             sys_log.debug("LLM request end")
 
-            """check finish reason"""
-            finish_reason = response.choices[0].finish_reason
-            sys_log.debug(f"Finish reason: {finish_reason}")
-            if finish_reason == "length":
-                sys_log.error(f"LLM out of input/output context")
-                console.print(f"LLM out of input/output context", style="bold red")
-            if finish_reason == "content_filter":
-                sys_log.warning(f"LLM's response has been filtered")
-                console.print(f"LLM's response has been filtered", style="bold yellow")
-
-            """check the usage"""
-            usage = response.usage
-            ctx.total_input_tokens += usage.prompt_tokens
-            ctx.last_input_tokens = usage.prompt_tokens
-            ctx.total_output_tokens += usage.completion_tokens
-            ctx.last_output_tokens = usage.completion_tokens
-            ctx.total_tokens += usage.total_tokens
-            ctx.last_tokens = usage.total_tokens
-            cached_tokens = usage.prompt_tokens_details.cached_tokens
-            uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
-            ctx.total_uncached_tokens += uncached_tokens
-            sys_log.debug(f"Token usage: input= +{usage.prompt_tokens} ({ctx.total_input_tokens}), "
-                          f"output= +{usage.completion_tokens} ({ctx.total_output_tokens}), "
-                          f"total= +{usage.total_tokens} ({ctx.total_tokens}), "
-                          f"cached= {cached_tokens}, "
-                          f"uncached= +{uncached_tokens} ({ctx.total_uncached_tokens})")
-
-            """message dump and conversion"""
-            dumped_msg = response.choices[0].message.model_dump(mode="json")
-            if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
-                dumped_msg = prompt.deepseek_support(dumped_msg)
-            ctx.messages.append(dumped_msg)
-            assistant_reasoning = prompt.get_reasoning(dumped_msg)
-            assistant_chat = dumped_msg["content"]
-            assistant_tool_calls = dumped_msg["tool_calls"]
-            if (assistant_chat is None) and (assistant_tool_calls is None):
-                if assistant_reasoning is None:
-                    raise RuntimeError("Output and Tool calls in LLM's message are both empty")
-                else:
-                    sys_log.warning(f"There is only reasoning content in LLM's message")
-                    console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
-            if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
-                sys_log.error(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
-                console.print(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens", style="bold red")
-                raise RuntimeError(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
-            if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
-                sys_log.warning(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
-                console.print(f"LLM's context >= {100*ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context", style="bold yellow")
-
-            """display reasoning"""
-            if assistant_reasoning is not None and not "":
-                ctx.reasoning_prompts += 1
-                console.print("\n")
-                if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                    console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
-                else:
-                    console.print("{Think}: " + assistant_reasoning, style=f"italic {REASONING_COLOR}")
-                if assistant_chat is None:
-                    console.print("\n")
-            """display chat"""
-            if assistant_chat is not None:
-                ctx.content_prompts += 1
-                if assistant_reasoning is None and not "":
-                    console.print("\n")
-                if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                    console.print(Markdown(assistant_chat), style="bold")
-                else:
-                    console.print(assistant_chat, style="bold")
-                console.print("\n")
+            """manage the LLM response"""
+            assistant_tool_calls = prompt.llm_response_manage(response=response, ctx=ctx, console=console)
 
             """call tools"""
             if assistant_tool_calls is not None:

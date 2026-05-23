@@ -18,6 +18,7 @@ Revision:
 2026.4.29      Yu Huang     1.5               Builtin commands support\n
 2026.5.15      Yu Huang     1.6               Agent skills support\n
 2026.5.21      Yu Huang     1.7               Move get_platform_info, is_git_repo, is_bash_available to basic_utils.py\n
+2026.5.23      Yu Huang     1.8               Stream response display update\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
@@ -29,9 +30,14 @@ import json
 import rich.box
 
 from typing import Any
-from rich.console import Console
+from openai import Stream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from rich.console import Group, Console
+from rich.text import Text
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.live import Live
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import get_platform_info, is_git_repo, is_bash_available
 from src.constants import *
@@ -299,6 +305,17 @@ def get_reasoning(message: dict[str, Any]) -> str | None:
     return None
 
 
+def get_reasoning_stream(delta: ChoiceDelta) -> str:
+    """get the reasoning contents in stream delta"""
+    if hasattr(delta, 'reasoning'):
+        return delta.reasoning
+    if hasattr(delta, 'reasoning_details'):
+        return delta.reasoning_details
+    if hasattr(delta, 'reasoning_content'):
+        return delta.reasoning_content
+    return ""
+
+
 def deepseek_support(message: dict[str, Any]) -> dict[str, Any]:
     """convert the input message with deepseek supported format"""
     if "reasoning_details" in message:
@@ -315,3 +332,294 @@ def deepseek_support(message: dict[str, Any]) -> dict[str, Any]:
     if "reasoning_content" not in message:
         message["reasoning_content"] = None
     return message
+
+
+def llm_response_manage(response, ctx: AgentContext, console: Console) -> list[dict[str, Any]] | None:
+    """top method of managing LLM responses in main agent-loop"""
+    if not ctx.api_configs["MAIN_MODEL_STREAM"]:
+        too_calls = llm_nonstream_manage(response, ctx, console)
+        return too_calls
+    else:
+        too_calls = llm_stream_manage(response, ctx, console)
+        return too_calls
+
+
+def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: Console) -> list[dict[str, str]] | None:
+    """realization of managing stream LLM responses in main agent-loop"""
+
+    """check the type"""
+    if type(response) is not ChatCompletion:
+        raise RuntimeError(f"Invalid response type, need ChatCompletion but got {type(response)}")
+
+    """check finish reason"""
+    finish_reason = response.choices[0].finish_reason
+    sys_log.debug(f"Finish reason: {finish_reason}")
+    if finish_reason is None:
+        sys_log.warning(f"LLM's response is not finished")
+        console.print(f"LLM's response is not finished", style="bold yellow")
+    if finish_reason == "length":
+        sys_log.error(f"LLM out of input/output context")
+        console.print(f"LLM out of input/output context", style="bold red")
+    if finish_reason == "content_filter":
+        sys_log.warning(f"LLM's response has been filtered")
+        console.print(f"LLM's response has been filtered", style="bold yellow")
+
+    """check the usage"""
+    usage = response.usage
+    if usage is not None:
+        ctx.total_input_tokens += usage.prompt_tokens
+        ctx.last_input_tokens = usage.prompt_tokens
+        ctx.total_output_tokens += usage.completion_tokens
+        ctx.last_output_tokens = usage.completion_tokens
+        ctx.total_tokens += usage.total_tokens
+        ctx.last_tokens = usage.total_tokens
+        if usage.prompt_tokens_details is not None:
+            cached_tokens = usage.prompt_tokens_details.cached_tokens
+            uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
+            ctx.total_uncached_tokens += uncached_tokens
+        else:
+            cached_tokens = None
+            uncached_tokens = None
+        sys_log.debug(f"Token usage: input= +{usage.prompt_tokens} ({ctx.total_input_tokens}), "
+                      f"output= +{usage.completion_tokens} ({ctx.total_output_tokens}), "
+                      f"total= +{usage.total_tokens} ({ctx.total_tokens}), "
+                      f"cached= {cached_tokens}, "
+                      f"uncached= +{uncached_tokens} ({ctx.total_uncached_tokens})")
+    else:
+        sys_log.warning("Response usage is None")
+        console.print("Response usage is None", style="bold yellow")
+
+    """message dump and conversion"""
+    dumped_msg = response.choices[0].message.model_dump(mode="json")
+    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        dumped_msg = deepseek_support(dumped_msg)
+    ctx.messages.append(dumped_msg)
+    assistant_reasoning = get_reasoning(dumped_msg)
+    assistant_chat = dumped_msg["content"]
+    # (string, will be loaded to json when called)
+    assistant_tool_calls: list[dict[str, str]] | None = dumped_msg.get("tool_calls", None)
+
+    """validate response"""
+    if (assistant_chat is None) and (assistant_tool_calls is None):
+        if assistant_reasoning is None:
+            raise RuntimeError("Output and Tool calls in LLM's message are both empty")
+        else:
+            sys_log.warning(f"There is only reasoning content in LLM's message")
+            console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
+
+    """check context limits"""
+    if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
+        sys_log.error(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
+        console.print(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens", style="bold red")
+        raise RuntimeError(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
+    if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
+        sys_log.warning(f"LLM's context >= {100 * ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
+        console.print(f"LLM's context >= {100 * ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context",
+                      style="bold yellow")
+
+    """display reasoning"""
+    if assistant_reasoning is not None and not "":
+        ctx.reasoning_prompts += 1
+        console.print("\n")
+        if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
+            console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
+        else:
+            console.print("{Think}: " + assistant_reasoning, style=f"italic {REASONING_COLOR}")
+        if assistant_chat is None and not "":
+            console.print("\n")
+
+    """display chat"""
+    if assistant_chat is not None and not "":
+        ctx.content_prompts += 1
+        if assistant_reasoning is None and not "":
+            console.print("\n")
+        if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
+            console.print(Markdown(assistant_chat), style="bold")
+        else:
+            console.print(assistant_chat, style="bold")
+        console.print("\n")
+
+    return assistant_tool_calls
+
+
+def stream_display(collected_reasoning, collected_content, as_md: bool) -> Group:
+    """display the stream of messages"""
+    parts = []
+    """display reasoning"""
+    if collected_reasoning is not None and not "":
+        parts.append(Text("\n"))
+        if as_md:
+            parts.append(Markdown("{Think}: " + collected_reasoning, style=f"italic {REASONING_COLOR}"))
+        else:
+            parts.append(Text("{Think}: " + collected_reasoning, style=f"italic {REASONING_COLOR}"))
+        if collected_content is None and not "":
+            parts.append(Text("\n"))
+
+    """display chat"""
+    if collected_content is not None and not "":
+        if collected_reasoning is not None and not "":
+            parts.append(Text("\n"))
+        if as_md:
+            parts.append(Markdown(collected_content, style="bold"))
+        else:
+            parts.append(Text(collected_content, style="bold"))
+        parts.append(Text("\n"))
+    return Group(*parts)
+
+
+def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, console: Console) -> list[dict[str, str]] | None:
+    """realization of managing stream LLM responses in main agent-loop"""
+
+    """initialize collectors for streaming response"""
+    collected_content = ""
+    collected_reasoning = ""
+    collected_tool_calls: dict[int, dict[str, Any]] = {}  # index -> tool_call dict
+
+    final_usage = None
+    final_finish_reason = None
+    as_md = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
+
+    """process each chunk"""
+    with Live(stream_display(collected_reasoning, collected_content, as_md),
+            refresh_per_second=STREAM_DISPLAY_REFRESH_RATE, console=console, transient=False) as live:
+        for chunk in response:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            finish_reason = chunk.choices[0].finish_reason
+
+            # Collect usage if available (some providers send it in the last chunk)
+            if chunk.usage:
+                final_usage = chunk.usage
+
+            # Collect finish reason
+            if finish_reason:
+                final_finish_reason = finish_reason
+
+            # Collect content
+            if delta.content:
+                collected_content += delta.content
+
+            # Collect reasoning (for DeepSeek and similar models)
+            collected_reasoning += get_reasoning_stream(delta)
+
+            """collect tool calls"""
+            if delta.tool_calls:
+                for tool_call_delta in delta.tool_calls:
+                    index = tool_call_delta.index
+
+                    # Initialize tool call entry if new index
+                    if index not in collected_tool_calls:
+                        collected_tool_calls[index] = {
+                            "id": None,
+                            "type": "function",
+                            "function": {
+                                "name": "",
+                                "arguments": ""
+                            },
+                            "index": index
+                        }
+                    tc = collected_tool_calls[index]
+
+                    # Accumulate tool call ID
+                    if tool_call_delta.id:
+                        tc["id"] = tool_call_delta.id  # ID is complete
+
+                    # Accumulate function name
+                    if tool_call_delta.function and tool_call_delta.function.name:
+                        tc["function"]["name"] += tool_call_delta.function.name
+
+                    # Accumulate function arguments (string, will be loaded to json when called)
+                    if tool_call_delta.function and tool_call_delta.function.arguments:
+                        tc["function"]["arguments"] += tool_call_delta.function.arguments
+            """update display"""
+            live.update(stream_display(collected_reasoning, collected_content, as_md))
+
+    """check finish reason"""
+    sys_log.debug(f"Finish reason: {final_finish_reason}")
+    if final_finish_reason is None:
+        sys_log.warning(f"LLM's response is not finished")
+        console.print(f"LLM's response is not finished", style="bold yellow")
+    if final_finish_reason == "length":
+        sys_log.error(f"LLM out of input/output context")
+        console.print(f"LLM out of input/output context", style="bold red")
+    if final_finish_reason == "content_filter":
+        sys_log.warning(f"LLM's response has been filtered")
+        console.print(f"LLM's response has been filtered", style="bold yellow")
+
+    """count update"""
+    if collected_reasoning is not None and not "":
+        ctx.reasoning_prompts += 1
+    if collected_content is not None and not "":
+        ctx.content_prompts += 1
+
+    """check the usage"""
+    if final_usage is not None:
+        ctx.total_input_tokens += final_usage.prompt_tokens
+        ctx.last_input_tokens = final_usage.prompt_tokens
+        ctx.total_output_tokens += final_usage.completion_tokens
+        ctx.last_output_tokens = final_usage.completion_tokens
+        ctx.total_tokens += final_usage.total_tokens
+        ctx.last_tokens = final_usage.total_tokens
+        if final_usage.prompt_tokens_details is not None:
+            cached_tokens = final_usage.prompt_tokens_details.cached_tokens
+            uncached_tokens = final_usage.prompt_tokens - cached_tokens  # uncached input tokens
+            ctx.total_uncached_tokens += uncached_tokens
+        else:
+            cached_tokens = None
+            uncached_tokens = None
+        sys_log.debug(f"Token usage: input= +{final_usage.prompt_tokens} ({ctx.total_input_tokens}), "
+                      f"output= +{final_usage.completion_tokens} ({ctx.total_output_tokens}), "
+                      f"total= +{final_usage.total_tokens} ({ctx.total_tokens}), "
+                      f"cached= {cached_tokens}, "
+                      f"uncached= +{uncached_tokens} ({ctx.total_uncached_tokens})")
+    else:
+        sys_log.warning("Response usage is None")
+        console.print("Response usage is None", style="bold yellow")
+
+    """build the complete message from collected parts"""
+    if collected_tool_calls:
+        converted_tool_calls: list[dict[str, str]] = [
+            collected_tool_calls[i] for i in sorted(collected_tool_calls.keys())
+        ]
+    else:
+        converted_tool_calls = None
+
+    # Build the message dict (matching non-streaming format)
+    dumped_msg = {
+        "role": "assistant",
+        "content": collected_content if collected_content else None,
+        "reasoning": collected_reasoning if collected_reasoning else None,
+        "tool_calls": converted_tool_calls if converted_tool_calls else None,
+    }
+
+    """apply deepseek support if needed"""
+    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        dumped_msg = deepseek_support(dumped_msg)
+
+    """append to conversation history"""
+    ctx.messages.append(dumped_msg)
+
+    """extract parts for display"""
+    assistant_reasoning = get_reasoning(dumped_msg)
+    assistant_chat = dumped_msg.get("content")
+
+    """validate response"""
+    if (assistant_chat is None or assistant_chat == "") and (converted_tool_calls is None):
+        if assistant_reasoning is None or assistant_reasoning == "":
+            raise RuntimeError("Output and Tool calls in LLM's message are both empty")
+        else:
+            sys_log.warning(f"There is only reasoning content in LLM's message")
+            console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
+
+    """check context limits"""
+    if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
+        sys_log.error(f"LLM out of context: {ctx.api_configs['MAIN_MODEL_CONTEXT']} tokens")
+        console.print(f"LLM out of context: {ctx.api_configs['MAIN_MODEL_CONTEXT']} tokens", style="bold red")
+        raise RuntimeError(f"LLM out of context: {ctx.api_configs['MAIN_MODEL_CONTEXT']} tokens")
+    if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"] * ctx.agent_configs["CONTEXT_THRESHOLD"]:
+        sys_log.warning(f"LLM's context >= {100 * ctx.agent_configs['CONTEXT_THRESHOLD']}% maximum context")
+        console.print(f"LLM's context >= {100 * ctx.agent_configs['CONTEXT_THRESHOLD']}% maximum context",
+                      style="bold yellow")
+
+    return converted_tool_calls

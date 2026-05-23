@@ -33,9 +33,10 @@ while True:
     full_response = ""
     print("Agent: ", end="", flush=True)
     for chunk in stream:
+        print(chunk)
         if chunk.choices and chunk.choices[0].delta.content:
             content = chunk.choices[0].delta.content
-            print(content, end="", flush=True)
+            # print(content, end="", flush=True)
             full_response += content
     print("\n")
     messages.append({"role": "assistant", "content": full_response})

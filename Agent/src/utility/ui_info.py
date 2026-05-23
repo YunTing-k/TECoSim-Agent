@@ -164,8 +164,8 @@ def usage_bar(ctx: AgentContext, console: Console, length: int = 20, prefix1: st
                   int(start_color[1] + (target_color[1] - start_color[1]) * ratio),
                   int(start_color[2] + (target_color[2] - start_color[2]) * ratio),)
     len_full = int(length * ratio)
-    progress_str = horizontal_color_grad_text(prefix1 + PRGRESS_BAR_FULL * len_full, start_color, stop_color)
-    progress_str.append(PRGRESS_BAR_EMPTY * (length - len_full), style="bright_black")
+    progress_str = horizontal_color_grad_text(prefix1 + PROGRESS_BAR_FULL * len_full, start_color, stop_color)
+    progress_str.append(PROGRESS_BAR_EMPTY * (length - len_full), style="bright_black")
     progress_str.append(prefix2, style=f"bold {MAJOR_COLOR1}")
 
     bar_str = Text()

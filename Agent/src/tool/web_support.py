@@ -13,6 +13,7 @@ Revision:
 2026.5.19      Yu Huang     1.0               First implementation\n
 2026.5.20      Yu Huang     1.1               Web search support\n
 2026.5.21      Yu Huang     1.2               Bugfix of skipping URL caches when quering\n
+2026.5.23      Yu Huang     1.3               Bugfix of possible none usage update\n
 
 Details:
 Web fetch and web search support of the TECoSim agent
@@ -26,6 +27,8 @@ import logging
 
 from typing import Any, TypedDict
 from datetime import datetime, timedelta
+
+from openai.types.chat import ChatCompletion
 from trafilatura import extract
 from exa_py import Exa
 from tavily import TavilyClient
@@ -183,17 +186,19 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
     """process the Markdown content with prompt through LLM"""
     messages = create_web_fetch_prompts(in_prompt, content)
     try:
-        response = client.llm_request_with_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                     ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
                                                     waiting_desc = "Web fetch summarizing ...", done_desc = "LLM response latency", spinner = "arrow3")
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
-        ctx.total_input_tokens += usage.prompt_tokens
-        ctx.total_output_tokens += usage.completion_tokens
-        ctx.total_tokens += usage.total_tokens
-        cached_tokens = usage.prompt_tokens_details.cached_tokens
-        uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
-        ctx.total_uncached_tokens += uncached_tokens
+        if usage is not None:
+            ctx.total_input_tokens += usage.prompt_tokens
+            ctx.total_output_tokens += usage.completion_tokens
+            ctx.total_tokens += usage.total_tokens
+            if usage.prompt_tokens_details is not None:
+                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
+                ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
         if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
@@ -443,17 +448,19 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
     """process the web search returns content with prompt through LLM"""
     messages = create_web_search_prompts(query, content)
     try:
-        response = client.llm_request_with_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                     ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
                                                     waiting_desc = "Web search summarizing ...", done_desc = "LLM response latency", spinner = "arrow3")
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
-        ctx.total_input_tokens += usage.prompt_tokens
-        ctx.total_output_tokens += usage.completion_tokens
-        ctx.total_tokens += usage.total_tokens
-        cached_tokens = usage.prompt_tokens_details.cached_tokens
-        uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
-        ctx.total_uncached_tokens += uncached_tokens
+        if usage is not None:
+            ctx.total_input_tokens += usage.prompt_tokens
+            ctx.total_output_tokens += usage.completion_tokens
+            ctx.total_tokens += usage.total_tokens
+            if usage.prompt_tokens_details is not None:
+                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
+                ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
         if ctx.agent_configs["DEEPSEEK_SUPPORT"]:

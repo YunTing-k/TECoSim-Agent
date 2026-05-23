@@ -18,6 +18,7 @@ Revision:
 2026.5.19      Yu Huang     1.5               Model classification support\n
 2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
 2026.5.21      Yu Huang     1.7               Move load_configs to basic_utils.py\n
+2026.5.23      Yu Huang     1.8               Stream response display update\n
 
 Details:
 Client configuration, creation
@@ -70,10 +71,10 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
         "temperature": ctx.api_configs["MAIN_MODEL_TEMPERATURE"],
         "reasoning_effort": ctx.api_configs["MAIN_MODEL_REASONING_EFFORT"],
         "max_tokens": ctx.api_configs["MAIN_MODEL_MAX_TOKENS"],
+        "stream": ctx.api_configs["MAIN_MODEL_STREAM"],
         "messages": ctx.messages,
         "tools": ctx.tools,
-        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000
-    }
+        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000    }
     if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
         if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}
@@ -92,6 +93,7 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
         "temperature": api_configs["FAST_MODEL_TEMPERATURE"],
         "reasoning_effort": api_configs["FAST_MODEL_REASONING_EFFORT"],
         "max_tokens": api_configs["FAST_MODEL_MAX_TOKENS"],
+        "stream": False,  # Fast model disable stream response
         "messages": messages,
         "timeout": api_configs["TIMEOUT_MS"] / 1000
     }
