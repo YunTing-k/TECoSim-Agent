@@ -364,7 +364,7 @@ def cmd_mcp_list(args: Any, ctx: AgentContext, console: Console):
     mcps_configs = ctx.mcps_configs
     mcps_ini_info = ctx.mcp_router.mcps_ini_info
     mcps_tools = ctx.mcp_router.mcps_tools
-    title = f"MCP info ({len(mcps_configs)} available, {len(ctx.mcp_router.clients)} active)"
+    title = f"MCP Info ({len(mcps_configs)} available, {len(ctx.mcp_router.clients)} active)"
 
     cmd_str = Text()
     for config in mcps_configs:
@@ -452,7 +452,7 @@ def cmd_session_list(args: Any, ctx: AgentContext, console: Console):
             sys_log.error(f"Failed to load session {item}'s context with error {e}")
             console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
 
-    title = f"Available sessions ({len(sessions_list)})"
+    title = f"Available Sessions ({len(sessions_list)})"
     cmd_str = Text()
     cmd_str.append(f"({AGENT_CONSOLE_ICON} This session)", style=f"bold {MAJOR_COLOR1}")
     cmd_str.append(f" UUID: ", style=f"white")
@@ -467,8 +467,14 @@ def cmd_session_list(args: Any, ctx: AgentContext, console: Console):
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 
+    hint = Text()
+    hint.append(f"  Tips: You can resume any session with following command in shell: ", style=f"bright_black")
+    hint.append(f"python -m src.main -r ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[Session UUID]", style=f"bold {MAJOR_COLOR1}")
+
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
     console.print("\n")
 
 

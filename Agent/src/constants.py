@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 0
-TECOSIM_AGENT_UPDATE_VERSION: int = 13
+TECOSIM_AGENT_UPDATE_VERSION: int = 14
 """Bash command risk"""
 BASH_HIGH_RISK_LABEL = "BASH_HIGH_RISK"  # high-risk (0)
 BASH_PACKAGE_LABEL = "BASH_PACKAGE"  # high-risk (0)
@@ -22,11 +22,13 @@ BASH_EMPTY_LABEL = "BASH_EMPTY" # no-risk (9)
 """UI"""
 AGENT_CONSOLE_ICON: str = "✦"
 DEFAULT_SESSION_TITLE: str = "(Empty session)"
-UNKNOWN_SESSION_TITLE: str = "(Unkown title)"
+UNKNOWN_SESSION_TITLE: str = "(Unknown session)"
 ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
 PROGRESS_BAR_FULL: str = "█"  # █ ■
 PROGRESS_BAR_EMPTY: str = "░"  # ░ □
 STREAM_DISPLAY_REFRESH_RATE: int = 20
+STREAM_DISPLAY_MAX_REASON_LINE: int = 10
+STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
 MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
 MAJOR_COLOR2: str = "#54A0FF"  # common major color
 REASONING_COLOR: str = "#54A0FF"

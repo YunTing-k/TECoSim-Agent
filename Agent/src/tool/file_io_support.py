@@ -13,13 +13,13 @@ Revision:
 2026.5.12      Yu Huang     1.0               First implementation\n
 2026.5.12      Yu Huang     1.1               TUI event trigger support\n
 2026.5.15      Yu Huang     1.2               Move read lines/logs method to file_io_support.py\n
+2026.5.27      Yu Huang     1.3               Move clean_stdout/stderr_log method to simulator_support.py\n
 
 Details:
 Support of file io with read truncation, user permission TUI and corresponding methods
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
-import re
 import math
 import logging
 
@@ -64,53 +64,6 @@ def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_
             lines_count += 1
     output = "".join(formatted_lines)
     return output, truncated, lines_count
-
-
-def clean_stdout_log(content: str) -> list[str]:
-    """remove the redundancy in the input stdout log str"""
-    pattern = re.compile(r'\[(debug|info|warning|error)]', re.IGNORECASE)
-    lines = content.splitlines()
-    cleaned_lines = []
-    for line in lines:
-        if not line.strip():
-            continue
-        if "print_start_banner" in line:
-            continue
-        if "print_end_banner" in line:
-            continue
-        if "print_error_banner" in line:
-            continue
-        if "print_abort_banner" in line:
-            continue
-        match = pattern.search(line)
-        if match:
-            start = match.start()
-            line = line[start:]
-        cleaned_lines.append(line)
-    # return "\n".join(cleaned_lines)
-    return cleaned_lines
-
-
-def clean_stderr_log(content: str) -> list[str]:
-    """remove the redundancy in the input stderr log str"""
-    lines = content.splitlines()
-    cleaned_lines = []
-    for line in lines:
-        if not line.strip():
-            continue
-        if "libx264 @" in line:
-            continue
-        if "psnr @" in line:
-            continue
-        if "ssim @" in line:
-            continue
-        if "vmaf @" in line:
-            continue
-        if "std::cerr abort_banner" in line:
-            continue
-        cleaned_lines.append(line)
-    # return "\n".join(cleaned_lines)
-    return cleaned_lines
 
 
 def match_line_ranges(content: str, target: str, match_all: bool) -> list[tuple[int, int]]:

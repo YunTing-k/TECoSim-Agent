@@ -26,6 +26,7 @@ Revision:
 2026.5.19      Yu Huang     2.2               Webpage fetch support\n
 2026.5.20      Yu Huang     2.3               Web search support & Interrupt support for web fetch/search\n
 2026.5.21-22   Yu Huang     2.4               Agent MCPs support & Revise tools prompts of read_file and skills\n
+2026.5.27      Yu Huang     2.5               Glob and grep file support & Add terminate subprocess when exception\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -41,7 +42,9 @@ from datetime import datetime
 from rich.progress import Progress
 from src.utility import ui_info
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
-from src.tool.file_io_support import read_line_with_limit, clean_stdout_log, clean_stderr_log, match_line_ranges, ask_edit_tui
+from src.tool.file_filter_support import glob_impl, grep_impl
+from src.tool.file_io_support import read_line_with_limit, match_line_ranges, ask_edit_tui
+from src.tool.simulator_support import clean_stdout_log, clean_stderr_log
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.web_support import web_search_top, web_search_process
@@ -60,6 +63,8 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         # basic tools
         tool_ask_user_question_def(),
         tool_bash_def(),
+        tool_glob_file_def(),
+        tool_grep_file_def(),
         tool_read_file_def(),
         tool_write_file_def(),
         tool_edit_file_def(),
@@ -246,9 +251,12 @@ def tool_bash_def() -> dict[str, Any]:
             "name": "bash",
             "description": "Executes a given bash command and returns its output. The working directory persists between "
                            "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
-                           "IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, or `echo` commands, unless explicitly "
-                           "instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, "
-                           "use the appropriate dedicated tool as this will provide a much better experience for the user.\n"
+                           "IMPORTANT: Avoid using this tool to run `grep`, `glob`, `cat`, `head`, `tail`, or `echo` commands, "
+                           "unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish "
+                           "your task. Instead, use the appropriate dedicated tool as this will provide a much better experience "
+                           "for the user.\n"
+                           " - File search: Prefer using `glob_file` (NOT find/ls)\n"
+                           " - Content search: Prefer using `grep_file` (NOT grep/rg)\n"
                            " - Read files: Prefer using `read_file` (NOT cat/head/tail)\n"
                            " - Write files: Prefer using `write_file` (NOT echo >/cat <<EOF)\n"
                            " - Edit files: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
@@ -362,6 +370,14 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                     "return code": proc.returncode,
                     "stdout": stdout.decode('utf-8'),
                     "stderr": stderr.decode('utf-8')}
+        except Exception as e:
+            proc.terminate()
+            try:
+                proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+            raise RuntimeError(e)
         sys_log.debug(f"bash: {description} with command {command} done")
         progress.console.print(f"bash: {description} with command {command} done", style="bright_black")
         return {"status": "DONE",
@@ -372,6 +388,205 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         sys_log.error(f"bash FAIL: Command execute with error: {e}")
         progress.console.print(f"bash FAIL: Command execute with error: {e}", style="bold red")
         return {"status": "FAIL", "info": f"Command execute with error: {e}"}
+
+
+def tool_glob_file_def() -> dict[str, Any]:
+    """tool definition of globbing the file (glob_file)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "glob_file",
+            "description": "File pattern matching tool that works with any codebase size. Use this tool when you need to "
+                           "find files by name patterns.\n"
+                           "Usage:\n"
+                           "- ALWAYS use `glob_file` for file search tasks. NEVER invoke `find` or `ls` as a Bash command. The "
+                           "`glob_file` tool has been optimized for correct permissions and access\n"
+                           "- Supports glob patterns like \"**/*.js\" or \"src/**/*.py\"\n"
+                           "- Returns matching file paths sorted by modification time\n",
+                           # "- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, "
+                           # "use the Agent tool instead"
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The glob pattern to match files against.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (must be absolute, not relative). If not specified, the current "
+                                       "working directory will be used.",
+                    }
+                },
+                "required": ["pattern"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of globbing the file with arguments and AgentContext"""
+    try:
+        """request permission"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "glob_file", f"pattern: {arguments.get("pattern")}, "
+                                   f"path: {arguments.get("path", os.getcwd())}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+
+        """glob file"""
+        results, if_success, grep_info = glob_impl(arguments)
+        if if_success:
+            sys_log.debug(f"glob_file SUCCESS: Glob file in path {arguments.get("path", os.getcwd())} with pattern "
+                          f"{arguments.get("pattern")} successfully")
+            progress.console.print(f"glob_file SUCCESS: Glob file in path {arguments.get("path", os.getcwd())} "
+                                   f"with pattern {arguments.get("pattern")} successfully", style="bright_black")
+            return {"status": "DONE", "results": results}
+        else:
+            sys_log.error(f"glob_file FAIL: Glob file in path {arguments.get("path", os.getcwd())} with pattern "
+                          f"{arguments.get("pattern")} failed with error, details: {grep_info}")
+            progress.console.print(f"glob_file SUCCESS: Glob file in path {arguments.get("path", os.getcwd())} "
+                                   f"with pattern {arguments.get("pattern")} failed with error, details: {grep_info}", style="bold red")
+            return {"status": "FAIL", "info": f"Glob file failed with error, details: {grep_info}"}
+    except Exception as e:
+        sys_log.error(f"glob_file FAIL: Glob file failed with error: {e}")
+        progress.console.print(f"glob_file FAIL: Glob file failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Glob file failed with error: {e}"}
+
+
+def tool_grep_file_def() -> dict[str, Any]:
+    """tool definition of grepping the file (grep_file)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": "grep_file",
+            "description": "A powerful search tool built on ripgreg. Search specific text (in the pattern parameter) under "
+                           "a specific directory.\n\n"
+                           "Usage:\n"
+                           "- ALWAYS use `grep_file` for file content search tasks. NEVER invoke `grep` or `rg` as a Bash "
+                           "command. The `grep_file` tool has been optimized for correct permissions and access\n"
+                           "- Supports full regex syntax (e.g., \"log.*Error\", \"function\\s+\\w+\"). Literal braces need "
+                           "escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n"
+                           "- By default patterns match within single lines only. For cross-line patterns like `struct "
+                           "\\{[\\s\\S]*?field`, set `multiline: true`\n"
+                           "- Filter files with glob parameter (e.g., \"*.js\", \"**/*.tsx\") or type parameter (e.g., "
+                           "\"js\", \"py\", \"rust\")\n"
+                           "Output mode selection:\n"
+                           "- Use \"files_with_matches\" (default) when you need to find which files contain a pattern\n"
+                           "- Use \"content\" when you need to see the actual matching lines (supports `context` for surrounding lines)\n"
+                           "- Use \"count\" when you need statistics on match frequency per file\n"
+                           "Result control:\n"
+                           "- ALWAYS set `head_limit` to a reasonable value based on expected results. The default is 250. "
+                           "set to 0 only when you truly need unlimited results.\n"
+                           "- Use `glob` parameter (e.g., \"*.js\", \"**/*.tsx\") or `type` (e.g., \"js\", \"py\", \"rust\") "
+                           "to narrow down the search scope\n"
+                           "Prefer `type` for standard file types as it's more efficient.\n"
+                           "- Use `context` only with output_mode=\"content\" to see lines before and after each match\n",
+                           # "- Use Agent tool for open-ended searches requiring multiple rounds\n"
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The regular expression pattern to search for in file contents.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search in (must be absolute, not relative). If not specified, "
+                                       "the current working directory will be used.",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Glob pattern to filter files (e.g. \"*.js\", \"*.{ts,tsx}\") - maps to rg --glob.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More "
+                                       "efficient than include for standard file types.",
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "enum": ["content", "files_with_matches", "count"],
+                        "default": "files_with_matches",
+                        "description": "Output mode: \"content\" shows matching lines (supports -C context, -n line "
+                                       "numbers, head_limit), \"files_with_matches\" shows file paths (supports head_limit), "
+                                       "\"count\" shows match counts (supports head_limit). Defaults to \"files_with_matches\"",
+                    },
+                    "ignore_case": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Case insensitive search (rg -i), default false.",
+                    },
+                    "context": {
+                        "type": "integer",
+                        "description": "Number of lines to show before and after each match (rg -C). Requires output_mode: "
+                                       "\"content\", ignored otherwise.",
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "default": 250,
+                        "description": "Limit output to first N lines/entries, equivalent to \"| head -N\". Works across "
+                                       "all output modes: content (limits output lines), files_with_matches (limits file paths), "
+                                       "count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited "
+                                       "(use sparingly — large result sets waste context).",
+                    },
+                    "multiline": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Enable multiline mode where . matches newlines and patterns can span lines (rg -U "
+                                       "--multiline-dotall). Default: false.",
+                    },
+                },
+                "required": ["pattern"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of grepping the file with arguments and AgentContext"""
+    try:
+        """request permission"""
+        progress.stop()
+        token = ask_permission_tui(ctx, "grep_file",
+                                   f"pattern: {arguments.get("pattern")}, "
+                                   f"path: {arguments.get("path", os.getcwd())}, "
+                                   f"glob: {arguments.get("glob")}, "
+                                   f"type: {arguments.get("type")}, "
+                                   f"output_mode: {arguments.get("output_mode", "files_with_matches")}, "
+                                   f"ignore_case: {arguments.get("ignore_case", False)}, "
+                                   f"context: {arguments.get("context")}, "
+                                   f"head_limit: {arguments.get("head_limit", 250)}, "
+                                   f"multiline: {arguments.get("multiline", False)}", progress.console)
+        progress.start()
+        if not token:
+            return {"status": "FAIL",
+                    "info": f"Permission request denied by user"}
+
+        """grep file"""
+        results, if_success, grep_info = grep_impl(arguments, ctx.agent_configs["GREP_FILE_TIMEOUT_S"])
+        if if_success:
+            sys_log.debug(f"grep_file SUCCESS: Grep file in path {arguments.get("path", os.getcwd())} with pattern "
+                          f"{arguments.get("pattern")} successfully")
+            progress.console.print(f"grep_file SUCCESS: Grep file in path {arguments.get("path", os.getcwd())} "
+                                   f"with pattern {arguments.get("pattern")} successfully", style="bright_black")
+            return {"status": "DONE", "results": results}
+        else:
+            sys_log.error(f"grep_file FAIL: Grep file in path {arguments.get("path", os.getcwd())} with pattern "
+                          f"{arguments.get("pattern")} failed with error, details: {grep_info}")
+            progress.console.print(f"grep_file SUCCESS: Grep file in path {arguments.get("path", os.getcwd())} "
+                                   f"with pattern {arguments.get("pattern")} failed with error, details: {grep_info}", style="bold red")
+            return {"status": "FAIL", "info": f"Grep file failed with error, details: {grep_info}"}
+    except Exception as e:
+        sys_log.error(f"grep_file FAIL: Grep file failed with error: {e}")
+        progress.console.print(f"grep_file FAIL: Grep file failed with error: {e}", style="bold red")
+        return {"status": "FAIL", "info": f"Grep file failed with error: {e}"}
 
 
 def tool_read_file_def() -> dict[str, Any]:
@@ -1491,6 +1706,14 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
                     "info": f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
                             f"{design_id} timeout > {ctx.agent_configs["SIMULATOR_TIMEOUT_S"]} s. Simulator interrupted. "
                             f"Check logs for details if needed"}
+        except Exception as e:
+            proc.terminate()
+            try:
+                proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+            raise RuntimeError(e)
         sys_log.debug(f"launch_simulator: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} stop")
         progress.console.print(f"launch_simulator: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} stop", style="bright_black")
         """write/copy logs"""

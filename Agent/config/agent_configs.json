@@ -7,6 +7,8 @@
 
     "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",
     "SIMULATOR_TIMEOUT_S": 3600,
+
+    "GREP_FILE_TIMEOUT_S": 20,
     "READ_FILE_MB_LIMIT": 100,
     "READ_FILE_LLM_KB_LIMIT": 500,
 

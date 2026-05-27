@@ -17,6 +17,7 @@ Revision:
 2026.5.19      Yu Huang     1.4               Webpage fetch support\n
 2026.5.20      Yu Huang     1.5               Web search support\n
 2026.5.22      Yu Huang     1.6               Agent MCPs support & Summarize session title support\n
+2026.5.27      Yu Huang     1.7               Glob and grep file support\n
 
 Details:
 Agent's context management with save/load
@@ -98,16 +99,7 @@ class AgentContext:
         # signals
         self.task_end: bool = True  # (don't dump)
         self.permissions: dict[str, bool] = {
-            "init_design": False,
-            "copy_design": False,
-            "launch_simulator": False,
-            "read_log": False,
-            "read_file": False,
-            "write_file": False,
-            "edit_file": False,
-            "skill": False,
-            "web_fetch": False,
-            "web_search": False,
+            # basic tools
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,
@@ -121,7 +113,20 @@ class AgentContext:
             f"{BASH_REPOSITORY_MODIFY_LABEL}": False,
             f"{BASH_STAGE_CHANGE_LABEL}": False,
             f"{BASH_UNKNOWN_LABEL}": False,
-            f"{BASH_SAFE_LABEL}": False
+            f"{BASH_SAFE_LABEL}": False,
+            "glob_file": False,
+            "grep_file": False,
+            "read_file": False,
+            "write_file": False,
+            "edit_file": False,
+            "skill": False,
+            "web_fetch": False,
+            "web_search": False,
+            # expert tools
+            "init_design": False,
+            "copy_design": False,
+            "launch_simulator": False,
+            "read_log": False,
         }
 
 
