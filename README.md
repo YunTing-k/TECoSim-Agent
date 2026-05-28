@@ -84,14 +84,14 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.14
-  **Current version**: 0.0.14
+- **当前版本**: 0.0.15
+  **Current version**: 0.0.15
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
 - **工具系统（17个工具） | Tool system (17 tools)** (`Agent/src/tool/`)：
   - 用户交互：`ask_user_question` | User interaction
-  - 文件操作：`glob_file`, `grep_file`, `read_file`, `write_file`, `edit_file`（含 TUI diff 编辑视图） | File operations (with TUI diff editing view)
-  - Shell 执行：`bash`（含命令风险检测分级系统） | Shell execution (with risk-level detection system)
+  - 文件操作：`glob_file`, `grep_file`, `read_file`, `write_file`, `edit_file`（含 TUI diff 编辑视图，只读路径的编辑保护） | File operations (with TUI diff editing view)
+  - Shell 执行：`bash`（含命令风险检测分级系统） | Shell execution (with risk-level detection system, and edit protection of readonly paths)
   - 网页获取：`web_fetch`（URL 安全校验、私有网络拦截、HTML-to-Markdown 转换、可配置缓存）、主agent-loop上下文隔离 | Web fetching (URL security check, private network interception, HTML-to-Markdown conversion, configurable cache, main agent-loop context isolation)
   - 网络搜索：`web_search`（Domain黑名单/白名单、可配置代理和搜索模式的四种不同的后端`Exa`/`Tavily`/`Linkup`（需要API key）与`DDGS`（不需要key），主agent-loop上下文隔离 | Web fetching (Domain blacklist/whitelist, four configurable backends: `Exa`/`Tavily`/`Linkup` (API key required) and `DDGS` (no key), with proxy and search mode, main agent-loop context isolation)
   - 技能调用：`skill`（标准技能接口） | Skill invocation (standard skill interface)
@@ -102,8 +102,23 @@ This project is still under development. The basic goals are as follows:
   **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management, stream LLM response support and real-time display (auto folding for overflowed display area)
 - **上下文管理** (`Agent/src/context/agent_context.py`)：完整状态序列化（save/load/resume），含 Token 用量统计、权限状态、设计列表
   **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
-- **内置命令系统** (`Agent/src/context/command.py`)：内置命令查询设计/运行、列出/加载技能、查看缓存 URL 等
-  **Built-in command system**: built-in commands with query designs/runs, list/load skills, view cached URLs, etc.
+- **内置命令系统** (`Agent/src/utility/command.py`)：
+  - **设计/运行管理：** 查询设计列表 (`/design_list`)、查询运行次数 (`/run_list`)
+  - **信息查询：** 查看上下文用量 (`/context`)、查看已读文件 (`/fread_list`)、查看只读路径 (`/readonly_list`)、查看缓存URL (`/url_caches`)、查看会话列表 (`/session_list`)
+  - **只读路径管理：** 添加只读路径 (`/readonly_add`)、移除只读路径 (`/readonly_remove`)
+  - **权限管理：** 查看权限配置 (`/permission_list`)、切换权限开关 (`/permission_toggle`)
+  - **技能管理：** 列出可用技能 (`/skill_list`)、列出已加载技能 (`/skills_loaded`)、加载指定技能 (`/<skill_name>`)
+  - **MCP管理：** 查看MCP信息 (`/mcp_list`)
+  - **其他：** 更新会话标题 (`/update_title`)、查看帮助 (`/help`)
+  
+  **Built-in command system**:
+  - **Design/Run Management:** Query design list (`/design_list`), query run count (`/run_list`)
+  - **Information Queries:** View context usage (`/context`), view read files (`/fread_list`), view read-only paths (`/readonly_list`), view cached URLs (`/url_caches`), view session list (`/session_list`)
+  - **Read-only Path Management:** Add read-only paths (`/readonly_add`), remove read-only paths (`/readonly_remove`)
+  - **Permission Management:** View permission configs (`/permission_list`), toggle permission switches (`/permission_toggle`)
+  - **Skill Management:** List available skills (`/skill_list`), list loaded skills (`/skills_loaded`), load a skill (`/<skill_name>`)
+  - **MCP Management:** View MCP information (`/mcp_list`)
+  - **Others:** Update session title (`/update_title`), view help (`/help`)
 - **权限控制** (`Agent/src/tool/ask_permission.py`)：所有敏感操作（文件修改、仿真启动、bash 命令）均需用户确认
   **Permission control**: All sensitive operations (file modification, simulation launch, bash commands) require user confirmation
 - **模型分类** (`Agent/src/utility/client.py`)：主模型（复杂/模糊任务）+ 快速模型（简单/确定任务）双模型支持

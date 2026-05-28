@@ -20,6 +20,7 @@ Revision:
 2026.5.21      Yu Huang     1.7               Move get_platform_info, is_git_repo, is_bash_available to basic_utils.py\n
 2026.5.23      Yu Huang     1.8               Stream response display update\n
 2026.5.23      Yu Huang     1.9               Revise the stream response display when content overflow console length\n
+2026.5.28      Yu Huang     2.0               Add read-only paths support\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
@@ -121,8 +122,6 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "a stdout log, only read all lines of it when necessary, since the stdout log can be too long. For example, "
                 "if you want to check for error information when a simulation fails, you can read a few lines of stdout "
                 "log from the bottom (e.g., 50 lines) rather than reading all of the lines at once.\n"
-                " - IMPORTANT: Never ever create/modify/delete any file or directory in the path of TECoSim simulator and "
-                "the sub directory named `session` under primary working directory. They are read-only.\n"
                 "# Tasks\n"
                 " - The user will primarily request you to perform display panel engineering tasks. These may include "
                 "designing a display panel from scratch with core target metis, validating specific panel's IR drop severity "

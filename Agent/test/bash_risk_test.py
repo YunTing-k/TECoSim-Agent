@@ -1,18 +1,27 @@
+from src.constants import *
 from src.tool.bash_support import split_commands, get_bash_risk
 
 def evaluate_bash_risk(commands: str):
     """evaluate the risk of given bash commands"""
     cmd_list = split_commands(commands)
-    if len(cmd_list) == 0:
-        return "N/A", "Empty command", 9
+    if not cmd_list:
+        return BASH_EMPTY_LABEL, "Empty command", 9
+
     cmd_level_list: list[int] = []
     cmd_risk_list: list[str] = []
     cmd_reason_list: list[str] = []
-    for idx, cmd_str in enumerate(cmd_list):
-        risk, reason, level = get_bash_risk(cmd_str)
+
+    for fragment in cmd_list:
+        risk, reason, level = get_bash_risk(fragment)
         cmd_risk_list.append(risk)
         cmd_reason_list.append(reason)
         cmd_level_list.append(level)
+
+    # If ALL fragments are covered by existing permissions, treat as fully allowed
+    if not cmd_level_list:
+        return BASH_SAFE_LABEL, "All commands covered by existing permissions", 9
+
+    # Pick the fragment with the *lowest* level (= highest risk)
     idx = min(range(len(cmd_level_list)), key=lambda i: cmd_level_list[i])
     return cmd_risk_list[idx], cmd_reason_list[idx], cmd_level_list[idx]
 
@@ -56,4 +65,10 @@ cmd = 'sort > /dev/1.txt'
 print(evaluate_bash_risk(cmd))
 
 cmd = 'sort > /1.txt'
+print(evaluate_bash_risk(cmd))
+
+cmd = 'docker list'
+print(evaluate_bash_risk(cmd))
+
+cmd = 'docker rm'
 print(evaluate_bash_risk(cmd))

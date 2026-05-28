@@ -18,6 +18,7 @@ Revision:
 2026.5.20      Yu Huang     1.5               Web search support\n
 2026.5.22      Yu Huang     1.6               Agent MCPs support & Summarize session title support\n
 2026.5.27      Yu Huang     1.7               Glob and grep file support\n
+2026.5.28      Yu Huang     1.8               Add read-only paths support\n
 
 Details:
 Agent's context management with save/load
@@ -28,6 +29,7 @@ import uuid
 import json
 import logging
 
+from pathlib import Path
 from openai import OpenAI
 from datetime import datetime
 from argparse import Namespace
@@ -94,6 +96,8 @@ class AgentContext:
         self.last_tokens: int = 0
         self.simulation_launched: int = 0
         self.design_created: list[int] = []
+        self.system_read_only_paths: list[Path] = []  # (don't dump)
+        self.read_only_paths: list[Path] = []
         self.files_read: dict[str, int] = {}
         self.loaded_skills: list[dict[str, str]] = []
         # signals
@@ -158,6 +162,8 @@ class AgentContext:
             "last_tokens": self.last_tokens,
             "simulation_launched": self.simulation_launched,
             "design_created": self.design_created,
+            "read_only_paths": [str(p) for p in self.read_only_paths]
+                               if len(self.read_only_paths) > 0 else [],
             "files_read": self.files_read,
             "loaded_skills": self.loaded_skills,
             "permissions": self.permissions
@@ -187,6 +193,8 @@ class AgentContext:
             self.last_tokens = in_dict["last_tokens"]
             self.simulation_launched = in_dict["simulation_launched"]
             self.design_created = in_dict["design_created"]
+            self.read_only_paths = [Path(s) for s in in_dict["read_only_paths"]] \
+                                   if len(in_dict["read_only_paths"]) > 0 else []
             self.files_read = in_dict["files_read"]
             self.loaded_skills = in_dict["loaded_skills"]
             self.permissions = in_dict["permissions"]

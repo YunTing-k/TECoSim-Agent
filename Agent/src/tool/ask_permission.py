@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.12      Yu Huang     1.0               Separate from ui_info.py\n
 2026.5.12      Yu Huang     1.1               TUI event trigger support\n
+2026.5.28      Yu Huang     1.2               Truncate permission request desc if it is too long\n
 
 Details:
 Ask user permission with TUI
@@ -39,7 +40,11 @@ def render_permission(active_idx: int, request_type: str, request_desc: str):
     body.append(f"\nTECoSim Agent want to request permission for ", style="white")
     body.append(f"{request_type}\n", style=f"bold {MAJOR_COLOR1}")
     body.append(f"Request detail: ", style="white")
-    body.append(f"{request_desc}\n\n", style="bright_black")
+    limit = PERMISSION_REQUEST_DSEC_CHAR_MAX
+    if len(request_desc) > limit:
+        body.append(f"{request_desc[:limit]} ... (truncated)\n\n", style="bright_black")
+    else:
+        body.append(f"{request_desc}\n\n", style="bright_black")
     str_list = ["Yes",
                 "Yes, and agree all same request during this agent session",
                 "No"]
@@ -61,6 +66,7 @@ def render_permission(active_idx: int, request_type: str, request_desc: str):
 
 def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, console: Console) -> bool:
     """top realization of asking user for permission TUI"""
+    limit = PERMISSION_REQUEST_DSEC_CHAR_MAX
     active_idx = 0  # default active option
     if ctx.args.dangerously_allow_all:
         return True
@@ -79,7 +85,7 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
             with input_device.raw_mode():
                 input_device.flush_keys()
                 with Live(render_permission(active_idx, request_type, request_desc),
-                          console=console, auto_refresh=False, transient=True) as live:
+                          console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
                     while True:
                         key_press = input_device.read_keys()
                         for key in key_press:
@@ -112,6 +118,13 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
                 token = False
             return token
         if action == "cancel":
-            sys_log.warning(f"Quest: {request_type} with desc. {request_desc} canceled, permission denied")
-            console.print(f"Quest: {request_type} with desc. {request_desc} canceled, permission denied", style="bold yellow")
+            if len(request_desc) > limit:
+                sys_log.warning(f"Quest: {request_type} with desc. {request_desc[:limit]} ... (truncated) canceled, "
+                                f"permission denied")
+                console.print(f"Quest: {request_type} with desc. {request_desc[:limit]} ... (truncated) canceled, "
+                              f"permission denied", style="bold yellow")
+            else:
+                sys_log.warning(f"Quest: {request_type} with desc. {request_desc} canceled, permission denied")
+                console.print(f"Quest: {request_type} with desc. {request_desc} canceled, permission denied",
+                              style="bold yellow")
             return False

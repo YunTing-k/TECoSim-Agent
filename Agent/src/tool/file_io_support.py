@@ -14,6 +14,7 @@ Revision:
 2026.5.12      Yu Huang     1.1               TUI event trigger support\n
 2026.5.15      Yu Huang     1.2               Move read lines/logs method to file_io_support.py\n
 2026.5.27      Yu Huang     1.3               Move clean_stdout/stderr_log method to simulator_support.py\n
+2026.5.28      Yu Huang     1.4               Add read-only paths support & Bugfix preview of multi-line file edit\n
 
 Details:
 Support of file io with read truncation, user permission TUI and corresponding methods
@@ -23,6 +24,7 @@ import os
 import math
 import logging
 
+from pathlib import Path
 from rich.console import Group, Console
 from rich.panel import Panel
 from rich.text import Text
@@ -216,7 +218,7 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
     for block_idx, (start_line, end_line) in enumerate(merged_match_lines):
         old_lines = str_line[start_line - 1:end_line]
         old_str = "".join(old_lines)
-        new_str = old_str.replace(old_string, new_string, 1)
+        new_str = old_str.replace(old_string, new_string, -1)
         new_lines = new_str.splitlines()
         total_added += len(new_lines)
         total_removed += len(old_lines)
@@ -233,7 +235,7 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
     for block_idx, (start_line, end_line) in enumerate(merged_match_lines):
         old_lines = str_line[start_line - 1:end_line]
         old_str = "".join(old_lines)
-        new_str = old_str.replace(old_string, new_string, 1)
+        new_str = old_str.replace(old_string, new_string, -1)
         new_lines = new_str.splitlines()
         """first block before the modification region (normal)"""
         if block_idx == 0 and start_line != 1:
@@ -410,3 +412,37 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
             sys_log.warning(f"Quest: {request_type} canceled, permission denied")
             console.print(f"Quest: {request_type} canceled, permission denied", style="bold yellow")
             return False
+
+
+def check_read_only(in_path: str, ctx: AgentContext) -> tuple[bool, str]:
+    """check the input str path is in read-only list in AgentContext"""
+    try:
+        fpath = Path(in_path)
+        if not fpath.exists():
+            return False, "Target path does not exist"
+        else:
+            resolved_fpath = fpath.resolve()
+
+        for base_path in ctx.system_read_only_paths:
+            if not base_path.exists():
+                continue
+            resolved_base_path = base_path.resolve()
+            if resolved_fpath == resolved_base_path:
+                return True, "You can't edit this path. This path is system read-only"
+            if resolved_base_path.is_dir():
+                if resolved_fpath.is_relative_to(resolved_base_path):
+                    return True, f"You can't edit this path. The parent path {resolved_base_path} is system read-only"
+
+        for base_path in ctx.read_only_paths:
+            if not base_path.exists():
+                continue
+            resolved_base_path = base_path.resolve()
+            if resolved_fpath == resolved_base_path:
+                return True, "You can't edit this path. This path is set to read-only by user"
+            if resolved_base_path.is_dir():
+                if resolved_fpath.is_relative_to(resolved_base_path):
+                    return True, f"You can't edit this path. The parent path {resolved_base_path} is set to read-only by user"
+
+        return False, ""
+    except Exception as e:
+        return False, f"Check read-only list failed with error {e}"

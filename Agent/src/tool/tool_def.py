@@ -27,6 +27,7 @@ Revision:
 2026.5.20      Yu Huang     2.3               Web search support & Interrupt support for web fetch/search\n
 2026.5.21-22   Yu Huang     2.4               Agent MCPs support & Revise tools prompts of read_file and skills\n
 2026.5.27      Yu Huang     2.5               Glob and grep file support & Add terminate subprocess when exception\n
+2026.5.28      Yu Huang     2.6               Add read-only paths support & Truncate bash command view if it is too long\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -43,7 +44,7 @@ from rich.progress import Progress
 from src.utility import ui_info
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.file_filter_support import glob_impl, grep_impl
-from src.tool.file_io_support import read_line_with_limit, match_line_ranges, ask_edit_tui
+from src.tool.file_io_support import read_line_with_limit, match_line_ranges, ask_edit_tui, check_read_only
 from src.tool.simulator_support import clean_stdout_log, clean_stderr_log
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
@@ -253,13 +254,13 @@ def tool_bash_def() -> dict[str, Any]:
                            "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
                            "IMPORTANT: Avoid using this tool to run `grep`, `glob`, `cat`, `head`, `tail`, or `echo` commands, "
                            "unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish "
-                           "your task. Instead, use the appropriate dedicated tool as this will provide a much better experience "
-                           "for the user.\n"
+                           "your task. Instead, ALWAYS prefer using the appropriate dedicated tool as this will provide "
+                           "a much better experience for the user.\n"
                            " - File search: Prefer using `glob_file` (NOT find/ls)\n"
                            " - Content search: Prefer using `grep_file` (NOT grep/rg)\n"
                            " - Read files: Prefer using `read_file` (NOT cat/head/tail)\n"
                            " - Write files: Prefer using `write_file` (NOT echo >/cat <<EOF)\n"
-                           " - Edit files: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
+                           " - Edit files or Replace strings: Prefer using `edit_file` (NOT sed/awk or other shell/script tools)\n"
                            " - Fetch webpage: Prefer using `web_fetch` (NOT curl/wget or other shell/script tools)\n"
                            " - Communication: Output text directly (NOT echo/printf)\n"
                            "While the Bash tool can do similar things, it’s better to use the built-in tools as they provide "
@@ -336,6 +337,11 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                     "info": f"Permission request denied by user"}
         """execute command"""
         command = arguments["command"]
+        limit = BASH_COMMNAD_VIEW_CHAR_MAX
+        if len(command) > limit:
+            command_str = command[:limit] + " ... (truncated)"
+        else:
+            command_str = command
         description = arguments.get("description", "")
         timeout = arguments.get("timeout", 120000)
         sys_log.debug(f"bash: {description} start")
@@ -351,8 +357,8 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.communicate()
-            sys_log.error(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted")
-            progress.console.print(f"bash FAIL: {description} with command {command} is cancelled by user. Command interrupted", style="bold red")
+            sys_log.error(f"bash FAIL: {description} with command {command_str} is cancelled by user. Command interrupted")
+            progress.console.print(f"bash FAIL: {description} with command {command_str} is cancelled by user. Command interrupted", style="bold red")
             return {"status": "CANCELLED",  # no need to return results if user cancel
                     "info": "bash command is cancelled by user. Command interrupted"}
         except subprocess.TimeoutExpired:
@@ -363,9 +369,9 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                 proc.kill()
                 stdout, stderr = proc.communicate()
             sys_log.error(f"bash FAIL: "
-                          f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted")
+                          f"{description} with command {command_str} timeout > {timeout / 1000} s. Command interrupted")
             progress.console.print(f"bash FAIL: "
-                                   f"{description} with command {command} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
+                                   f"{description} with command {command_str} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
             return {"status": "TIMEOUT",
                     "return code": proc.returncode,
                     "stdout": stdout.decode('utf-8'),
@@ -378,8 +384,8 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                 proc.kill()
                 proc.communicate()
             raise RuntimeError(e)
-        sys_log.debug(f"bash: {description} with command {command} done")
-        progress.console.print(f"bash: {description} with command {command} done", style="bright_black")
+        sys_log.debug(f"bash: {description} with command {command_str} done")
+        progress.console.print(f"bash: {description} with command {command_str} done", style="bright_black")
         return {"status": "DONE",
                 "return code": proc.returncode,
                 "stdout": stdout.decode('utf-8'),
@@ -854,8 +860,14 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
-        """check the path"""
+        """check if read-only"""
         file_path = arguments["path"]
+        if_readonly, check_info = check_read_only(file_path, ctx)
+        if if_readonly:
+            sys_log.error(f"write_file FAIL: {check_info}")
+            progress.console.print(f"write_file FAIL: {check_info}", style="bold red")
+            return {"status": "FAIL", "info": f"{check_info}"}
+        """check the path"""
         create_dirs = arguments.get("create_dirs", True)
         if create_dirs:
             parent_dir = os.path.dirname(file_path)
@@ -959,8 +971,14 @@ def tool_edit_file_def() -> dict[str, Any]:
 def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of editing the file with arguments and AgentContext"""
     try:
-        """check the path"""
+        """check if read-only"""
         file_path = arguments["path"]
+        if_readonly, check_info = check_read_only(file_path, ctx)
+        if if_readonly:
+            sys_log.error(f"edit_file FAIL: {check_info}")
+            progress.console.print(f"edit_file FAIL: {check_info}", style="bold red")
+            return {"status": "FAIL", "info": f"{check_info}"}
+        """check the path"""
         if not os.path.exists(file_path):
             sys_log.error(f"edit_file FAIL: Path: {file_path} doesn't exist.")
             progress.console.print(f"edit_file FAIL: Path: {file_path} doesn't exist", style="bold red")

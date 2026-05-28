@@ -17,6 +17,7 @@ Revision:
 2026.5.19      Yu Huang     1.4               Webpage fetch support\n
 2026.5.21-22   Yu Huang     1.5               Agent MCPs support & Revise the name of builtin commands\n
 2026.5.22      Yu Huang     1.6               Summarize session title support & Builtin command of list sessions\n
+2026.5.28      Yu Huang     1.7               Add read-only paths support & Add log for non-readonly builtin cmd\n
 
 Details:
 Realization of builtin commands
@@ -26,6 +27,7 @@ import os
 import json
 import logging
 
+from pathlib import Path
 from functools import partial
 from typing import Callable, Any
 from rich.console import Console
@@ -45,31 +47,31 @@ def cmd_unknown(console: Console):
     """unknown builtin commands"""
     cmd_str = Text()
     cmd_str.append("Unknown command ", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("called, nothing happen", style=f"white")
+    cmd_str.append("called, nothing happen\n", style=f"white")
     console.print(cmd_str)
 
 
-def cmd_design_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_design_list(args: list[str], ctx: AgentContext, console: Console):
     """query the list of current designs"""
     cmd_str = Text()
     cmd_str.append("query_design", style=f"bold {MAJOR_COLOR1}")
     cmd_str.append(f":\n    total design num: ", style=f"white")
     cmd_str.append(f"{len(ctx.design_created)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f", list of design id: ", style=f"white")
-    cmd_str.append(f"{ctx.design_created}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{ctx.design_created}\n", style=f"bold {MAJOR_COLOR2}")
     console.print(cmd_str)
 
 
-def cmd_run_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_run_list(args: list[str], ctx: AgentContext, console: Console):
     """query the amount of launched simulation"""
     cmd_str = Text()
     cmd_str.append("query_run", style=f"bold {MAJOR_COLOR1}")
     cmd_str.append(f":\n    total launched run: ", style=f"white")
-    cmd_str.append(f"{ctx.simulation_launched}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{ctx.simulation_launched}\n", style=f"bold {MAJOR_COLOR2}")
     console.print(cmd_str)
 
 
-def cmd_context(args: Any, ctx: AgentContext, console: Console):
+def cmd_context(args: list[str], ctx: AgentContext, console: Console):
     """query the token usage, message and API requests statistics"""
     title = "TECoSim Agent Context Usage"
     if ctx.total_input_tokens <= 0:
@@ -174,7 +176,7 @@ def cmd_context(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_fread_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_fread_list(args: list[str], ctx: AgentContext, console: Console):
     """query the absolute paths of all read files"""
     title = "TECoSim Agent Files Read"
     cmd_str = Text()
@@ -193,7 +195,117 @@ def cmd_fread_list(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_permission_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_readonly_list(args: list[str], ctx: AgentContext, console: Console):
+    """query the absolute paths of all readonly paths"""
+    title = (f"TECoSim Agent Readonly Paths "
+             f"({len(ctx.system_read_only_paths)} system, {len(ctx.read_only_paths)} custom)")
+    cmd_str = Text()
+    cmd_str.append(f"System readonly paths (can not edit):\n", style=f"bold {MAJOR_COLOR2}")
+    for path in ctx.system_read_only_paths:
+        if path.exists():
+            cmd_str.append(f"{path.resolve()}", style=f"white")
+            cmd_str.append(f" (exists)\n", style=f"bold {MAJOR_COLOR2}")
+        else:
+            cmd_str.append(f"{path}", style=f"white")
+            cmd_str.append(f" (nonexists)\n", style=f"bright_black")
+    cmd_str.append("\n")
+
+    cmd_str.append(f"Customizable readonly paths:\n", style=f"bold {MAJOR_COLOR2}")
+    for idx, path in enumerate(ctx.read_only_paths):
+        cmd_str.append(f"[", style=f"white")
+        cmd_str.append(f"{idx}", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f"] ", style=f"white")
+        if path.exists():
+            cmd_str.append(f"{path.resolve()}", style=f"white")
+            cmd_str.append(f" (exists)\n", style=f"bold {MAJOR_COLOR2}")
+        else:
+            cmd_str.append(f"{path}", style=f"white")
+            cmd_str.append(f" (nonexists)\n", style=f"bright_black")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    hint = Text()
+    hint.append(f"  Tips: You can add custom readonly path with following builtin command: ", style=f"bright_black")
+    hint.append(f"/readonly_add ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[PATH1] [PATH2] [PATH3] ...\n", style=f"bold {MAJOR_COLOR1}")
+    hint.append(f"        You can remove custom readonly path with following builtin command: ", style=f"bright_black")
+    hint.append(f"/readonly_remove ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[idx1] [idx2] [idx3] ...", style=f"bold {MAJOR_COLOR1}")
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
+    console.print("\n")
+
+
+def cmd_readonly_add(args: list[str], ctx: AgentContext, console: Console):
+    """add a readonly path into list (converted to absolute path)"""
+    if len(args) == 0:
+        sys_log.warning(f"Unable to add readonly path, target path is empty")
+        console.print(f"Unable to add readonly path, target path is empty", style=f"bold yellow")
+        return
+
+    skipped_list: list[int] = []
+    for idx, arg in enumerate(args):
+        arg_path = Path(arg)
+        if not arg_path.exists():
+            skipped_list.append(idx)
+            continue
+
+        resolved_arg_path = arg_path.resolve()
+        ctx.read_only_paths.append(resolved_arg_path)
+
+    sys_log.debug(f"Added {len(args) - len(skipped_list)} readonly paths, {len(skipped_list)} paths are ignored with index: "
+                  f"{skipped_list}")
+    cmd_str = Text()
+    cmd_str.append(f"Added ", style=f"white")
+    cmd_str.append(f"{len(args) - len(skipped_list)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" readonly paths, ", style=f"white")
+    cmd_str.append(f"{len(skipped_list)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" paths are ignored with index: ", style=f"white")
+    cmd_str.append(f"{skipped_list}\n", style=f"bold {MAJOR_COLOR2}")
+    console.print(cmd_str)
+
+
+def cmd_readonly_remove(args: list[str], ctx: AgentContext, console: Console):
+    """remove a readonly path from list"""
+    if len(args) == 0:
+        sys_log.warning(f"Unable to remove readonly path, target index is empty")
+        console.print(f"Unable to remove readonly path, target index is empty", style=f"bold yellow")
+        return
+
+    skipped_list: list[int] = []
+    del_list: list[int] = []
+    path_len = len(ctx.read_only_paths)
+    for idx, arg in enumerate(args):
+        try:
+            index = int(arg)
+        except Exception:
+            skipped_list.append(idx)
+            continue
+
+        if index >= path_len or index < 0:
+            skipped_list.append(idx)
+            continue
+
+        del_list.append(index)
+
+    for idx in sorted(del_list, reverse=True):
+        del ctx.read_only_paths[idx]
+
+    sys_log.debug(f"Removed {len(del_list)} readonly paths, {len(skipped_list)} paths are ignored with index: "
+                  f"{skipped_list}")
+    cmd_str = Text()
+    cmd_str.append(f"Removed ", style=f"white")
+    cmd_str.append(f"{len(del_list)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" readonly paths, ", style=f"white")
+    cmd_str.append(f"{len(skipped_list)}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" paths are ignored with index: ", style=f"white")
+    cmd_str.append(f"{skipped_list}\n", style=f"bold {MAJOR_COLOR2}")
+    console.print(cmd_str)
+
+
+def cmd_permission_list(args: list[str], ctx: AgentContext, console: Console):
     """query the configs of always-allowed-configurable tool calls permission token"""
     title = "TECoSim Agent Tool Call Permission"
     cmd_str = Text()
@@ -235,7 +347,7 @@ def cmd_permission_list(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
+def cmd_permission_toggle(args: list[str], ctx: AgentContext, console: Console):
     """toggle the permission token of the tool calls permission with given name"""
     cmd_str = Text()
     if ctx.args.dangerously_allow_all:
@@ -247,7 +359,7 @@ def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
         return
 
     try:
-        arg_name = str(args[0])
+        arg_name = args[0]
     except Exception as e:
         sys_log.warning(f"Unable to toggle the permission, target name is invalid with error {e}")
         console.print(f"Unable to toggle the permission, target name is invalid with error {e}", style=f"bold yellow")
@@ -256,20 +368,21 @@ def cmd_permission_toggle(args: Any, ctx: AgentContext, console: Console):
     for name, token in ctx.permissions.items():
         if arg_name == name:
             ctx.permissions[name] = not token
+            sys_log.debug(f"Permission {name} toggled from {"True" if token else "False"} to {"False" if token else "True"} successfully")
             cmd_str.append(f"Permission ", style=f"white")
             cmd_str.append(f"{name}", style=f"bold {MAJOR_COLOR2}")
             cmd_str.append(f" toggled from ", style=f"white")
             cmd_str.append(f"{"True" if token else "False"}", style=f"bold {MAJOR_COLOR1}" if token else f"bright_black")
             cmd_str.append(f" to ", style=f"white")
             cmd_str.append(f"{"False" if token else "True"}", style=f"bright_black" if token else f"bold {MAJOR_COLOR1}")
-            cmd_str.append(f" successfully", style=f"white")
+            cmd_str.append(f" successfully\n", style=f"white")
             console.print(cmd_str)
             return
     sys_log.warning(f"Unknown permission name {arg_name}, toggle failed")
     console.print(f"Unknown permission name {arg_name}, toggle failed", style=f"bold yellow")
 
 
-def cmd_skill_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_skill_list(args: list[str], ctx: AgentContext, console: Console):
     """query all available skills (truncate)"""
     title = f"Available Skills ({len(ctx.skills)})"
     limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
@@ -288,7 +401,7 @@ def cmd_skill_list(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_skills_loaded(args: Any, ctx: AgentContext, console: Console):
+def cmd_skills_loaded(args: list[str], ctx: AgentContext, console: Console):
     """query all loaded skills (no truncate)"""
     title = f"Loaded Skills ({len(ctx.loaded_skills)})"
     cmd_str = Text()
@@ -310,7 +423,7 @@ def skill_bound_command(name: str, func: Callable, *args, **kwargs):
     return bound_func
 
 
-def cmd_load_skills(skill_name: str, args: Any, ctx: AgentContext, console: Console):
+def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, console: Console):
     """manually load the full prompts of skill to context immediately"""
     try:
         content = load_skill_content("./skills", skill_name, console, True)
@@ -333,7 +446,7 @@ def cmd_load_skills(skill_name: str, args: Any, ctx: AgentContext, console: Cons
             {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
 
 
-def cmd_url_caches(args: Any, ctx: AgentContext, console: Console):
+def cmd_url_caches(args: list[str], ctx: AgentContext, console: Console):
     """query all cached URLs"""
     title = f"Cached URLs ({len(ctx.url_caches)})"
     cmd_str = Text()
@@ -359,7 +472,7 @@ def cmd_url_caches(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_mcp_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_mcp_list(args: list[str], ctx: AgentContext, console: Console):
     """query MCPs info"""
     mcps_configs = ctx.mcps_configs
     mcps_ini_info = ctx.mcp_router.mcps_ini_info
@@ -417,14 +530,16 @@ def cmd_mcp_list(args: Any, ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_update_title(args: Any, ctx: AgentContext, console: Console):
+def cmd_update_title(args: list[str], ctx: AgentContext, console: Console):
     """update title of this session with history immediately"""
     title = summarize_support.summarize_session(ctx=ctx, console=console)
     ctx.session_title = title if title else ERROR_SESSION_TITLE
     ui_info.set_terminal_title(ctx.session_title)
+    sys_log.debug("Session title updated")
+    console.print("Session title updated", style="bright_black")
 
 
-def cmd_session_list(args: Any, ctx: AgentContext, console: Console):
+def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
     """query all sessions"""
     session_dir = "./session"
     if not os.path.exists(session_dir):
@@ -457,12 +572,12 @@ def cmd_session_list(args: Any, ctx: AgentContext, console: Console):
     cmd_str.append(f"({AGENT_CONSOLE_ICON} This session)", style=f"bold {MAJOR_COLOR1}")
     cmd_str.append(f" UUID: ", style=f"white")
     cmd_str.append(f"{current_uuid}", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(f", Session title: ", style=f"white")
+    cmd_str.append(f"  Session title: ", style=f"white")
     cmd_str.append(f"{ctx.session_title}\n", style=f"bold {MAJOR_COLOR2}")
     for session in sessions_list:
         cmd_str.append(f"Session UUID: ", style=f"white")
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f", Session title: ", style=f"white")
+        cmd_str.append(f"  Session title: ", style=f"white")
         cmd_str.append(f"{session["title"]}\n", style=f"bold {MAJOR_COLOR2}")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
@@ -487,6 +602,9 @@ class BuiltinCommands:
             "run_list": (cmd_run_list, "query all runs", "query the amount of launched simulation"),
             "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
             "fread_list": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
+            "readonly_list": (cmd_readonly_list, "query all readonly paths", "query the absolute paths of all readonly paths"),
+            "readonly_add": (cmd_readonly_add, "add readonly path", "add readonly paths into list (converted to absolute path)"),
+            "readonly_remove": (cmd_readonly_remove, "remove readonly path", "remove readonly path from list with indexes list"),
             "permission_list": (cmd_permission_list, "query permission info",
                                 "query the configs of always-allowed-configurable tool calls permission token"),
             "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",
@@ -549,7 +667,7 @@ class BuiltinCommands:
                       f"[{MAJOR_COLOR2}]{len(self._commands)}[/{MAJOR_COLOR2}] builtin commands available")
 
 
-    def cmd_help(self, args: Any, ctx: AgentContext, console: Console):
+    def cmd_help(self, args: list[str], ctx: AgentContext, console: Console):
         """print all available commands"""
         title = "Available Commands"
         cmd_str = Text()

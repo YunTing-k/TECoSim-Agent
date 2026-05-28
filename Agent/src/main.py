@@ -24,6 +24,7 @@ Revision:
 2026.5.21-22   Yu Huang     2.1               Agent MCPs support\n
 2026.5.22      Yu Huang     2.2               Summarize session title support & Save session with higher frequency\n
 2026.5.23      Yu Huang     2.3               Stream response display update & Move response management to prompt.py\n
+2026.5.28      Yu Huang     2.4               Add read-only paths support & Multi-line user prompt input support\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -32,8 +33,10 @@ Main entry point of the TECoSim agent
 import os
 import openai
 
-from src.utility import sys_logger, cli_args, ui_info, client, command
+from pathlib import Path
 from rich.console import Console
+from prompt_toolkit.formatted_text import ANSI
+from src.utility import sys_logger, cli_args, ui_info, client, command
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support
@@ -83,6 +86,11 @@ if __name__ == '__main__':
     ctx.mcp_router = mcps_support.MCPToolRouter(clients=mcp_clients)
     ctx.mcp_router.reg_all_tools_sync(console=console)
 
+    """add read-only paths"""
+    ctx.system_read_only_paths.append(Path(os.getcwd()) / "session")
+    ctx.system_read_only_paths.append(Path(os.getcwd()) / "log")
+    ctx.system_read_only_paths.append(Path(ctx.agent_configs["SIMULATOR_PATH"]))
+
     """initialize builtin commands"""
     cmd_object = command.BuiltinCommands(console)  # basic commands
     cmd_object.register_skills(ctx.skills, console)  # tools to commands
@@ -119,7 +127,10 @@ if __name__ == '__main__':
             if ctx.task_end:
                 """user prompts & request"""
                 ui_info.usage_bar(ctx=ctx, console=console)
-                user_input = agent_session.prompt("> ")
+                user_input = agent_session.prompt(ANSI("\033[90m"
+                                                       "Type, and behold the breath of silica (Shift+Tab: New line, Enter: Submit)"
+                                                       "\033[0m\n"
+                                                       f"{AGENT_CONSOLE_ICON} "))
                 results = session.cmd_lexer(user_input, cmd_object)
                 if results is not None:  # command input
                     request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, console)

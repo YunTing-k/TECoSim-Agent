@@ -18,6 +18,7 @@ Revision:
 2026.5.13      Yu Huang     1.5               Bugfix of Mouse scrolling\n
 2026.5.15      Yu Huang     1.6               Revise builtin command management with class\n
 2026.5.15      Yu Huang     1.7               Agent skills support\n
+2026.5.28      Yu Huang     1.8               Multi-line user prompt input support\n
 
 Details:
 Session management with create, resume
@@ -28,6 +29,8 @@ import uuid
 import logging
 
 from typing import Any
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit import PromptSession, cursor_shapes
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.validation import Validator, ValidationError
@@ -120,6 +123,24 @@ def cmd_lexer(cmd_in: str, cmd_object: BuiltinCommands) -> tuple[str, list[str]]
     return BUILTIN_UNKNOWN, cmd_args
 
 
+def multiline_bindings() -> KeyBindings:
+    """key bindings for multi-line input"""
+    kb = KeyBindings()
+
+    @kb.add(Keys.Enter)
+    def _(event):
+        """Enter submit"""
+        buffer = event.current_buffer
+        buffer.validate_and_handle()
+
+    @kb.add(Keys.BackTab)
+    def _(event):
+        """Shift+Tab inset new line"""
+        event.current_buffer.insert_text('\n')
+
+    return kb
+
+
 def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
     """get the prompt session"""
     cmd_completer = CmdCompleter(commands=[cmd for cmd, (_, _, _) in cmd_object],
@@ -128,6 +149,8 @@ def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
         history=FileHistory(path + "/user_history"),
         auto_suggest=AutoSuggestFromHistory(),
         mouse_support=False,
+        key_bindings=multiline_bindings(),
+        multiline=True,
         show_frame=True,
         cursor=cursor_shapes.CursorShape.BLINKING_UNDERLINE,
         validator=PromptValidator(),
