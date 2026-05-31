@@ -84,8 +84,8 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.15
-  **Current version**: 0.0.15
+- **当前版本**: 0.0.16
+  **Current version**: 0.0.16
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
 - **工具系统（17个工具） | Tool system (17 tools)** (`Agent/src/tool/`)：
@@ -96,15 +96,16 @@ This project is still under development. The basic goals are as follows:
   - 网络搜索：`web_search`（Domain黑名单/白名单、可配置代理和搜索模式的四种不同的后端`Exa`/`Tavily`/`Linkup`（需要API key）与`DDGS`（不需要key），主agent-loop上下文隔离 | Web fetching (Domain blacklist/whitelist, four configurable backends: `Exa`/`Tavily`/`Linkup` (API key required) and `DDGS` (no key), with proxy and search mode, main agent-loop context isolation)
   - 技能调用：`skill`（标准技能接口） | Skill invocation (standard skill interface)
   - 仿真器接口：`check_simulator`, `init_design`, `copy_design`, `query_design_list`, `launch_simulator`, `query_run_num`, `read_log` | Simulator interface
-- **会话管理** (`Agent/src/context/session.py`)：创建/恢复会话，TUI 历史记录、自动补全、验证器
-  **Session management**: Create/resume sessions, TUI history, auto-completion, validators
+- **会话管理** (`Agent/src/context/session.py`)：创建/恢复/删除会话，TUI 历史记录、自动补全、验证器
+  **Session management**: Create/resume/remove sessions, TUI history, auto-completion, validators
 - **提示词管理** (`Agent/src/context/prompt.py`)：系统提示词组装（角色、指南、环境边界、技能）、DeepSeek 推理支持、消息历史管理、LLM流式响应支持与实时显示（溢出区域自动折叠）
   **Prompt management**: System prompt assembly (role, guidelines, environment boundaries, skills), DeepSeek reasoning support, message history management, stream LLM response support and real-time display (auto folding for overflowed display area)
 - **上下文管理** (`Agent/src/context/agent_context.py`)：完整状态序列化（save/load/resume），含 Token 用量统计、权限状态、设计列表
   **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
 - **内置命令系统** (`Agent/src/utility/command.py`)：
-  - **设计/运行管理：** 查询设计列表 (`/design_list`)、查询运行次数 (`/run_list`)
+  - **仿真设计/运行管理：** 查询设计列表 (`/design_list`)、查询运行次数 (`/run_list`)
   - **信息查询：** 查看上下文用量 (`/context`)、查看已读文件 (`/fread_list`)、查看只读路径 (`/readonly_list`)、查看缓存URL (`/url_caches`)、查看会话列表 (`/session_list`)
+  - **会话管理：** 删除会话 (`/session_remove`)
   - **只读路径管理：** 添加只读路径 (`/readonly_add`)、移除只读路径 (`/readonly_remove`)
   - **权限管理：** 查看权限配置 (`/permission_list`)、切换权限开关 (`/permission_toggle`)
   - **技能管理：** 列出可用技能 (`/skill_list`)、列出已加载技能 (`/skills_loaded`)、加载指定技能 (`/<skill_name>`)
@@ -112,8 +113,9 @@ This project is still under development. The basic goals are as follows:
   - **其他：** 更新会话标题 (`/update_title`)、查看帮助 (`/help`)
   
   **Built-in command system**:
-  - **Design/Run Management:** Query design list (`/design_list`), query run count (`/run_list`)
+  - **Simulation Design/Run Management:** Query design list (`/design_list`), query run count (`/run_list`)
   - **Information Queries:** View context usage (`/context`), view read files (`/fread_list`), view read-only paths (`/readonly_list`), view cached URLs (`/url_caches`), view session list (`/session_list`)
+  - **Session Management:** Remove session (`/session_remove`)
   - **Read-only Path Management:** Add read-only paths (`/readonly_add`), remove read-only paths (`/readonly_remove`)
   - **Permission Management:** View permission configs (`/permission_list`), toggle permission switches (`/permission_toggle`)
   - **Skill Management:** List available skills (`/skill_list`), list loaded skills (`/skills_loaded`), load a skill (`/<skill_name>`)

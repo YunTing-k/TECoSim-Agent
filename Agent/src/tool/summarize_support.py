@@ -13,6 +13,7 @@ Revision:
 2026.5.22      Yu Huang     1.0               First implementation\n
 2026.5.23      Yu Huang     1.1               Bugfix of possible none usage update\n
 2026.5.24      Yu Huang     1.2               Revise the prompt of session's title summarize\n
+2026.5.30      Yu Huang     1.3               Revise spinner logic with SIGINT pass through\n
 
 Details:
 Support of summarizing the title of session history
@@ -108,8 +109,9 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
     try:
         response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                    ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                   waiting_desc="Session summarizing ...",
-                                                   done_desc="LLM response latency", spinner="arrow3")
+                                                   waiting_desc="Session summarizing ...", done_desc="LLM summary latency",
+                                                   intrp_desc="Session summary interrupted", fail_desc="Session summary failed",
+                                                   spinner="arrow3", if_random=False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -136,8 +138,8 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
         title = get_field(assistant_reasoning)
         if title is not None:
             return title
-        sys_log.error(f"Could not extract title from assistant reasoning")
-        console.print(f"Could not extract title from assistant reasoning", style="bold red")
+        sys_log.error(f"Could not extract title from assistant reasoning. You can manually update with `/update_title`")
+        console.print(f"Could not extract title from assistant reasoning. You can manually update with `/update_title`", style="bold red")
         return None
     except RequestLLMCancelled:
         sys_log.warning(

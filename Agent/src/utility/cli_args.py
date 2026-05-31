@@ -14,6 +14,7 @@ Revision:
 2026.4.28      Yu Huang     1.1               Dangerously allow all permissions support\n
 2026.5.15      Yu Huang     1.2               Disable all skills support\n
 2026.5.21-22   Yu Huang     1.3               Agent MCPs support\n
+2026.5.31      Yu Huang     1.4               Add CLI session management support\n
 
 Details:
 Argument definitions of the TECoSim agent
@@ -37,6 +38,17 @@ def tecosim_agent_args() -> Namespace:
 
     """root of sub commands"""
     subparsers = parser.add_subparsers(dest='command', help='sub commands')
+
+    """sub command for sessions"""
+    session_parser = subparsers.add_parser('session', help='Session operations')
+    session_subparsers = session_parser.add_subparsers(dest='session_action', help='Session actions')
+
+    # session list
+    session_list = session_subparsers.add_parser('list', help='List all sessions')
+
+    # session remove
+    session_remove = session_subparsers.add_parser('remove', help='Remove a session with UUID')
+    session_remove.add_argument('uuid', type=str, help='Session\'s UUID to remove')
 
     """sub command for MCPs"""
     mcp_parser = subparsers.add_parser('mcp', help='MCP operations')

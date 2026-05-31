@@ -13,11 +13,13 @@ Revision:
 2026.5.12      Yu Huang     1.0               Separate from ui_info.py\n
 2026.5.12      Yu Huang     1.1               TUI event trigger support\n
 2026.5.28      Yu Huang     1.2               Truncate permission request desc if it is too long\n
+2026.5.30      Yu Huang     1.3               Optimize the hardware occupancy of TUI\n
 
 Details:
 Ask user permission with TUI
 ------------------------------------------------------------------------------------------------------------------------
 """
+import time
 import logging
 
 from rich.console import Group, Console
@@ -60,7 +62,7 @@ def render_permission(active_idx: int, request_type: str, request_desc: str):
     if body.plain.endswith("\n"):
         body.rstrip()
     panels.append(Panel(body, title=header_text, title_align="left", border_style=MAJOR_COLOR2))
-    hint = Text(f"↑/↓ (select)    Enter (choose)\n", style="bright_black")
+    hint = Text(f"  ↑/↓ (select)    Enter (choose)\n", style="bright_black")
     return Group(*panels, hint)
 
 
@@ -105,6 +107,8 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
                                 break
                         if action is not None:  # no action no break
                             break
+                        if not key_press:
+                            time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
         finally:
             input_device.close()
 

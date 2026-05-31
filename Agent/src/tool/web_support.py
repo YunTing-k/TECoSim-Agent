@@ -14,6 +14,7 @@ Revision:
 2026.5.20      Yu Huang     1.1               Web search support\n
 2026.5.21      Yu Huang     1.2               Bugfix of skipping URL caches when quering\n
 2026.5.23      Yu Huang     1.3               Bugfix of possible none usage update\n
+2026.5.30      Yu Huang     1.4               Revise spinner logic with SIGINT pass through\n
 
 Details:
 Web fetch and web search support of the TECoSim agent
@@ -188,7 +189,9 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
     try:
         response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                     ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                    waiting_desc = "Web fetch summarizing ...", done_desc = "LLM response latency", spinner = "arrow3")
+                                                    waiting_desc = "Web fetch summarizing ...", done_desc = "LLM summary latency",
+                                                    intrp_desc = "Web fetch interrupted", fail_desc = "Web fetch failed",
+                                                    spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -450,7 +453,9 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
     try:
         response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
                                                     ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                    waiting_desc = "Web search summarizing ...", done_desc = "LLM response latency", spinner = "arrow3")
+                                                    waiting_desc = "Web search summarizing ...", done_desc = "LLM summary latency",
+                                                    intrp_desc="Web search interrupted", fail_desc="Web search failed",
+                                                    spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:

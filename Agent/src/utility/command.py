@@ -18,6 +18,7 @@ Revision:
 2026.5.21-22   Yu Huang     1.5               Agent MCPs support & Revise the name of builtin commands\n
 2026.5.22      Yu Huang     1.6               Summarize session title support & Builtin command of list sessions\n
 2026.5.28      Yu Huang     1.7               Add read-only paths support & Add log for non-readonly builtin cmd\n
+2026.5.31      Yu Huang     1.8               Add builtin cmd for session removal & Define used file/dir. paths in constants.py\n
 
 Details:
 Realization of builtin commands
@@ -25,6 +26,7 @@ Realization of builtin commands
 """
 import os
 import json
+import shutil
 import logging
 
 from pathlib import Path
@@ -92,9 +94,9 @@ def cmd_context(args: list[str], ctx: AgentContext, console: Console):
     cmd_str.append("Total uncached tokens of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_uncached_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", uncached: ", style=f"white")
-    cmd_str.append(f"{uncached_rate} %", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{uncached_rate:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", cached: ", style=f"white")
-    cmd_str.append(f"{100 - uncached_rate} %\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{100 - uncached_rate:.3f} %\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Total tokens consumption of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Last dialogue input tokens of this session (main model): ", style=f"white")
@@ -104,7 +106,7 @@ def cmd_context(args: list[str], ctx: AgentContext, console: Console):
     cmd_str.append("Last dialogue total tokens of this session (main model): ", style=f"white")
     cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Last dialogue's context usage of this session (main model): ", style=f"white")
-    cmd_str.append(f"{ctx_usage} %", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{ctx_usage:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" out of ", style=f"white")
@@ -426,7 +428,7 @@ def skill_bound_command(name: str, func: Callable, *args, **kwargs):
 def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, console: Console):
     """manually load the full prompts of skill to context immediately"""
     try:
-        content = load_skill_content("./skills", skill_name, console, True)
+        content = load_skill_content(SKILLS_PATH, skill_name, console, True)
         if content is None:
             sys_log.warning(f"Load skill {skill_name} manually failed")
             console.print(f"Load skill {skill_name} manually failed", style=f"bold yellow")
@@ -522,7 +524,7 @@ def cmd_mcp_list(args: list[str], ctx: AgentContext, console: Console):
     hint.append(f"python -m src.main mcp ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[list | add | toggle | remove]\n", style=f"bold {MAJOR_COLOR1}")
     hint.append(f"        You can also manage the MCPs by manually editing the config file: ", style=f"bright_black")
-    hint.append(f"./mcps/mcps_configs.json", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"{MCPS_CONFIGS_PATH}", style=f"bold {MAJOR_COLOR2}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
@@ -541,7 +543,7 @@ def cmd_update_title(args: list[str], ctx: AgentContext, console: Console):
 
 def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
     """query all sessions"""
-    session_dir = "./session"
+    session_dir = SESSION_PATH
     if not os.path.exists(session_dir):
         sys_log.error(f"Session directory {session_dir} does not exist")
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
@@ -556,7 +558,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
         if not basic_utils.is_valid_uuid(item):
             continue
 
-        context_file = os.path.join(item_path, "context.json")
+        context_file = os.path.join(item_path, CONTEXT_NAME)
         try:
             with open(context_file, 'r', encoding='utf-8') as f:
                 context = json.load(f)
@@ -593,6 +595,56 @@ def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
+def cmd_session_remove(args: list[str], ctx: AgentContext, console: Console):
+    """remove a session with UUID"""
+    session_dir = SESSION_PATH
+    if not os.path.exists(session_dir):
+        sys_log.error(f"Session directory {session_dir} does not exist")
+        console.print(f"Session directory {session_dir} does not exist", style="bold red")
+        return
+
+    try:
+        """validate UUID"""
+        uuid_str: str = args[0]
+        if not basic_utils.is_valid_uuid(uuid_str):
+            sys_log.error(f"Session UUID: {uuid_str} is not valid")
+            console.print(f"Session UUID: {uuid_str} is not valid", style="bold red")
+            return
+
+        """check if the UUID is the current one"""
+        if uuid_str == ctx.session_uuid:
+            sys_log.error(f"Can not delete current session: {uuid_str}")
+            console.print(f"Can not delete current session: {uuid_str}", style="bold red")
+            return
+
+        """check the path"""
+        if not os.path.exists(os.path.join(session_dir, uuid_str)):
+            sys_log.error(f"Session with UUID: {uuid_str} not exists")
+            console.print(f"Session with UUID: {uuid_str} not exists", style="bold red")
+            return
+        if os.path.isfile(os.path.join(session_dir, uuid_str)):
+            sys_log.error(f"Session with UUID: {uuid_str} is a file, not a directory")
+            console.print(f"Session with UUID: {uuid_str} is a file, not a directory", style="bold red")
+            return
+
+        """delete the session folder"""
+        token = ui_info.request_tui(console=console, request_desc=f"remove the session: {uuid_str}",
+                                    request_detail=f"This session will be deleted forever",
+                                    cancel_str=f"Session remove cancelled")
+        if token:
+            shutil.rmtree(os.path.join(session_dir, uuid_str))
+            sys_log.debug(f"Session with UUID: {uuid_str} has been removed")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] has been removed")
+        else:
+            sys_log.debug(f"Session with UUID: {uuid_str} remove cancelled")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] remove cancelled")
+            return
+
+    except Exception as e:
+        sys_log.error(f"Remove session with args: {args} failed with error: {e}")
+        console.print(f"Remove session with args: {args} failed with error: {e}", style="bold red")
+
+
 class BuiltinCommands:
     """builtin command class"""
     def __init__(self, console: Console):
@@ -618,6 +670,7 @@ class BuiltinCommands:
             "mcp_list": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
             "update_title": (cmd_update_title, "update session title", "update title of this session with history immediately"),
             "session_list": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
+            "session_remove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")

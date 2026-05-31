@@ -13,11 +13,13 @@ Revision:
 2026.4.22      Yu Huang     1.0               First implementation\n
 2026.4.23      Yu Huang     1.1               Multi-select support and render optimization\n
 2026.5.12      Yu Huang     1.2               TUI event trigger support\n
+2026.5.30      Yu Huang     1.3               Optimize the hardware occupancy of TUI\n
 
 Details:
 Ask user question TUI that TECoSim agent can call
 ------------------------------------------------------------------------------------------------------------------------
 """
+import time
 import logging
 
 from typing import Any
@@ -94,8 +96,8 @@ def render_questions(questions: list[dict[str, Any]], active_idx: int, selected_
     if body.plain.endswith("\n"):
         body.rstrip()
     panels.append(Panel(body, title=header_text, title_align="left", border_style=MAJOR_COLOR2))
-    hint = Text(f"←/→ (switch)    ↑/↓ (select)    Enter (choose)    Ctrl+Enter (confirm)    Esc/Ctrl+C (cancel)\n", style="bright_black")
-    hint.append(f"This is a ", style="bright_black")
+    hint = Text(f"  ←/→ (switch)    ↑/↓ (select)    Enter (choose)    Ctrl+Enter (confirm)    Esc/Ctrl+C (cancel)\n", style="bright_black")
+    hint.append(f"  This is a ", style="bright_black")
     if active_question.get("multi_select"):
         hint.append(f"multi-select ", style=MAJOR_COLOR2)
     else:
@@ -264,6 +266,8 @@ def ask_user_question_tui(questions: list[dict[str, Any]], console: Console, age
                                 raise AskUserCancelled("ask question cancelled by user")
                         if action is not None:  # no action no break
                             break
+                        if not key_press:
+                            time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
         finally:
             input_device.close()
 

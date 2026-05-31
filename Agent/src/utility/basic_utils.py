@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.21      Yu Huang     1.0               First implementation\n
 2026.5.22      Yu Huang     1.1               Summarize session title support\n
+2026.5.29      Yu Huang     1.2               Add agent's Markdown render style\n
 
 Details:
 Basic utility functions with configs read, plat. info., git check, bash check
@@ -26,8 +27,30 @@ import platform
 import subprocess
 
 from rich.console import Console
+from rich.markdown import Markdown
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+class ReasonMD(Markdown):
+    """TECoSim agent Markdown render for agent reasoning"""
+    def __init__(self, markup: str):
+        super().__init__(markup)
+        self.style = REASON_STYLE
+        self.code_theme = "one-dark"
+        self.hyperlinks = True
+        self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
+
+
+class ContentMD(Markdown):
+    """TECoSim agent Markdown render for agent content"""
+    def __init__(self, markup: str):
+        super().__init__(markup)
+        self.style = CONTENT_STYLE
+        self.code_theme = "one-dark"
+        self.hyperlinks = True
+        self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
 
 
 def load_configs(configs_path: str, name: str, console: Console):

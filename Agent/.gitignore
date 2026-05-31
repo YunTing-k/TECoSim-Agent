@@ -15,3 +15,4 @@
 /test/test_config.py
 /log/*
 /ssim.log
+/changelog.txt

@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.21-22   Yu Huang     1.0               First implementation\n
+2026.5.31      Yu Huang     1.1               Add keyboard interrupt & Define used file/dir. paths in constants.py\n
 
 Details:
 Support of standard MCP servers with type of stdio, http, sse
@@ -177,6 +178,10 @@ class MCPToolRouter:
                 raw_results = await client.call_tool_mcp(name=tool_name, arguments=arguments, timeout=timeout)
                 results = raw_results.model_dump()
                 return results, "SUCCESS"
+        except KeyboardInterrupt:
+            sys_log.warning(f"Call tool with name: {tool_name} in MCP {client.name} is cancelled by user")
+            console.print(f"Call tool with name: {tool_name} in MCP {client.name} is cancelled by user", style="bold yellow")
+            return None, f"Call tool with name: {tool_name} in MCP {client.name} is cancelled by user"
         except Exception as e:
             sys_log.error(f"Call tool with name: {tool_name} in MCP {client.name} failed with error: {e}")
             console.print(f"Call tool with name: {tool_name} in MCP {client.name} failed with error: {e}", style="bold red")
@@ -196,7 +201,7 @@ def mcp_entry_cli(args: Namespace, console: Console):
         return
 
     """read configs"""
-    mcps_configs = load_configs(configs_path="./mcps/mcps_configs.json", name="MCPs", console=console)
+    mcps_configs = load_configs(configs_path=MCPS_CONFIGS_PATH, name="MCPs", console=console)
     if not (isinstance(mcps_configs, list) and all(isinstance(item, dict) for item in mcps_configs)):
         sys_log.warning(f"MCPs configs should be list of dict")
         console.print(f"MCPs configs should be list of dict", style="bold yellow")
@@ -306,7 +311,7 @@ def mcp_add_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console: Co
             raise RuntimeError(f"Unknown MCP type: {mcp_type}")
         """update config file"""
         mcps_configs.append(params)
-        write_configs(configs_path="./mcps/mcps_configs.json", configs=mcps_configs, name="MCPs", console=console)
+        write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
         sys_log.debug(f"MCP: {name} with type: {mcp_type} configuration added")
         console.print(
             f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] with type: [{MAJOR_COLOR2}]{mcp_type}[/{MAJOR_COLOR2}] configuration added")
@@ -332,7 +337,7 @@ def mcp_toggle_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
         elif len(toggle_idx) == 1:
             token = mcps_configs[toggle_idx[0]]["if_disabled"]
             mcps_configs[toggle_idx[0]]["if_disabled"] = not token
-            write_configs(configs_path="./mcps/mcps_configs.json", configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
             if token:
                 sys_log.debug(f"MCP: {name} is enabled")
                 console.print(f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] is [{MAJOR_COLOR1}]enabled[/{MAJOR_COLOR1}]")
@@ -342,7 +347,7 @@ def mcp_toggle_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
         else:
             token = mcps_configs[toggle_idx[0]]["if_disabled"]
             mcps_configs[toggle_idx[0]]["if_disabled"] = not token
-            write_configs(configs_path="./mcps/mcps_configs.json", configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
             if token:
                 sys_log.warning(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is enabled")
                 console.print(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is enabled", style="bold yellow")
@@ -370,12 +375,12 @@ def mcp_remove_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
             console.print(f"MCP with name: {name} doesn't exist", style="bold yellow")
         elif len(del_idx) == 1:
             del mcps_configs[del_idx[0]]
-            write_configs(configs_path="./mcps/mcps_configs.json", configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
             sys_log.debug(f"MCP: {name} removed")
             console.print(f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] removed")
         else:
             del mcps_configs[del_idx[0]]
-            write_configs(configs_path="./mcps/mcps_configs.json", configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
             sys_log.warning(f"There are {len(del_idx)} MCPs with the same name: {name}. The first one is removed")
             console.print(f"There are {len(del_idx)} MCPs with the same name: {name}. The first one is removed", style="bold yellow")
     except Exception as e:

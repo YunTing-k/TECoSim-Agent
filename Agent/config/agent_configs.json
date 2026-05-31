@@ -2,8 +2,9 @@
     "MERGE_SYSTEM_PROMPTS": true,
     "CONTEXT_THRESHOLD": 0.9,
     "DEEPSEEK_SUPPORT": true,
-
     "RENDER_RESPONSE_AS_MD": true,
+    "AUTO_SUMMARY_TRIGGER": 1,
+    "RANDOM_PROGRESS_TITLE": true,
 
     "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",
     "SIMULATOR_TIMEOUT_S": 3600,

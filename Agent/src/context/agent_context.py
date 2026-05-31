@@ -19,6 +19,7 @@ Revision:
 2026.5.22      Yu Huang     1.6               Agent MCPs support & Summarize session title support\n
 2026.5.27      Yu Huang     1.7               Glob and grep file support\n
 2026.5.28      Yu Huang     1.8               Add read-only paths support\n
+2026.5.31      Yu Huang     1.9               Define used file/dir. paths in constants.py\n
 
 Details:
 Agent's context management with save/load
@@ -212,7 +213,8 @@ class AgentContext:
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
-            path = "./session/" + uuid_str + "/context.json"
+            # path = SESSION_PATH + uuid_str + "/context.json"
+            path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
             if not mute:
@@ -229,7 +231,8 @@ class AgentContext:
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
-            path = "./session/" + uuid_str + "/context.json"
+            # path = SESSION_PATH + uuid_str + "/context.json"
+            path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
             if not mute:

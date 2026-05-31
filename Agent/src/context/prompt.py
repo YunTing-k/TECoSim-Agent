@@ -21,6 +21,8 @@ Revision:
 2026.5.23      Yu Huang     1.8               Stream response display update\n
 2026.5.23      Yu Huang     1.9               Revise the stream response display when content overflow console length\n
 2026.5.28      Yu Huang     2.0               Add read-only paths support\n
+2026.5.29      Yu Huang     2.1               Revise displays of agent message & Fix incorrect empty message judgment\n
+2026.5.31      Yu Huang     2.2               Define used file/dir. paths in constants.py\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
@@ -37,11 +39,10 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from rich.console import Group, Console
 from rich.text import Text
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.live import Live
 from src.context.agent_context import AgentContext
-from src.utility.basic_utils import get_platform_info, is_git_repo, is_bash_available
+from src.utility.basic_utils import get_platform_info, is_git_repo, is_bash_available, ReasonMD, ContentMD
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -208,7 +209,8 @@ def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console)
 
 def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
     """read messages (exclude system) from persistence file with given uuid"""
-    path = "./session/" + session_uuid + "/messages.json"
+    # path = "./session/" + session_uuid + "/messages.json"
+    path = os.path.join(SESSION_PATH, session_uuid, MESSAGES_NAME)
     try:
         with open(path, "r", encoding="utf-8") as f:
             messages = json.load(f)
@@ -224,32 +226,37 @@ def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
+        skill_str = Text("<A skill is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         for msg in messages:
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
-                if "skill_directory" in msg["content"] and "skill_content" in msg["content"]:
-                    console.print(Panel("<A skill is invoked, content is not displayed>", box=rich.box.SQUARE))
+                if ("skill_directory" in msg["content"]) and ("skill_content" in msg["content"]):
+                    console.print(Panel(skill_str, box=rich.box.SQUARE))
                     continue
-                console.print(Panel("> " + msg["content"], box=rich.box.SQUARE))
+                user_prefix_str = Text("History user input:\n", style=f"bright_black")
+                user_prefix_str.append(f"{AGENT_CONSOLE_ICON} " + msg["content"], style="white")
+                console.print(Panel(user_prefix_str, box=rich.box.SQUARE))
             elif msg["role"] == "assistant":
+                """display reasoning"""
                 assistant_reasoning = get_reasoning(msg)
-                if assistant_reasoning is not None and not "":
+                if assistant_reasoning not in (None, ""):
                     console.print("\n")
                     if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                        console.print(Markdown("{Think}: " + assistant_reasoning), style=f"italic {REASONING_COLOR}")
+                        console.print(ReasonMD("{Think}: " + assistant_reasoning))
                     else:
-                        console.print("{Think}: " + assistant_reasoning, style=f"italic {REASONING_COLOR}")
-                    if msg["content"] is None:
-                        console.print("\n")
-                if msg["content"] is not None and not "":
-                    if assistant_reasoning is None:
-                        console.print("\n")
+                        console.print("{Think}: " + assistant_reasoning, style=REASON_STYLE)
+                    console.print("")
+
+                """display chat"""
+                if msg["content"] not in (None, ""):
+                    if assistant_reasoning in (None, ""):
+                        console.print("")
                     if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                        console.print(Markdown(msg["content"]), style="bold")
+                        console.print(ContentMD(msg["content"]))
                     else:
-                        console.print(msg["content"], style="bold")
-                    console.print("\n")
+                        console.print(msg["content"], style=CONTENT_STYLE)
+                    console.print("")
                 if msg["tool_calls"] is not None:
                     for tool_calls in msg["tool_calls"]:
                         tool_name = tool_calls["function"]["name"]
@@ -282,7 +289,8 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
             sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
             console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] converted")
 
-        path = "./session/" + ctx.session_uuid + "/messages.json"
+        # path = "./session/" + ctx.session_uuid + "/messages.json"
+        path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
         if not mute:
@@ -395,7 +403,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
         dumped_msg = deepseek_support(dumped_msg)
     ctx.messages.append(dumped_msg)
     assistant_reasoning = get_reasoning(dumped_msg)
-    assistant_chat = dumped_msg["content"]
+    assistant_chat: str | None = dumped_msg.get("content", None)
     # (string, will be loaded to json when called)
     assistant_tool_calls: list[dict[str, str]] | None = dumped_msg.get("tool_calls", None)
 
@@ -432,25 +440,26 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
 def get_block_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool) -> Group:
     """get the render of the non-stream messages"""
     parts = []
+
     """display reasoning"""
-    if collected_reasoning is not None and not "":
+    if collected_reasoning not in (None, ""):
         parts.append(Text("\n"))
         if as_md:
-            parts.append(Markdown("{Think}: " + collected_reasoning, style=f"italic {REASONING_COLOR}"))
+            parts.append(ReasonMD("{Think}: " + collected_reasoning))
         else:
-            parts.append(Text("{Think}: " + collected_reasoning, style=f"italic {REASONING_COLOR}"))
-        if collected_content is None and not "":
-            parts.append(Text("\n"))
+            parts.append(Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
+        parts.append(Text("\n"))
 
     """display chat"""
-    if collected_content is not None and not "":
-        if collected_reasoning is not None and not "":
+    if collected_content not in (None, ""):
+        if collected_reasoning in (None, ""):
             parts.append(Text("\n"))
         if as_md:
-            parts.append(Markdown(collected_content, style="bold"))
+            parts.append(ContentMD(collected_content))
         else:
-            parts.append(Text(collected_content, style="bold"))
+            parts.append(Text(collected_content, style=CONTENT_STYLE))
         parts.append(Text("\n"))
+
     return Group(*parts)
 
 
@@ -458,14 +467,13 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
     """get the render of the stream messages with smart truncation for long content"""
     max_reasoning_lines = STREAM_DISPLAY_MAX_REASON_LINE
     max_content_lines = STREAM_DISPLAY_MAX_CONTENT_LINE
-    reason_overflow = False
     parts = []
 
     """display reasoning with truncation for long output"""
-    if collected_reasoning and collected_reasoning.strip():
+    if collected_reasoning not in (None, ""):
         reason_lines = collected_reasoning.split('\n')
+        parts.append(Text("\n"))
         if len(reason_lines) > max_reasoning_lines:
-            reason_overflow = True
             # Show indicator and latest lines when reasoning is too long
             indicator = Text(f"[", style=f"bright_black")
             indicator.append(f"{AGENT_CONSOLE_ICON}", style=f"bold {MAJOR_COLOR1}")
@@ -479,19 +487,18 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
             reason_display = reason_display.lstrip()
             reason_display = reason_display.rstrip()
         else:
-            reason_overflow = False
             reason_display = collected_reasoning
 
         if as_md:
-            parts.append(Markdown("{Think}: " + reason_display, style=f"italic {REASONING_COLOR}"))
+            parts.append(ReasonMD("{Think}: " + reason_display))
         else:
-            parts.append(Text("{Think}: " + reason_display, style=f"italic {REASONING_COLOR}"))
-
-        if collected_content and collected_content.strip():
-            parts.append(Text("\n"))
+            parts.append(Text("{Think}: " + reason_display, style=REASON_STYLE))
+        parts.append(Text("\n"))
 
     """display chat with truncation for long output"""
-    if collected_content and collected_content.strip():
+    if collected_content not in (None, ""):
+        if collected_reasoning in (None, ""):
+            parts.append(Text("\n"))
         content_lines = collected_content.split('\n')
         if len(content_lines) > max_content_lines:
             # Show indicator and latest lines when content is too long
@@ -509,13 +516,10 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         else:
             display_content = collected_content
 
-        if collected_reasoning and collected_reasoning.strip() and not reason_overflow:
-            parts.append(Text("\n"))
-
         if as_md:
-            parts.append(Markdown(display_content, style="bold"))
+            parts.append(ContentMD(display_content))
         else:
-            parts.append(Text(display_content, style="bold"))
+            parts.append(Text(display_content, style=CONTENT_STYLE))
         parts.append(Text("\n"))
 
     return Group(*parts)
@@ -525,8 +529,8 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     """realization of managing stream LLM responses in main agent-loop"""
 
     """initialize collectors for streaming response"""
-    collected_content = ""
     collected_reasoning = ""
+    collected_content = ""
     collected_tool_calls: dict[int, dict[str, Any]] = {}  # index -> tool_call dict
 
     final_usage = None
@@ -605,9 +609,9 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
         console.print(f"LLM's response has been filtered", style="bold yellow")
 
     """count update"""
-    if collected_reasoning is not None and not "":  # "" is ignored since default is ""
+    if collected_reasoning not in (None, ""):  # "" is ignored since default is ""
         ctx.reasoning_prompts += 1
-    if collected_content is not None and not "":  # "" is ignored since default is ""
+    if collected_content not in (None, ""):  # "" is ignored since default is ""
         ctx.content_prompts += 1
 
     """check the usage"""

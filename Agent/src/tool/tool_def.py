@@ -28,6 +28,9 @@ Revision:
 2026.5.21-22   Yu Huang     2.4               Agent MCPs support & Revise tools prompts of read_file and skills\n
 2026.5.27      Yu Huang     2.5               Glob and grep file support & Add terminate subprocess when exception\n
 2026.5.28      Yu Huang     2.6               Add read-only paths support & Truncate bash command view if it is too long\n
+2026.5.29      Yu Huang     2.7               Add toggle of if stop live progress\n
+2026.5.31      Yu Huang     2.8               Define default params of all tools in constants.py & Define used file/dir.
+                                              paths in constants.py\n
 
 Details:
 Prompts and realization of tools that TECoSim agent can call
@@ -130,7 +133,7 @@ def tool_ask_user_question_def() -> dict[str, Any]:
                            "4. Offer choices to the user about what direction to take.\n"
                            "Usage notes:\n"
                            f"- User will always be able to select \"{OTHER_LABEL}\" to provide custom text input\n"
-                           f"- Use multi_select: true to allow multiple answers to be selected for a question\n"
+                           f"- Use `multi_select`: true to allow multiple answers to be selected for a question\n"
                            f"- If you recommend a specific option, make that the first option in the list and add \"({RECOMMEND_LABEL})\" "
                            f"at the end of the label\n",
             "parameters": {
@@ -138,9 +141,9 @@ def tool_ask_user_question_def() -> dict[str, Any]:
                 "properties": {
                     "questions": {
                         "type": "array",
-                        "minItems": 1,
-                        "maxItems": 4,
-                        "description": "Questions to ask the user (1-4 questions).",
+                        "minItems": ASK_USER_QUESTION_MIN_QUESTION,
+                        "maxItems": ASK_USER_QUESTION_MAX_QUESTION,
+                        "description": f"Questions to ask the user ({ASK_USER_QUESTION_MIN_QUESTION}-{ASK_USER_QUESTION_MAX_QUESTION} questions).",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -154,12 +157,13 @@ def tool_ask_user_question_def() -> dict[str, Any]:
                                 },
                                 "options": {
                                     "type": "array",
-                                    "minItems": 2,
-                                    "maxItems": 4,
-                                    "description": "The available options for this question. Must have 2-4 options. Each "
-                                                   "option should be a distinct, mutually exclusive choice (unless multi_select "
-                                                   f"is enabled). There should be no \"{OTHER_LABEL}\" option, that will be "
-                                                   f"provided automatically.",
+                                    "minItems": ASK_USER_QUESTION_MIN_OPTION,
+                                    "maxItems": ASK_USER_QUESTION_MAX_OPTION,
+                                    "description": f"The available options for this question. Must have "
+                                                   f"{ASK_USER_QUESTION_MIN_OPTION}-{ASK_USER_QUESTION_MAX_OPTION} options. "
+                                                   f"Each option should be a distinct, mutually exclusive choice (unless "
+                                                   f"`multi_select` is enabled). There should be no \"{OTHER_LABEL}\" option, "
+                                                   f"that will be provided automatically.",
                                     "items": {
                                         "type": "object",
                                         "properties": {
@@ -214,15 +218,19 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         for idx, question in enumerate(questions, start=1):
             options = question.get("options", [])
             if len(options) == 0:
-                sys_log.error(f"ask_user_question FAIL: question {idx} has no options")
-                progress.console.print(f"ask_user_question FAIL: question {idx} has no options", style="bold red")
+                sys_log.error(f"ask_user_question FAIL: question {idx} has no options "
+                              f"({ASK_USER_QUESTION_MIN_OPTION}-{ASK_USER_QUESTION_MAX_OPTION} options exclude {OTHER_LABEL} "
+                              f"are needed)")
+                progress.console.print(f"ask_user_question FAIL: question {idx} has no options "
+                                       f"({ASK_USER_QUESTION_MIN_OPTION}-{ASK_USER_QUESTION_MAX_OPTION} options exclude "
+                                       f"{OTHER_LABEL} are needed)", style="bold red")
                 return {"status": "FAIL", "info": f"question {idx} has no options"}
-        progress.stop()
+        if True: progress.stop()  # must stop progress to correctly modify other content
         sys_log.debug(f"ask_user_question: waiting for user selection")
         try:
             answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
         finally:
-            progress.start()
+            if True: progress.start()  # must stop progress to correctly modify other content
         sys_log.debug(f"ask_user_question SUCCESS: {len(answers)} answers collected")
         progress.console.print(f"ask_user_question SUCCESS: {len(answers)} answers collected", style="bright_black")
         return {
@@ -272,8 +280,10 @@ def tool_bash_def() -> dict[str, Any]:
                            "\"path with spaces/file.txt\")\n"
                            " - Try to maintain your current working directory throughout the session by using absolute "
                            "paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.\n"
-                           " - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, "
-                           "your command will timeout after 120000ms (2 minutes).\n"
+                           f" - You may specify an optional timeout in milliseconds "
+                           f"(up to {BASH_TIMEOUT_MS_MAX} ms / {BASH_TIMEOUT_MS_MAX / 60000:.1f} minutes). "
+                           f"By default, your command will timeout after "
+                           f"{BASH_TIMEOUT_MS_DEFAULT} ms ({BASH_TIMEOUT_MS_DEFAULT / 60000:.1f} minutes).\n"
                            " - When issuing multiple commands:\n"
                            "  - If the commands are independent and can run in parallel, make multiple Bash tool calls in"
                            " a single message. Example: if you need to run `git status` and `git diff`, send a single "
@@ -309,9 +319,9 @@ def tool_bash_def() -> dict[str, Any]:
                     },
                     "timeout": {
                         "type": "integer",
-                        "maximum": 600000,
-                        "description": "Optional timeout in milliseconds (max 600000, default 120000)",
-                        "default": 120000,
+                        "maximum": BASH_TIMEOUT_MS_MAX,
+                        "description": f"Optional timeout in milliseconds (max {BASH_TIMEOUT_MS_MAX}, default {BASH_TIMEOUT_MS_DEFAULT})",
+                        "default": BASH_TIMEOUT_MS_DEFAULT,
                     }
                 },
                 "required": ["command"],
@@ -328,22 +338,22 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         """evaluate the risk of bash command"""
         risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, risk, f"bash description: {arguments["description"]}, "
                                    f"risk level: {level} with reason: {reason}. Full command: {arguments["command"]}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
         """execute command"""
         command = arguments["command"]
-        limit = BASH_COMMNAD_VIEW_CHAR_MAX
+        limit = BASH_COMMAND_VIEW_CHAR_MAX
         if len(command) > limit:
             command_str = command[:limit] + " ... (truncated)"
         else:
             command_str = command
         description = arguments.get("description", "")
-        timeout = arguments.get("timeout", 120000)
+        timeout = arguments.get("timeout", BASH_TIMEOUT_MS_DEFAULT)
         sys_log.debug(f"bash: {description} start")
         progress.console.print(f"bash: {description} start", style="bright_black")
         proc = subprocess.Popen(["bash", "-c", command],
@@ -422,7 +432,13 @@ def tool_glob_file_def() -> dict[str, Any]:
                         "type": "string",
                         "description": "Directory to search in (must be absolute, not relative). If not specified, the current "
                                        "working directory will be used.",
-                    }
+                    },
+                    "entry_limit": {
+                        "type": "integer",
+                        "default": GLOB_FILE_ENTRIES_DEFAULT,
+                        "description": f"Limit output to first N paths. Defaults to {GLOB_FILE_ENTRIES_DEFAULT} when unspecified. "
+                                       f"Pass 0 for unlimited (use sparingly — large result sets waste context).",
+                    },
                 },
                 "required": ["pattern"],
                 "additionalProperties": False,
@@ -436,10 +452,10 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     """tool realization of globbing the file with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "glob_file", f"pattern: {arguments.get("pattern")}, "
                                    f"path: {arguments.get("path", os.getcwd())}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
@@ -486,7 +502,7 @@ def tool_grep_file_def() -> dict[str, Any]:
                            "- Use \"content\" when you need to see the actual matching lines (supports `context` for surrounding lines)\n"
                            "- Use \"count\" when you need statistics on match frequency per file\n"
                            "Result control:\n"
-                           "- ALWAYS set `head_limit` to a reasonable value based on expected results. The default is 250. "
+                           f"- ALWAYS set `head_limit` to a reasonable value based on expected results. The default is {GREP_FILE_HEAD_LIMIT_DEFAULT}. "
                            "set to 0 only when you truly need unlimited results.\n"
                            "- Use `glob` parameter (e.g., \"*.js\", \"**/*.tsx\") or `type` (e.g., \"js\", \"py\", \"rust\") "
                            "to narrow down the search scope\n"
@@ -534,11 +550,11 @@ def tool_grep_file_def() -> dict[str, Any]:
                     },
                     "head_limit": {
                         "type": "integer",
-                        "default": 250,
+                        "default": GREP_FILE_HEAD_LIMIT_DEFAULT,
                         "description": "Limit output to first N lines/entries, equivalent to \"| head -N\". Works across "
                                        "all output modes: content (limits output lines), files_with_matches (limits file paths), "
-                                       "count (limits count entries). Defaults to 250 when unspecified. Pass 0 for unlimited "
-                                       "(use sparingly — large result sets waste context).",
+                                       f"count (limits count entries). Defaults to {GREP_FILE_HEAD_LIMIT_DEFAULT} when "
+                                       f"unspecified. Pass 0 for unlimited (use sparingly — large result sets waste context).",
                     },
                     "multiline": {
                         "type": "boolean",
@@ -559,7 +575,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     """tool realization of grepping the file with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "grep_file",
                                    f"pattern: {arguments.get("pattern")}, "
                                    f"path: {arguments.get("path", os.getcwd())}, "
@@ -568,9 +584,9 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                    f"output_mode: {arguments.get("output_mode", "files_with_matches")}, "
                                    f"ignore_case: {arguments.get("ignore_case", False)}, "
                                    f"context: {arguments.get("context")}, "
-                                   f"head_limit: {arguments.get("head_limit", 250)}, "
+                                   f"head_limit: {arguments.get("head_limit", GREP_FILE_HEAD_LIMIT_DEFAULT)}, "
                                    f"multiline: {arguments.get("multiline", False)}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
@@ -636,8 +652,9 @@ def tool_read_file_def() -> dict[str, Any]:
                     "line_num": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 10000,
-                        "description": "Number of lines to read (for `from_top`, `from_bottom`, `offset`). Min 1, max 10000. "
+                        "maximum": READ_FILE_MAX_LINE,
+                        "description": "Number of lines to read (for `from_top`, `from_bottom`, `offset`). "
+                                       f"Min 1, max {READ_FILE_MAX_LINE}. "
                                        "When unsure, a value of 50-100 is typically safe for an initial scan.",
                     },
                     "offset": {
@@ -648,8 +665,8 @@ def tool_read_file_def() -> dict[str, Any]:
                     },
                     "encoding": {
                         "type": "string",
-                        "description": "File encoding (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
+                        "description": f"File encoding (e.g., `utf-8`, `gbk`, `ascii`). Default `{READ_FILE_ENCODING_DEFAULT}`.",
+                        "default": READ_FILE_ENCODING_DEFAULT,
                     }
                 },
                 "required": ["path", "method"],
@@ -664,14 +681,14 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     """tool realization of reading the file with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "read_file",
                                    f"path: {arguments["path"]}, "
                                    f"method: {arguments["method"]}, "
                                    f"read-in line: {arguments.get("line_num", "None")}, "
                                    f"offset: {arguments.get("offset", "None")}, "
-                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
-        progress.start()
+                                   f"encoding: {arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)}", progress.console)
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
@@ -693,15 +710,15 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"read_file FAIL: "
                           f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
+                          f"the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}")
             progress.console.print(f"read_file FAIL: "
                                    f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json", style="bold red")
+                                   f"modify the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}", style="bold red")
             return {"status": "FAIL",
                     "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
-                            f"in agent_configs.json"}
+                            f"in {AGENT_CONFIGS_PATH}"}
         """read the file"""
-        encoding = arguments.get("encoding", "utf-8")
+        encoding = arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)
         with open(file_path, 'r', encoding=encoding) as f:
             raw_line = f.readlines()
         file_line: list[str] = []
@@ -709,12 +726,20 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             file_line.append(f"{i}\t{line}")
         total_line_num = len(file_line)
         """prepare the content"""
-        read_line_num = arguments.get("line_num", 0)
+        read_line_num: int | None = arguments.get("line_num")
+        if read_line_num is not None and read_line_num > READ_FILE_MAX_LINE:
+            sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} > {READ_FILE_MAX_LINE}")
+            progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} > {READ_FILE_MAX_LINE}", style="bold red")
+            raise RuntimeError(f"Invalid line num: {read_line_num} > {READ_FILE_MAX_LINE}")
         offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
         if method == "from_top":
-            if read_line_num < 1 or read_line_num is None:
+            if read_line_num is None:
+                sys_log.error(f"read_file FAIL: Line num can't be empty")
+                progress.console.print(f"read_file FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
+            if read_line_num < 1:
                 sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
                 progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
@@ -725,7 +750,11 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 # file_str = "".join(file_line[0:read_line_num])
                 file_str, truncated, read_lines = read_line_with_limit(file_line, 0, read_line_num - 1, byte_limit, encoding)
         elif method == "from_bottom":
-            if read_line_num < 1 or read_line_num is None:
+            if read_line_num is None:
+                sys_log.error(f"read_file FAIL: Line num can't be empty")
+                progress.console.print(f"read_file FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
+            if read_line_num < 1:
                 sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
                 progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
@@ -736,6 +765,14 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 # file_str = "".join(file_line[-read_line_num:])
                 file_str, truncated, read_lines = read_line_with_limit(file_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, encoding)
         elif method == "offset":
+            if read_line_num is None:
+                sys_log.error(f"read_file FAIL: Line num can't be empty")
+                progress.console.print(f"read_file FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
+            if read_line_num < 1:
+                sys_log.error(f"read_file FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"read_file FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if offset_line_num < 1:
                 sys_log.error(f"read_file FAIL: Invalid offset: {offset_line_num} < 1")
                 progress.console.print(f"read_file FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
@@ -771,15 +808,15 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                           f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
                           f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                          f"please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json")
+                          f"please modify the READ_FILE_LLM_KB_LIMIT in {AGENT_CONFIGS_PATH}")
             progress.console.print(f"read_file TRUNCATED: "
                                    f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                                    f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
                                    f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB "
-                                   f"and truncated, please modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json", style="bold yellow")
+                                   f"and truncated, please modify the READ_FILE_LLM_KB_LIMIT in {AGENT_CONFIGS_PATH}", style="bold yellow")
             return {"status": "TRUNCATED",
                     "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                            f"user should modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json",
+                            f"user should modify the READ_FILE_LLM_KB_LIMIT in {AGENT_CONFIGS_PATH}",
                     "total_line": read_lines,
                     "file_content": file_str}
     except UnicodeDecodeError as e:
@@ -823,9 +860,9 @@ def tool_write_file_def() -> dict[str, Any]:
                     "mode": {
                         "type": "string",
                         "enum": ["write", "append"],
-                        "description": "Optional write mode: `write` overwrites the file (default), `append` adds content "
-                                       "to the end.",
-                        "default": "write"
+                        "description": "Optional write mode: `write` overwrites the file, `append` adds content to the end. "
+                                       f"The default mode is `{WRITE_FILE_MODE_DEFAULT}`",
+                        "default": WRITE_FILE_MODE_DEFAULT
                     },
                     "create_dirs": {
                         "type": "boolean",
@@ -834,8 +871,8 @@ def tool_write_file_def() -> dict[str, Any]:
                     },
                     "encoding": {
                         "type": "string",
-                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
+                        "description": f"Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `{WRITE_FILE_ENCODING_DEFAULT}`.",
+                        "default": WRITE_FILE_ENCODING_DEFAULT,
                     }
                 },
                 "required": ["path", "content"],
@@ -850,13 +887,13 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     """tool realization of writing the file with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "write_file",
                                    f"path: {arguments["path"]}, "
-                                   f"mode: {arguments.get("mode", "None")}, "
-                                   f"create_dirs: {arguments.get("create_dirs", "None")}, "
-                                   f"encoding: {arguments.get("encoding", "None")}", progress.console)
-        progress.start()
+                                   f"mode: {arguments.get("mode", WRITE_FILE_MODE_DEFAULT)}, "
+                                   f"create_dirs: {arguments.get("create_dirs", True)}, "
+                                   f"encoding: {arguments.get("encoding", WRITE_FILE_ENCODING_DEFAULT)}", progress.console)
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
@@ -876,9 +913,16 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                 sys_log.debug(f"write_file: Parent directory: {parent_dir} created")
                 progress.console.print(f"write_file: Parent directory: {parent_dir} created", style="bright_black")
         """write the file"""
-        mode = arguments.get("mode", "write")
-        w_mode = 'w' if mode == "write" else 'a'
-        encoding = arguments.get("encoding", "utf-8")
+        mode = arguments.get("mode", WRITE_FILE_MODE_DEFAULT)
+        if mode == "write":
+            w_mode = 'w'
+        elif mode == "append":
+            w_mode = 'a'
+        else:
+            w_mode = 'w'
+            sys_log.warning(f"write_file: Unknown mode: {mode}, falling back to `write`")
+            progress.console.print(f"write_file: Unknown mode: {mode}, falling back to `write`", style="bold yellow")
+        encoding = arguments.get("encoding", WRITE_FILE_ENCODING_DEFAULT)
         content: str = arguments["content"]
         with open(file=file_path, mode=w_mode, encoding=encoding) as f:
             f.write(content)
@@ -923,7 +967,7 @@ def tool_edit_file_def() -> dict[str, Any]:
                            "- When editing text from `read_file` tool output, ensure you preserve the exact indentation "
                            "(tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: "
                            "line number + tab (e.g., \"123\\t\"). Everything after that is the actual file content to match. "
-                           "Never include any part of the line number prefix in the old_string or new_string\n"
+                           "Never include any part of the line number prefix in the `old_string` or `new_string`\n"
                            "- For targeted edits (a specific line/block): ALWAYS include the exact leading whitespace to "
                            "match the precise scope. This is essential in languages like Python where indentation changes meaning\n"
                            "- For simple, scope-independent replacements (renaming a variable, fixing a typo in a comment, "
@@ -947,17 +991,17 @@ def tool_edit_file_def() -> dict[str, Any]:
                     },
                     "new_string": {
                         "type": "string",
-                        "description": "The text to replace it with (must be different from old_string)."
+                        "description": "The text to replace it with (must be different from `old_string`)."
                     },
                     "replace_all": {
                         "type": "boolean",
-                        "description": "Replace all occurrences of old_string (default false).",
+                        "description": "Replace all occurrences of `old_string` (default false).",
                         "default": False
                     },
                     "encoding": {
                         "type": "string",
-                        "description": "Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `utf-8`.",
-                        "default": "utf-8",
+                        "description": f"Optional encoding type (e.g., `utf-8`, `gbk`, `ascii`). Default `{EDIT_FILE_ENCODING_DEFAULT}`.",
+                        "default": EDIT_FILE_ENCODING_DEFAULT,
                     }
                 },
                 "required": ["path", "old_string", "new_string"],
@@ -1001,16 +1045,16 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"edit_file FAIL: "
                           f"File: {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
+                          f"the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}")
             progress.console.print(f"edit_file FAIL: "
                                    f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json",
+                                   f"modify the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}",
                                    style="bold red")
             return {"status": "FAIL",
                     "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the READ_FILE_MB_LIMIT "
-                            f"in agent_configs.json"}
+                            f"in {AGENT_CONFIGS_PATH}"}
         """read the file"""
-        encoding = arguments.get("encoding", "utf-8")
+        encoding = arguments.get("encoding", EDIT_FILE_ENCODING_DEFAULT)
         with open(file_path, 'r', encoding=encoding) as f:
             raw_line = f.readlines()
         raw_str = ''.join(raw_line)
@@ -1034,9 +1078,9 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                             f"identify the instance."}
         multi_match = True if (count > 1 and replace_all) else False
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_edit_tui(file_path, old_string, new_string, raw_line, match_lines, multi_match, ctx, progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
@@ -1046,7 +1090,7 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         else:
             edit_str = raw_str.replace(old_string, new_string, 1)
         """write the file"""
-        encoding = arguments.get("encoding", "utf-8")
+        encoding = arguments.get("encoding", EDIT_FILE_ENCODING_DEFAULT)
         with open(file=file_path, mode='w', encoding=encoding) as f:
             f.write(edit_str)
         sys_log.debug(f"edit_file SUCCESS: Path: {file_path}, replace_all: {replace_all}, encoding: {encoding},"
@@ -1094,7 +1138,6 @@ def tool_skill_def() -> dict[str, Any]:
                            "`skill` tool BEFORE generating any other response about the task\n"
                            "- NEVER mention a skill without actually calling this tool\n"
                            "- Do not invoke a skill that is already running\n"
-                           "- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)\n"
                            "- If the skill has ALREADY been loaded (by you or user), this tool will error, follow the "
                            "instructions directly instead of calling this tool again\n",
             "parameters": {
@@ -1122,11 +1165,11 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
     try:
         name = str(arguments["skill"])
         """permission request"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "skill",
                                    f"skill name: {arguments["skill"]}, "
                                    f"args: {arguments.get("args", "None")}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}, None
@@ -1145,7 +1188,7 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
                     "info": f"Skill {name} is not available"}, None
         else:
             # load the content
-            content = load_skill_content("./skills", name, progress.console)
+            content = load_skill_content(SKILLS_PATH, name, progress.console)
             if content is None:
                 sys_log.error(f"skill FAIL: Read content of skill {name} failed")
                 progress.console.print(f"skill FAIL: Read content of skill {name} failed", style="bold red")
@@ -1210,11 +1253,11 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         url = arguments["url"]
         prompt = arguments["prompt"]
         """permission request"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "web_fetch",
                                    f"URL: {arguments["url"]}, "
                                    f"prompt: {arguments["prompt"]}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL", "info": f"Permission request denied by user"}
 
@@ -1229,7 +1272,8 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         content, content_info, if_redirect, final_url = ui_info.loading_spinner_rap(
             web_single_fetch, url, ctx, progress.console,
             waiting_desc="Web fetching ...", done_desc="Web fetch time cost",
-            spinner="arrow3", out_except=WebFetchCancelled("Cancelled by user"))
+            intrp_desc="Web fetch interrupted", fail_desc="Web fetch failed",
+            spinner="arrow3", out_except=WebFetchCancelled("Web fetch is cancelled by user"))
         # content, content_info, if_redirect, final_url = web_single_fetch(url, ctx, progress.console)
         if content is None:
             sys_log.error(f"web_fetch FAIL: Failed to fetch content from URL {url}. If redirect: {if_redirect}, final URL: "
@@ -1302,7 +1346,7 @@ def tool_web_search_def() -> dict[str, Any]:
                 "properties": {
                     "query": {
                         "type": "string",
-                        "minLength": 2,
+                        "minLength": WEB_SEARCH_QUERY_MIN,
                         "description": "key words you want to search on the web",
                     }
                 },
@@ -1319,10 +1363,10 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     try:
         query = arguments["query"]
         """permission request"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "web_search",
                                    f"Web search with keywords {query}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL", "info": f"Permission request denied by user"}
 
@@ -1330,7 +1374,8 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         content, content_info = ui_info.loading_spinner_rap(
             web_search_top, query, ctx, progress.console,
             waiting_desc="Web searching ...", done_desc="Web search time cost",
-            spinner="arrow3", out_except=WebSearchCancelled("Cancelled by user"))
+            intrp_desc="Web search interrupted", fail_desc="Web search failed",
+            spinner="arrow3", out_except=WebSearchCancelled("Web search is cancelled by user"))
         # content, content_info = web_search_top(query, ctx, progress.console)
         if content is None:
             sys_log.error(f"web_search FAIL: Failed to search on web with query: {query}. Error detail: {content_info}")
@@ -1368,9 +1413,9 @@ def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progr
         else:
             mcp_name = mcp_client.name
         """permission request"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL", "info": f"Permission request denied by user"}
 
@@ -1444,7 +1489,8 @@ def tool_init_design_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "init_design",
-            "description": "Create and initialize a design in default value with given id",
+            "description": "Create and initialize a design in default value with given id. This tool will fail if the id "
+                           "of the design to be created already exists",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1466,16 +1512,17 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     """tool realization of initializing a design with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "init_design",
                                    f"initialize a new design with id {arguments["id"]}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
         """initialize design"""
         design_id = arguments["id"]
-        path = "./session/" + ctx.session_uuid + f"/design{design_id}"
+        # path = "./session/" + ctx.session_uuid + f"/design{design_id}"
+        path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{design_id}")
         if os.path.exists(path):
             sys_log.error(f"init_design FAIL: Design with id: {design_id} already exists")
             progress.console.print(f"init_design FAIL: Design with id: {design_id} already exists", style="bold red")
@@ -1499,7 +1546,8 @@ def tool_copy_design_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "copy_design",
-            "description": "Create a new design by copying an existed design with given id",
+            "description": "Create a new design by copying an existing design with given id. This tool will fail if the target "
+                           "design already exists or source design nonexists",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1526,19 +1574,21 @@ def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     """tool realization of copying a design with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "copy_design",
                                    f"copy design with id {arguments["source_id"]} to create a new design with "
                                    f"id {arguments["target_id"]}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
         """copy design"""
         source_id = arguments["source_id"]
         target_id = arguments["target_id"]
-        source_path = "./session/" + ctx.session_uuid + f"/design{source_id}"
-        target_path = "./session/" + ctx.session_uuid + f"/design{target_id}"
+        # source_path = "./session/" + ctx.session_uuid + f"/design{source_id}"
+        source_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{source_id}")
+        # target_path = "./session/" + ctx.session_uuid + f"/design{target_id}"
+        target_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{target_id}")
         if not os.path.exists(source_path):
             sys_log.error(f"copy_design FAIL: Source design with id: {source_id} doesn't exist")
             progress.console.print(f"copy_design FAIL: Source design with id: {source_id} doesn't exist", style="bold red")
@@ -1593,7 +1643,13 @@ def tool_launch_simulator_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "launch_simulator",
-            "description": "Launch the simulator with given id of existed design",
+            "description": "Launch the simulator with given id of existing design. This tool will fail if:\n"
+                           "- target design doesn't exist"
+                           "- target design is invalid"
+                           "- clean up before the simulation fails"
+                           "- simulator terminate with runtime error"
+                           "- simulator timeout"
+                           "- simulation cancelled by user",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1615,16 +1671,17 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
     """tool realization of launching the simulator with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "launch_simulator",
                                    f"launch simulation run under design with id: {arguments["id"]}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
         """check the design"""
         design_id = arguments["id"]
-        design_path = "./session/" + ctx.session_uuid + f"/design{design_id}"
+        # design_path = "./session/" + ctx.session_uuid + f"/design{design_id}"
+        design_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{design_id}")
         if not os.path.exists(design_path):
             sys_log.error(f"launch_simulator FAIL: "
                           f"Design with id: {design_id} doesn't exist. Run is not created. Launch is not performed")
@@ -1645,7 +1702,8 @@ def launch_simulator(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         progress.console.print(f"launch_simulator: clean up done", style="bright_black")
         """create run"""
         ctx.simulation_launched += 1
-        run_path = "./session/" + ctx.session_uuid + f"/run{ctx.simulation_launched}"
+        # run_path = "./session/" + ctx.session_uuid + f"/run{ctx.simulation_launched}"
+        run_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_RUN_NAME}{ctx.simulation_launched}")
         if os.path.exists(run_path):
             sys_log.error(f"launch_simulator FAIL: "
                           f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed")
@@ -1794,7 +1852,7 @@ def tool_query_run_num_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": "query_run_num",
-            "description": "Get the amount of launched run",
+            "description": "Get the amount of launched run. Each run is always start with index of 1 and increase by 1",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -1858,8 +1916,8 @@ def tool_read_log_def() -> dict[str, Any]:
                     "line_num": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 10000,
-                        "description": "Number of lines to read (for `from_top`, `from_bottom`, `offset`). Min 1, max 10000. "
+                        "maximum": READ_LOG_MAX_LINE,
+                        "description": f"Number of lines to read (for `from_top`, `from_bottom`, `offset`). Min 1, max {READ_LOG_MAX_LINE}. "
                                        "When scanning the end of a log for errors, 50-100 lines is usually sufficient",
                     },
                     "offset": {
@@ -1881,20 +1939,21 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
     """tool realization of reading the log with arguments and AgentContext"""
     try:
         """request permission"""
-        progress.stop()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.stop()
         token = ask_permission_tui(ctx, "read_log",
                                    f"run id: {arguments["id"]}, "
                                    f"type: {arguments["log_type"]}, "
                                    f"method: {arguments["method"]}, "
                                    f"read-in line: {arguments.get("line_num", "None")}, "
                                    f"offset: {arguments.get("offset", "None")}", progress.console)
-        progress.start()
+        if STOP_PROGRESS_WHEN_REQUEST: progress.start()
         if not token:
             return {"status": "FAIL",
                     "info": f"Permission request denied by user"}
         """check the run"""
         run_id = arguments["id"]
-        run_path = "./session/" + ctx.session_uuid + f"/run{run_id}"
+        # run_path = "./session/" + ctx.session_uuid + f"/run{run_id}"
+        run_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_RUN_NAME}{run_id}")
         if not os.path.exists(run_path):
             sys_log.error(f"read_log FAIL: Run with id: {run_id} doesn't exist")
             progress.console.print(f"read_log FAIL: Run with id: {run_id} doesn't exist", style="bold red")
@@ -1907,15 +1966,15 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"read_log FAIL: "
                           f"Log with type: {log_type} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the READ_FILE_MB_LIMIT in agent_configs.json")
+                          f"the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}")
             progress.console.print(f"read_log FAIL: "
                                    f"Log with type: {log_type} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the READ_FILE_MB_LIMIT in agent_configs.json", style="bold red")
+                                   f"modify the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}", style="bold red")
             return {"status": "FAIL",
                     "info": f"Log with type: {log_type} IS larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user "
-                            f"should modify the READ_FILE_MB_LIMIT in agent_configs.json"}
+                            f"should modify the READ_FILE_MB_LIMIT in {AGENT_CONFIGS_PATH}"}
         """read the log"""
-        with open(log_path, 'r', encoding='utf-8') as f:
+        with open(log_path, 'r', encoding=READ_LOG_ENCODING_DEFAULT) as f:
             log_content = f.read()
         if log_type == "stdout":
             clean_line = clean_stdout_log(log_content)
@@ -1930,11 +1989,19 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
             log_line.append(f"{i}\t{line}")
         total_line_num = len(log_line)
         """prepare the content"""
-        read_line_num = arguments.get("line_num", 0)
+        read_line_num: int | None = arguments.get("line_num")
+        if read_line_num is not None and read_line_num > READ_LOG_MAX_LINE:
+            sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}")
+            progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}", style="bold red")
+            raise RuntimeError(f"Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}")
         offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
         if method == "from_top":
+            if read_line_num is None:
+                sys_log.error(f"read_log FAIL: Line num can't be empty")
+                progress.console.print(f"read_log FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
             if read_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
                 progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
@@ -1946,6 +2013,10 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                 # log_str = "\n".join(log_line[0:read_line_num])
                 log_str, truncated, read_lines = read_line_with_limit(log_line, 0, read_line_num - 1, byte_limit, 'utf-8')
         elif method == "from_bottom":
+            if read_line_num is None:
+                sys_log.error(f"read_log FAIL: Line num can't be empty")
+                progress.console.print(f"read_log FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
             if read_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
                 progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
@@ -1957,6 +2028,14 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                 # log_str = "\n".join(log_line[-read_line_num:])
                 log_str, truncated, read_lines = read_line_with_limit(log_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, 'utf-8')
         elif method == "offset":
+            if read_line_num is None:
+                sys_log.error(f"read_log FAIL: Line num can't be empty")
+                progress.console.print(f"read_log FAIL: Line num can't be empty", style="bold red")
+                raise RuntimeError(f"Line num can't be empty")
+            if read_line_num < 1:
+                sys_log.error(f"read_log FAIL: Invalid line num: {read_line_num} < 1")
+                progress.console.print(f"read_log FAIL: Invalid line num: {read_line_num} < 1", style="bold red")
+                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if offset_line_num < 1:
                 sys_log.error(f"read_log FAIL: Invalid offset: {offset_line_num} < 1")
                 progress.console.print(f"read_log FAIL: Invalid offset: {offset_line_num} < 1", style="bold red")
@@ -1991,15 +2070,15 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                           f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is larger than "
                           f"{ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, please modify the READ_FILE_LLM_KB_LIMIT "
-                          f"in agent_configs.json")
+                          f"in {AGENT_CONFIGS_PATH}")
             progress.console.print(f"read_log TRUNCATED: Run id: {run_id} "
                                    f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                                    f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is "
                                    f"larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, please "
-                                   f"modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json", style="bold yellow")
+                                   f"modify the READ_FILE_LLM_KB_LIMIT in {AGENT_CONFIGS_PATH}", style="bold yellow")
             return {"status": "TRUNCATED",
                     "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                            f"user should modify the READ_FILE_LLM_KB_LIMIT in agent_configs.json",
+                            f"user should modify the READ_FILE_LLM_KB_LIMIT in {AGENT_CONFIGS_PATH}",
                     "total_line": read_lines,
                     "log_content": log_str}
     except Exception as e:

@@ -19,11 +19,13 @@ Revision:
 2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
 2026.5.21      Yu Huang     1.7               Move load_configs to basic_utils.py\n
 2026.5.23      Yu Huang     1.8               Stream response display update\n
+2026.5.30      Yu Huang     1.9               Random spinner title support & Revise spinner logic with SIGINT pass through\n
 
 Details:
 Client configuration, creation
 ------------------------------------------------------------------------------------------------------------------------
 """
+import random
 import logging
 
 from openai import OpenAI
@@ -55,12 +57,38 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
 
 
 def llm_request_with_spinner(func: Callable, *args,
-                             waiting_desc: str = "Brain (but not mine) using ...", done_desc: str = "LLM response latency",
-                             spinner: str = "dots2", **kwargs) -> Any:
+                             waiting_desc: str | None = None, done_desc: str | None = None,
+                             intrp_desc: str | None = None, fail_desc: str | None = None,
+                             spinner: str | None = None, if_random: bool, **kwargs) -> Any:
     """LLM request with spinner through loading_spinner_rap"""
+    if waiting_desc is not None:
+        waiting_title = waiting_desc
+    else:
+        if if_random:
+            waiting_title = random.choice(LLM_REQUEST_TITLE_LIST)
+        else:
+            waiting_title = LLM_REQUEST_TITLE_LIST[0]
+    if done_desc is not None:
+        done_title = done_desc
+    else:
+        done_title = LLM_REQUEST_DONE_TITLE
+    if intrp_desc is not None:
+        intrp_title = intrp_desc
+    else:
+        intrp_title = LLM_REQUEST_INTRP_TITLE
+    if fail_desc is not None:
+        fail_title = fail_desc
+    else:
+        fail_title = LLM_REQUEST_FAIL_TITLE
+    if spinner is not None:
+        spinner_choice = spinner
+    else:
+        spinner_choice = LLM_REQUEST_SPINNER
     result = loading_spinner_rap(func, *args,
-                                 waiting_desc=waiting_desc, done_desc=done_desc, spinner=spinner,
-                                 out_except=RequestLLMCancelled("Cancelled by user"), **kwargs)
+                                 waiting_desc=waiting_title, done_desc=done_title,
+                                 intrp_desc=intrp_title, fail_desc=fail_title,
+                                 spinner=spinner_choice,
+                                 out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
     return result
 
 
@@ -69,12 +97,18 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
     params: dict[str, Any] = {
         "model": ctx.api_configs["MAIN_MODEL_NAME"],
         "temperature": ctx.api_configs["MAIN_MODEL_TEMPERATURE"],
-        "reasoning_effort": ctx.api_configs["MAIN_MODEL_REASONING_EFFORT"],
         "max_tokens": ctx.api_configs["MAIN_MODEL_MAX_TOKENS"],
         "stream": ctx.api_configs["MAIN_MODEL_STREAM"],
         "messages": ctx.messages,
         "tools": ctx.tools,
-        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000    }
+        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000
+    }
+    """reasoning support"""
+    if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
+        params["reasoning_effort"] = ctx.api_configs["MAIN_MODEL_REASONING_EFFORT"]
+    else:
+        params["reasoning_effort"] = None
+    """deepseek support"""
     if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
         if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}
@@ -91,14 +125,20 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
     params: dict[str, Any] = {
         "model": api_configs["FAST_MODEL_NAME"],
         "temperature": api_configs["FAST_MODEL_TEMPERATURE"],
-        "reasoning_effort": api_configs["FAST_MODEL_REASONING_EFFORT"],
         "max_tokens": api_configs["FAST_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
         "timeout": api_configs["TIMEOUT_MS"] / 1000
     }
+    """tools"""
     if tools is not None:
         params["tools"] = tools
+    """reasoning support"""
+    if api_configs["FAST_MODEL_ENABLE_REASONING"]:
+        params["reasoning_effort"] = api_configs["FAST_MODEL_REASONING_EFFORT"]
+    else:
+        params["reasoning_effort"] = None
+    """deepseek support"""
     if agent_configs["DEEPSEEK_SUPPORT"]:
         if api_configs["FAST_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}

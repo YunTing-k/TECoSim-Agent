@@ -18,15 +18,21 @@ Revision:
 2026.5.12      Yu Huang     1.5               TUI event trigger support\n
 2026.5.20      Yu Huang     1.6               Refactor llm_request_with_spinner and move to client.py\n
 2026.5.22      Yu Huang     1.7               Add usage bar for main model & Summarize session title support\n
+2026.5.30      Yu Huang     1.8               Optimize the hardware occupancy of TUI & Random spinner title support &
+                                              Revise spinner logic with SIGINT pass through\n
+2026.5.31      Yu Huang     1.9               Add standard yes or no request TUI\n
 
 Details:
 UI information of agent dev version, ASCII art banner of start, error
 ------------------------------------------------------------------------------------------------------------------------
 """
+import sys
+import time
+import signal
+import random
+import ctypes
 import logging
 import threading
-import signal
-import sys
 
 from rich.console import Group, Console
 from rich.panel import Panel
@@ -36,6 +42,7 @@ from rich.live import Live
 from rich.progress import Progress, ProgressColumn, SpinnerColumn, TimeElapsedColumn
 from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
+from prompt_toolkit.formatted_text import ANSI
 from contextlib import contextmanager
 from typing import Callable, Any
 from src.context import prompt
@@ -203,61 +210,182 @@ class GradientTextColumn(ProgressColumn):
 def loading_spinner(waiting_desc: str, done_desc: str, spinner: str = "dots2"):
     """context manager for rich.Progress with any time-consuming operation (no rapid interrupt)"""
     with Progress(
-        GradientTextColumn(start_rgb=(255, 159, 243), end_rgb=(84, 160, 255)),
+        GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
         SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
         TimeElapsedColumn(),
-        transient=False,
+        transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
     ) as progress:
         task = progress.add_task(waiting_desc, total=None)
         yield progress
         progress.update(task, description=done_desc)
 
 
-def loading_spinner_rap(func: Callable, *args, waiting_desc: str, done_desc: str, spinner: str, out_except: Exception, **kwargs) -> Any:
-    """Spinner for any time-consuming operation with signal"""
+def loading_spinner_rap(func: Callable, *args,
+                        waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
+                        with_progress: bool = False,
+                        **kwargs) -> Any:
+    """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt"""
     result = [None]
     exception: list[Exception | None] = [None]
-    interrupted = False
+    stop_event = threading.Event()
+    worker_thread: list[threading.Thread | None] = [None]
 
     def sigint_handler(signum, frame):
-        nonlocal interrupted
-        interrupted = True
-    # set SIGINT handler with sigint_handler and restore the original handler
+        """SIGINT handler: signal sub-thread and let it handle cleanup if possible"""
+        stop_event.set()
+        # Inject KeyboardInterrupt into the sub-thread, so tools like
+        # launch_simulator can catch it and do cleanup (proc.terminate() etc.)
+        th = worker_thread[0]
+        if th is not None:
+            ident = th.ident
+            if ident is not None:
+                tid = ctypes.c_long(ident)
+                ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                    tid, ctypes.py_object(KeyboardInterrupt))
+                if ret != 1:
+                    # Failed to inject / invalid thread, clear to avoid dangling exception
+                    ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+
+    # set SIGINT (KeyboardInterrupt) handler with sigint_handler and restore the original handler
     original_handler = signal.signal(signal.SIGINT, sigint_handler)
+    try:
+        with Progress(
+                GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
+                SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
+                TimeElapsedColumn(),
+                transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+        ) as progress:
+            task = progress.add_task(waiting_desc, total=None)
+            if not with_progress:
+                def target():
+                    """target function without progress"""
+                    try:
+                        result[0] = func(*args, **kwargs)
+                    except Exception as e:
+                        exception[0] = e
+            else:
+                def target():
+                    """target function with progress"""
+                    try:
+                        result[0] = func(*args, progress=progress, **kwargs)
+                    except Exception as e:
+                        exception[0] = e
 
-    with Progress(
-            GradientTextColumn(start_rgb=(255, 159, 243), end_rgb=(84, 160, 255)),
-            SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
-            TimeElapsedColumn(),
-            transient=False,
-    ) as progress:
-        task = progress.add_task(waiting_desc, total=None)
+            t = threading.Thread(target=target, daemon=True)
+            worker_thread[0] = t
+            t.start()
+            while t.is_alive() and not stop_event.is_set():
+                t.join(SPINNER_LIVE_CHECK_GAP_MS / 1000.0)
+            if stop_event.is_set():
+                # Give sub-thread a chance to handle KeyboardInterrupt and
+                # do cleanup (e.g. proc.terminate()), then finish normally
+                t.join(SPINNER_TERMINATE_WAIT_S)
+                if t.is_alive():
+                    # Thread didn't handle the interrupt, force cancel
+                    progress.update(task, description=intrp_desc)
+                    raise out_except
+                # else: thread handled KeyboardInterrupt and finished,
+                # fall through to return its result normally
+            progress.update(task, description=done_desc if exception[0] is None else fail_desc)
+            if exception[0] is not None:
+                raise exception[0]
+            return result[0]
+    finally:
+        # set SIGINT handler with original_handler
+        signal.signal(signal.SIGINT, original_handler)
 
-        def target():
-            """target function"""
-            try:
-                result[0] = func(*args, **kwargs)
-            except Exception as e:
-                exception[0] = e
 
-        t = threading.Thread(target=target, daemon=True)
-        t.start()
-        while t.is_alive():
-            t.join(0.2)
-            if interrupted:
-                progress.stop()
-                break
-        if interrupted:
-            # set SIGINT handler with original_handler
-            signal.signal(signal.SIGINT, original_handler)
-            raise out_except
-        progress.update(task, description=done_desc)
+def get_user_prompt(ctx: AgentContext) -> str:
+    """get the user prompt text"""
+    if ctx.agent_session:
+        if ctx.agent_configs["RANDOM_PROGRESS_TITLE"]:
+            prefix = random.choice(USER_PROMPT_PREFIX_LIST)
+        else:
+            prefix = USER_PROMPT_PREFIX_LIST[0]
+        user_input = ctx.agent_session.prompt(ANSI(f"\033[90m{prefix} {USER_PROMPT_FIXED_PREFIX}\033[0m\n"
+                                               f"{AGENT_CONSOLE_ICON} "))
+        return user_input
+    return ""
 
-    # set SIGINT handler with original_handler
-    signal.signal(signal.SIGINT, original_handler)
-    if exception[0] is not None:
-        raise exception[0]
-    return result[0]
+
+def render_request(request_desc: str, request_detail: str | None, active_idx: int):
+    """render the yes or no request panel according to the selection"""
+    panels = []
+    header_text = Text("Exit", style=f"bold {MAJOR_COLOR1}")
+    body = Text()
+    body.append(f"\nAre you sure to ", style="white")
+    body.append(f"{request_desc}", style=f"bold {MAJOR_COLOR2}")
+    body.append(f"?\n", style="white")
+    body.append(f"Request detail: ", style="white")
+    body.append(f"{request_detail}\n\n", style="bright_black")
+    str_list = ["Yes", "No"]
+    for i in range(2):
+        is_selected = active_idx == i
+        prefix1 = "> " if is_selected else "  "
+        prefix2 = " ✓" if is_selected else ""
+        if is_selected:
+            label_style = f"bold {MAJOR_COLOR2}"
+        else:
+            label_style = "white"
+        body.append(f"{prefix1}{str_list[i]}{prefix2}\n\n", style=label_style)
+    if body.plain.endswith("\n"):
+        body.rstrip()
+    panels.append(Panel(body, title=header_text, title_align="left", border_style=MAJOR_COLOR2))
+    hint = Text(f"  ↑/↓ (select)    Enter (choose)    Ctrl+C (exit)    Esc (cancel)\n", style="bright_black")
+    return Group(*panels, hint)
+
+
+def request_tui(console: Console, request_desc: str, request_detail: str | None, cancel_str: str="Request canceled") -> bool:
+    """top realization of request yes or no TUI"""
+    active_idx = 0  # default active option
+
+    while True:
+        input_device = create_input()
+        action = None
+        try:
+            with input_device.raw_mode():
+                input_device.flush_keys()
+                with Live(render_request(request_desc, request_detail, active_idx),
+                          console=console, auto_refresh=False, transient=True) as live:
+                    while True:
+                        key_press = input_device.read_keys()
+                        for key in key_press:
+                            if key.key == Keys.Up:
+                                active_idx = (active_idx - 1) % 2
+                                live.update(render_request(request_desc, request_detail, active_idx))
+                                live.refresh()
+                            elif key.key == Keys.Down:
+                                active_idx = (active_idx + 1) % 2
+                                live.update(render_request(request_desc, request_detail, active_idx))
+                                live.refresh()
+                            elif key.key == Keys.Enter:
+                                action = "choose"
+                                break
+                            elif key.key == Keys.ControlC:
+                                action = "exit"
+                                break
+                            elif key.key == Keys.Escape:
+                                action = "cancel"
+                                break
+                        if action is not None:  # no action no break
+                            break
+                        if not key_press:
+                            time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
+        finally:
+            input_device.close()
+
+        if action == "choose":
+            if active_idx == 0:
+                token = True
+            else:
+                token = False
+            return token
+        if action == "exit":
+            return True
+        if action == "cancel":
+            sys_log.debug(cancel_str)
+            console.print(cancel_str, style="bright_black")
+            return False
 
 
 def render_exit(ctx: AgentContext, active_idx: int):
@@ -282,7 +410,7 @@ def render_exit(ctx: AgentContext, active_idx: int):
     if body.plain.endswith("\n"):
         body.rstrip()
     panels.append(Panel(body, title=header_text, title_align="left", border_style=MAJOR_COLOR2))
-    hint = Text(f"↑/↓ (select)    Enter (choose)    Ctrl+C (exit)    Esc (cancel)\n", style="bright_black")
+    hint = Text(f"  ↑/↓ (select)    Enter (choose)    Ctrl+C (exit)    Esc (cancel)\n", style="bright_black")
     return Group(*panels, hint)
 
 
@@ -320,6 +448,8 @@ def exit_tui(ctx: AgentContext, console: Console) -> bool:
                                 break
                         if action is not None:  # no action no break
                             break
+                        if not key_press:
+                            time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
         finally:
             input_device.close()
 

@@ -2,7 +2,38 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 0
-TECOSIM_AGENT_UPDATE_VERSION: int = 15
+TECOSIM_AGENT_UPDATE_VERSION: int = 16
+"""Basic configs"""
+LOG_PATH: str = "./log"
+API_CONFIGS_PATH: str = "./config/api_configs.json"
+AGENT_CONFIGS_PATH: str = "./config/agent_configs.json"
+MCPS_PATH: str = "./mcps"
+SKILLS_PATH: str = "./skills"
+MCPS_CONFIGS_PATH: str = MCPS_PATH + "/mcps_configs.json"
+SESSION_PATH: str = "./session"
+# files under session:
+USER_HISTORY_NAME: str = "user_history"
+MESSAGES_NAME: str = "messages.json"
+CONTEXT_NAME: str = "context.json"
+SIM_DESIGN_NAME: str = "design"
+SIM_RUN_NAME: str = "run"
+"""Tool calls params"""
+ASK_USER_QUESTION_MAX_QUESTION: int = 4
+ASK_USER_QUESTION_MIN_QUESTION: int = 1
+ASK_USER_QUESTION_MAX_OPTION: int = 4
+ASK_USER_QUESTION_MIN_OPTION: int = 2
+BASH_TIMEOUT_MS_MAX: int = 600000
+BASH_TIMEOUT_MS_DEFAULT: int = 120000
+GLOB_FILE_ENTRIES_DEFAULT: int = 250
+GREP_FILE_HEAD_LIMIT_DEFAULT: int = 250
+READ_FILE_MAX_LINE: int = 10000
+READ_FILE_ENCODING_DEFAULT: str = "utf-8"
+WRITE_FILE_MODE_DEFAULT: str = "write"
+WRITE_FILE_ENCODING_DEFAULT: str = "utf-8"
+EDIT_FILE_ENCODING_DEFAULT: str = "utf-8"
+WEB_SEARCH_QUERY_MIN: int = 2
+READ_LOG_MAX_LINE: int = 10000
+READ_LOG_ENCODING_DEFAULT: str = "utf-8"
 """Bash command risk"""
 BASH_HIGH_RISK_LABEL = "BASH_HIGH_RISK"  # high-risk (0)
 BASH_PACKAGE_LABEL = "BASH_PACKAGE"  # high-risk (0)
@@ -26,14 +57,74 @@ UNKNOWN_SESSION_TITLE: str = "(Unknown session)"
 ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
 PROGRESS_BAR_FULL: str = "█"  # █ ■
 PROGRESS_BAR_EMPTY: str = "░"  # ░ □
-PERMISSION_REQUEST_DSEC_CHAR_MAX: int = 500
-BASH_COMMNAD_VIEW_CHAR_MAX: int = 500
-STREAM_DISPLAY_REFRESH_RATE: int = 20
-STREAM_DISPLAY_MAX_REASON_LINE: int = 10
-STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
+STOP_PROGRESS_WHEN_REQUEST: bool = False
+KEY_LISTEN_SLEEP_TIME_MS: int = 100
+SPINNER_LIVE_CHECK_GAP_MS: int = 200
+SPINNER_TERMINATE_WAIT_S: int = 10
 MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
 MAJOR_COLOR2: str = "#54A0FF"  # common major color
 REASONING_COLOR: str = "#54A0FF"
+REASON_STYLE: str = f"italic {REASONING_COLOR}"
+CONTENT_STYLE: str = "none"
+USER_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Enter: Submit)"
+USER_PROMPT_PREFIX_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
+    "Type, and behold the breath of silica",
+    "Whisper your command into the chips",
+    "Strike the silica, and watch it dream in text",
+    "Breathe syntax into the sleeping sand",
+    "Across countless hops and fibers, we hear you",
+    "Another prayer to the god of electrons, please type",
+    "Your keystroke is the avalanche waiting to happen",
+]
+LLM_REQUEST_TITLE_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
+    "Brain (but not mine) using ...",
+    "Staring into the abyss. The abyss is typing ...",
+    "Waking up the hamsters in the server room ...",
+    "Polishing the magic mirror. It takes time ...",
+    "Synapses firing in a data center far, far away ...",
+    "Even AI needs a moment to think (or pretend to) ...",
+    "Electrons and photons are dancing. Let them waltz ...",
+]
+LLM_REQUEST_DONE_TITLE: str = "LLM response latency"
+LLM_REQUEST_INTRP_TITLE: str = "LLM request interrupted"
+LLM_REQUEST_FAIL_TITLE: str = "LLM request failed"
+LLM_REQUEST_SPINNER: str = "dots2"
+TOOLS_EXECUTION_TITLE_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
+    "Reaching into the toolbox ...",
+    "Finding the right screwdriver ...",
+    "Chopping the local ingredients ...",
+    "Firing up the local stove ...",
+    "Searching the dusty archives ...",
+    "Spinning the wrench ...",
+    "Sending a carrier pigeon ...",
+    "Stripping the wires ...",
+    "Reading the local voltage ...",
+    "Grounding to local earth ...",
+    "Scanning the shelf ...",
+    "Pruning the local branches ...",
+    "Harvesting from the home garden ...",
+    "Planting a syscall ...",
+    "Raking through the local stack ...",
+    "Casting a local spell ...",
+    "Seasoning to taste, locally ...",
+    "Mapping the local terrain ...",
+    "Deploying the local appendage ...",
+    "Exploring the file system catacombs ...",
+    "Brewing a local concoction ...",
+    "Summoning the on-device daemon ...",
+    "Letting the circuits sweat ...",
+    "Deploying the desk minion ...",
+]
+TOOLS_EXECUTION_DONE_TITLE: str = "Tools execution done"
+TOOLS_EXECUTION_INTRP_TITLE: str = "Tools execution interrupted"
+TOOLS_EXECUTION_FAIL_TITLE: str = "Tools execution failed"
+TOOLS_EXECUTION_SPINNER: str = "bouncingBall"
+PERMISSION_REQUEST_DSEC_CHAR_MAX: int = 500
+BASH_COMMAND_VIEW_CHAR_MAX: int = 500
+PROGRESS_DISPLAY_REFRESH_RATE: int = 20
+STREAM_DISPLAY_REFRESH_RATE: int = 20
+STREAM_DISPLAY_MAX_REASON_LINE: int = 10
+STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
 EDIT_VIEW_RMV_BG: str = "#5F0000"  # remove line bg color
 EDIT_VIEW_ADD_BG: str = "#005F00"  # add line bg color
 EDIT_VIEW_LINE_MARGIN_SINGLE: int = 3

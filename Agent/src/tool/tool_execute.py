@@ -22,21 +22,66 @@ Revision:
 2026.5.20      Yu Huang     1.8               Web search support\n
 2026.5.21      Yu Huang     1.9               Agent MCPs support\n
 2026.5.27      Yu Huang     2.0               Glob and grep file support\n
+2026.5.30      Yu Huang     2.1               Random spinner title support & Revise spinner logic with SIGINT pass through\n
 
 Details:
 Execution of tools that TECoSim agent can call
 ------------------------------------------------------------------------------------------------------------------------
 """
 import json
+import random
 import logging
 
-from src.constants import MAJOR_COLOR1
-from src.tool import tool_def
-from typing import Any
-from src.context.agent_context import AgentContext
+from typing import Callable, Any
 from rich.progress import Progress
+from src.tool import tool_def
+from src.utility.ui_info import loading_spinner_rap
+from src.context.agent_context import AgentContext
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+
+class ToolCallsCancelled(Exception):
+    """Raised when user cancels tool calls (but this should never happen, because each tool should handle Ctrl+C int)"""
+
+
+def tool_calls_with_spinner(func: Callable, *args,
+                             waiting_desc: str | None = None, done_desc: str | None = None,
+                             intrp_desc: str | None = None, fail_desc: str | None = None,
+                             spinner: str | None = None, if_random: bool, **kwargs) -> Any:
+    """Tool calls with spinner through loading_spinner_rap"""
+    if waiting_desc is not None:
+        waiting_title = waiting_desc
+    else:
+        if if_random:
+            waiting_title = random.choice(TOOLS_EXECUTION_TITLE_LIST)
+        else:
+            waiting_title = TOOLS_EXECUTION_TITLE_LIST[0]
+    if done_desc is not None:
+        done_title = done_desc
+    else:
+        done_title = TOOLS_EXECUTION_DONE_TITLE
+    if intrp_desc is not None:
+        intrp_title = intrp_desc
+    else:
+        intrp_title = TOOLS_EXECUTION_INTRP_TITLE
+    if fail_desc is not None:
+        fail_title = fail_desc
+    else:
+        fail_title = TOOLS_EXECUTION_FAIL_TITLE
+    if spinner is not None:
+        spinner_choice = spinner
+    else:
+        spinner_choice = TOOLS_EXECUTION_SPINNER
+    result = loading_spinner_rap(func, *args,
+                                 waiting_desc=waiting_title, done_desc=done_title,
+                                 intrp_desc=intrp_title, fail_desc=fail_title,
+                                 spinner=spinner_choice,
+                                 out_except=ToolCallsCancelled("Tool call is cancelled by user"),
+                                 with_progress=True,  # add progress to target function
+                                 **kwargs)
+    return result
 
 
 def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, progress: Progress) -> list[dict[str, Any]]:

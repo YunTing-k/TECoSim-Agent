@@ -15,6 +15,8 @@ Revision:
 2026.5.15      Yu Huang     1.2               Move read lines/logs method to file_io_support.py\n
 2026.5.27      Yu Huang     1.3               Move clean_stdout/stderr_log method to simulator_support.py\n
 2026.5.28      Yu Huang     1.4               Add read-only paths support & Bugfix preview of multi-line file edit\n
+2026.5.29      Yu Huang     1.5               Bugfix of check readonly paths when path is nonexists\n
+2026.5.30      Yu Huang     1.6               Optimize the hardware occupancy of TUI\n
 
 Details:
 Support of file io with read truncation, user permission TUI and corresponding methods
@@ -22,6 +24,7 @@ Support of file io with read truncation, user permission TUI and corresponding m
 """
 import os
 import math
+import time
 import logging
 
 from pathlib import Path
@@ -351,7 +354,7 @@ def render_edit_permission(path:str, active_idx: int):
         body.append(f"{prefix1}{str_list[i]}{prefix2}\n\n", style=label_style)
     if body.plain.endswith("\n"):
         body.rstrip()
-    hint = Text(f"↑/↓ (select)    Enter (choose)\n", style="bright_black")
+    hint = Text(f"  ↑/↓ (select)    Enter (choose)\n", style="bright_black")
     panels.append(Panel(body, title=title, title_align="left", border_style=MAJOR_COLOR2))
     return Group(*panels, hint)
 
@@ -396,6 +399,8 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
                                 break
                         if action is not None:  # no action no break
                             break
+                        if not key_press:
+                            time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
         finally:
             input_device.close()
 
@@ -418,14 +423,9 @@ def check_read_only(in_path: str, ctx: AgentContext) -> tuple[bool, str]:
     """check the input str path is in read-only list in AgentContext"""
     try:
         fpath = Path(in_path)
-        if not fpath.exists():
-            return False, "Target path does not exist"
-        else:
-            resolved_fpath = fpath.resolve()
+        resolved_fpath = fpath.resolve()
 
         for base_path in ctx.system_read_only_paths:
-            if not base_path.exists():
-                continue
             resolved_base_path = base_path.resolve()
             if resolved_fpath == resolved_base_path:
                 return True, "You can't edit this path. This path is system read-only"
@@ -434,8 +434,6 @@ def check_read_only(in_path: str, ctx: AgentContext) -> tuple[bool, str]:
                     return True, f"You can't edit this path. The parent path {resolved_base_path} is system read-only"
 
         for base_path in ctx.read_only_paths:
-            if not base_path.exists():
-                continue
             resolved_base_path = base_path.resolve()
             if resolved_fpath == resolved_base_path:
                 return True, "You can't edit this path. This path is set to read-only by user"

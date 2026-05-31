@@ -19,16 +19,21 @@ Revision:
 2026.5.15      Yu Huang     1.6               Revise builtin command management with class\n
 2026.5.15      Yu Huang     1.7               Agent skills support\n
 2026.5.28      Yu Huang     1.8               Multi-line user prompt input support\n
+2026.5.29      Yu Huang     1.9               Add unknown command's completer support\n
+2026.5.31      Yu Huang     2.0               Add CLI session management support & Define used file/dir. paths in constants.py\n
 
 Details:
 Session management with create, resume
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
+import sys
 import uuid
+import json
+import shutil
 import logging
 
-from typing import Any
+from argparse import Namespace
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit import PromptSession, cursor_shapes
@@ -36,7 +41,10 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from rich.text import Text
+from rich.panel import Panel
 from rich.console import Console
+from src.utility import basic_utils, ui_info
 from src.utility.command import BuiltinCommands, BUILTIN_UNKNOWN
 from src.constants import *
 
@@ -89,7 +97,7 @@ class CmdCompleter(Completer):
                 )
         """unmatched command"""
         if self.cmd_unknown:
-            display = "/" + after_slash
+            display = "/" + after_slash + " "
             meta = "Unknown command"
             yield Completion(
                 display,
@@ -146,7 +154,8 @@ def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
     cmd_completer = CmdCompleter(commands=[cmd for cmd, (_, _, _) in cmd_object],
                                  meta_dict={cmd: label for cmd, (_, label, _) in cmd_object})
     session = PromptSession(
-        history=FileHistory(path + "/user_history"),
+        # history=FileHistory(path + "/user_history"),
+        history=FileHistory(os.path.join(path, USER_HISTORY_NAME)),
         auto_suggest=AutoSuggestFromHistory(),
         mouse_support=False,
         key_bindings=multiline_bindings(),
@@ -159,7 +168,7 @@ def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
     return session
 
 
-def query_session(session_uuid: str | None, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
+def query_session(session_uuid: str | None, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession]:
     """create a session or resume a session with given UUID"""
     if session_uuid is None:
         return create_session(console, cmd_object)
@@ -167,11 +176,12 @@ def query_session(session_uuid: str | None, console: Console, cmd_object: Builti
         return resume_session(session_uuid, console, cmd_object)
 
 
-def create_session(console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
+def create_session(console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession]:
     """create a session"""
     uuid_obj = uuid.uuid4()
     uuid_str = uuid_obj.__str__()
-    path = "./session/" + uuid_str
+    # path = "./session/" + uuid_str
+    path = os.path.join(SESSION_PATH, uuid_str)
     if not os.path.exists(path):
         try:
             os.makedirs(path)
@@ -190,12 +200,13 @@ def create_session(console: Console, cmd_object: BuiltinCommands) -> tuple[str, 
         raise RuntimeError(f"Path of session with UUID: {uuid_str} already exists")
 
 
-def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession[Any]]:
+def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinCommands) -> tuple[str, PromptSession]:
     """resume a session with given UUID"""
     try:
         uuid_obj = uuid.UUID(session_uuid)
         uuid_str = uuid_obj.__str__()
-        path = "./session/" + uuid_str
+        # path = "./session/" + uuid_str
+        path = os.path.join(SESSION_PATH, uuid_str)
         if not os.path.exists(path):
             sys_log.error(f"Resuming session of {uuid_str}'s path not exist")
             console.print(f"Resuming session of {uuid_str}'s path not exist", style="bold red")
@@ -217,3 +228,106 @@ def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinComma
         sys_log.error(f"Failed to resume session of {session_uuid} with error: {e}")
         console.print(f"Failed to resume session of {session_uuid} with error: {e}", style="bold red")
         raise RuntimeError(e)
+
+
+def session_entry_cli(args: Namespace, console: Console):
+    """session CLI operations support"""
+    if args.command != "session":
+        return
+
+    """session operations"""
+    if args.session_action == 'list':
+        session_list_cli(console)
+    elif args.session_action == 'remove':
+        session_remove_cli(args, console)
+    else:
+        sys_log.warning(f"Unknown session action: {args.session_action}")
+        console.print(f"Unknown session action: {args.session_action}", style="bold yellow")
+        sys.exit(-1)
+
+    """session action doesn't entry main program"""
+    sys.exit(0)
+
+
+def session_list_cli(console: Console):
+    """query all sessions"""
+    session_dir = SESSION_PATH
+    if not os.path.exists(session_dir):
+        sys_log.error(f"Session directory {session_dir} does not exist")
+        console.print(f"Session directory {session_dir} does not exist", style="bold red")
+        return
+
+    sessions_list:list[dict[str, str]] = []
+    for item in os.listdir(session_dir):
+        item_path = os.path.join(session_dir, item)
+        if not os.path.isdir(item_path):
+            continue
+        if not basic_utils.is_valid_uuid(item):
+            continue
+
+        context_file = os.path.join(item_path, CONTEXT_NAME)
+        try:
+            with open(context_file, 'r', encoding='utf-8') as f:
+                context = json.load(f)
+            sessions_list.append({"uuid": item, "title": context.get("session_title", UNKNOWN_SESSION_TITLE)})
+        except Exception as e:
+            sys_log.error(f"Failed to load session {item}'s context with error {e}")
+            console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
+
+    title = f"Available Sessions ({len(sessions_list)})"
+    cmd_str = Text()
+    for session in sessions_list:
+        cmd_str.append(f"Session UUID: ", style=f"white")
+        cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f"  Session title: ", style=f"white")
+        cmd_str.append(f"{session["title"]}\n", style=f"bold {MAJOR_COLOR2}")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
+def session_remove_cli(args: Namespace, console: Console):
+    """remove a session"""
+    session_dir = SESSION_PATH
+    if not os.path.exists(session_dir):
+        sys_log.error(f"Session directory {session_dir} does not exist")
+        console.print(f"Session directory {session_dir} does not exist", style="bold red")
+        return
+
+    try:
+        """validate UUID"""
+        uuid_str: str = str(args.uuid)
+        if not basic_utils.is_valid_uuid(uuid_str):
+            sys_log.error(f"Session UUID: {uuid_str} is not valid")
+            console.print(f"Session UUID: {uuid_str} is not valid", style="bold red")
+            return
+
+        """check the path"""
+        if not os.path.exists(os.path.join(session_dir, uuid_str)):
+            sys_log.error(f"Session with UUID: {uuid_str} not exists")
+            console.print(f"Session with UUID: {uuid_str} not exists", style="bold red")
+            return
+        if os.path.isfile(os.path.join(session_dir, uuid_str)):
+            sys_log.error(f"Session with UUID: {uuid_str} is a file, not a directory")
+            console.print(f"Session with UUID: {uuid_str} is a file, not a directory", style="bold red")
+            return
+
+        """delete the session folder"""
+        token = ui_info.request_tui(console=console, request_desc=f"remove the session: {uuid_str}",
+                                    request_detail=f"This session will be deleted forever",
+                                    cancel_str=f"Session remove cancelled")
+        if token:
+            shutil.rmtree(os.path.join(session_dir, uuid_str))
+            sys_log.debug(f"Session with UUID: {uuid_str} has been removed")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] has been removed")
+        else:
+            sys_log.debug(f"Session with UUID: {uuid_str} remove cancelled")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] remove cancelled")
+            return
+
+    except Exception as e:
+        sys_log.error(f"Remove session with args: {args} failed with error: {e}")
+        console.print(f"Remove session with args: {args} failed with error: {e}", style="bold red")

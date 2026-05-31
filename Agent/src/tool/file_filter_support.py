@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.27      Yu Huang     1.0               First implementation\n
+2026.5.31      Yu Huang     1.1               Define default params of all tools in constants.py\n
 
 Details:
 Support of file filter with grep and glob
@@ -22,6 +23,7 @@ import logging
 import subprocess
 
 from typing import Any
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
@@ -31,6 +33,9 @@ def glob_impl(arguments: dict[str, Any]) -> tuple[str, bool, str]:
     pattern = arguments.get("pattern")
     if not pattern:
         return "", False, "Required parameter `pattern` is missing or empty"
+    limit = arguments.get("entry_limit", GLOB_FILE_ENTRIES_DEFAULT)
+    if limit < 0:
+        return "", False, "Entry limit cannot be negative"
 
     # full glob pattern
     root = str(arguments.get("path", os.getcwd()))
@@ -45,7 +50,12 @@ def glob_impl(arguments: dict[str, Any]) -> tuple[str, bool, str]:
         file_paths = [p for p in matched_paths if os.path.isfile(p)]
         if len(file_paths) != 0:
             file_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-            return "\n".join(file_paths), True, "SUCCESS"
+            if limit == 0:  # get all paths
+                return "\n".join(file_paths), True, "SUCCESS"
+            elif len(file_paths) <= limit:  # no need to truncate
+                return "\n".join(file_paths), True, "SUCCESS"
+            else:  # need to truncate
+                return "\n".join(file_paths[:limit]) + f"\n(... truncated {len(file_paths) - limit} paths)", True, "SUCCESS"
         else:
             return "(No matches found)", True, "SUCCESS"
     except Exception as e:
@@ -65,7 +75,7 @@ def grep_impl(arguments: dict[str, Any], timeout: int) -> tuple[str, bool, str]:
     output_mode = arguments.get("output_mode", "files_with_matches")
     ignore_case = arguments.get("ignore_case", False)
     context_val = arguments.get("context")
-    head_limit = arguments.get("head_limit", 250)
+    head_limit = arguments.get("head_limit", GREP_FILE_HEAD_LIMIT_DEFAULT)
     multiline = arguments.get("multiline", False)
 
     """build rg cmd"""
