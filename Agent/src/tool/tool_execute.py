@@ -23,6 +23,8 @@ Revision:
 2026.5.21      Yu Huang     1.9               Agent MCPs support\n
 2026.5.27      Yu Huang     2.0               Glob and grep file support\n
 2026.5.30      Yu Huang     2.1               Random spinner title support & Revise spinner logic with SIGINT pass through\n
+2026.6.1       Yu Huang     2.2               Define all used status labels in constants.py\n
+2026.6.3       Yu Huang     2.3               Add cron tasks support\n
 
 Details:
 Execution of tools that TECoSim agent can call
@@ -116,6 +118,15 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
         elif func_name.lower() == "ask_user_question":
             results = tool_def.ask_user_question(arguments, ctx, progress)
             user_addons = None
+        elif func_name.lower() == "create_cron":
+            results = tool_def.create_cron(arguments, ctx, progress)
+            user_addons = None
+        elif func_name.lower() == "query_cron":
+            results = tool_def.query_cron(ctx, progress)
+            user_addons = None
+        elif func_name.lower() == "remove_cron":
+            results = tool_def.remove_cron(arguments, ctx, progress)
+            user_addons = None
         elif func_name.lower() == "bash":
             results = tool_def.bash(arguments, ctx, progress)
             user_addons = None
@@ -169,11 +180,11 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
         else:
             sys_log.warning(f"Tool: {func_name} is undefined")
             progress.console.print(f"Tool: {func_name} is undefined\r", style="bold yellow")
-            results = {"status": "FAIL", "info": f"Tool: {func_name} is undefined"}
+            results = {"status": FAIL_LABEL, "info": f"Tool: {func_name} is undefined"}
             user_addons = None
         return results, user_addons
     except Exception as e:
         sys_log.error(f"Tool {func_name} execution failed with error: {e}")
         progress.console.print(f"Tool {func_name} execution failed with error: {e}\r", style="bold red")
-        results = {"status": "FAIL", "info": f"Tool {func_name} execution failed with error: {e}"}
+        results = {"status": FAIL_LABEL, "info": f"Tool {func_name} execution failed with error: {e}"}
         return results, None

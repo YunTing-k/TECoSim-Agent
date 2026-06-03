@@ -165,7 +165,7 @@ def get_field(str_in: str | None, key: str="title") -> str | None:
             title = _extract_key_from_dict(content, key)
             if title:
                 return str(title)
-    except Exception as e:
+    except Exception:
         pass
 
     """find all possible json sub-string"""
@@ -176,7 +176,7 @@ def get_field(str_in: str | None, key: str="title") -> str | None:
                 title = _extract_key_from_dict(content, key)
                 if isinstance(title, str) and title:
                     return str(title)
-        except Exception as e:
+        except Exception:
             continue
 
     """extract key with regx"""

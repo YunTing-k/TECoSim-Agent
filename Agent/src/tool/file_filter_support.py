@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.27      Yu Huang     1.0               First implementation\n
 2026.5.31      Yu Huang     1.1               Define default params of all tools in constants.py\n
+2026.6.1       Yu Huang     1.2               Define all used status labels in constants.py\n
 
 Details:
 Support of file filter with grep and glob
@@ -51,13 +52,13 @@ def glob_impl(arguments: dict[str, Any]) -> tuple[str, bool, str]:
         if len(file_paths) != 0:
             file_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
             if limit == 0:  # get all paths
-                return "\n".join(file_paths), True, "SUCCESS"
+                return "\n".join(file_paths), True, SUCCESS_LABEL
             elif len(file_paths) <= limit:  # no need to truncate
-                return "\n".join(file_paths), True, "SUCCESS"
+                return "\n".join(file_paths), True, SUCCESS_LABEL
             else:  # need to truncate
-                return "\n".join(file_paths[:limit]) + f"\n(... truncated {len(file_paths) - limit} paths)", True, "SUCCESS"
+                return "\n".join(file_paths[:limit]) + f"\n(... truncated {len(file_paths) - limit} paths)", True, SUCCESS_LABEL
         else:
-            return "(No matches found)", True, "SUCCESS"
+            return "(No matches found)", True, SUCCESS_LABEL
     except Exception as e:
         return "", False, f"Recursive match with `pattern`: {pattern} failed with error: {e}"
 
@@ -141,7 +142,7 @@ def grep_impl(arguments: dict[str, Any], timeout: int) -> tuple[str, bool, str]:
 
     # rg return code: 0=match found，1=no match，>1=error
     if proc.returncode == 1:
-        return "(No matches found)", True, "SUCCESS"
+        return "(No matches found)", True, SUCCESS_LABEL
     if proc.returncode >= 2:
         proc.terminate()
         try:
@@ -154,11 +155,11 @@ def grep_impl(arguments: dict[str, Any], timeout: int) -> tuple[str, bool, str]:
     """post-process"""
     output = stdout
     if head_limit == 0:  # 0 unlimited
-        return output, True, "SUCCESS"
+        return output, True, SUCCESS_LABEL
 
     lines = output.splitlines()
     if len(lines) > head_limit:
         truncated = lines[:head_limit]
-        return "\n".join(truncated) + f"\n(... truncated {len(lines) - head_limit} lines)", True, "SUCCESS"
+        return "\n".join(truncated) + f"\n(... truncated {len(lines) - head_limit} lines)", True, SUCCESS_LABEL
     else:
-        return output, True, "SUCCESS"
+        return output, True, SUCCESS_LABEL

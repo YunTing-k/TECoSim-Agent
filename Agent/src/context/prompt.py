@@ -23,20 +23,25 @@ Revision:
 2026.5.28      Yu Huang     2.0               Add read-only paths support\n
 2026.5.29      Yu Huang     2.1               Revise displays of agent message & Fix incorrect empty message judgment\n
 2026.5.31      Yu Huang     2.2               Define used file/dir. paths in constants.py\n
+2026.6.2       Yu Huang     2.3               Add left padding with icon when printing LLM's messages & Revise the mark
+                                              of skill content\n
+2026.6.3       Yu Huang     2.4               Add flag of if display skills and crons when resuming session\n
 
 Details:
 Prompts management with create, assemble, resume, save, load
 ------------------------------------------------------------------------------------------------------------------------
 """
 import os
-import logging
 import json
+import logging
 import rich.box
 
 from typing import Any
+from datetime import datetime
 from openai import Stream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from rich.table import Table
 from rich.console import Group, Console
 from rich.text import Text
 from rich.panel import Panel
@@ -163,8 +168,10 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
 
 def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's dynamic boundaries with AgentContext"""
+    now = datetime.now()
     prompts = [{"role": "system", "content":
                 "# Environment\n"
+                f"Today is: {now.strftime("%Y-%m-%d")}\n"
                 "You have been invoked in the following environment: \n"
                 f" - Platform: {get_platform_info()[0]} {get_platform_info()[1]} version: {get_platform_info()[2]}\n"
                 f" - Primary working directory: {os.getcwd()}\n"
@@ -226,13 +233,21 @@ def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
+        as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
         skill_str = Text("<A skill is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
+        display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
+        cron_str = Text("<Cron tasks are invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
+        display_cron = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
         for msg in messages:
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
-                if ("skill_directory" in msg["content"]) and ("skill_content" in msg["content"]):
+                if (not display_skill and ("skill_directory" in msg["content"]) and ("<skill_content>" in msg["content"])
+                        and ("</skill_content>" in msg["content"])):
                     console.print(Panel(skill_str, box=rich.box.SQUARE))
+                    continue
+                if not display_cron and ("<cron_tasks>" in msg["content"]) and ("</cron_tasks>" in msg["content"]):
+                    console.print(Panel(cron_str, box=rich.box.SQUARE))
                     continue
                 user_prefix_str = Text("History user input:\n", style=f"bright_black")
                 user_prefix_str.append(f"{AGENT_CONSOLE_ICON} " + msg["content"], style="white")
@@ -242,20 +257,33 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                 assistant_reasoning = get_reasoning(msg)
                 if assistant_reasoning not in (None, ""):
                     console.print("\n")
-                    if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                        console.print(ReasonMD("{Think}: " + assistant_reasoning))
+                    t = Table(show_header=False, show_edge=False, padding=0,
+                              box=None, collapse_padding=True)
+                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
+                                 vertical="top")
+                    t.add_column(vertical="top")
+                    if as_md:
+                        t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                                  ReasonMD("{Think}: " + assistant_reasoning))
                     else:
-                        console.print("{Think}: " + assistant_reasoning, style=REASON_STYLE)
+                        t.add_row(Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
+                    console.print(t)
                     console.print("")
 
                 """display chat"""
                 if msg["content"] not in (None, ""):
                     if assistant_reasoning in (None, ""):
                         console.print("")
-                    if ctx.agent_configs["RENDER_RESPONSE_AS_MD"]:
-                        console.print(ContentMD(msg["content"]))
+                    t = Table(show_header=False, show_edge=False, padding=0,
+                              box=None, collapse_padding=True)
+                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
+                                 vertical="top")
+                    t.add_column(vertical="top")
+                    if as_md:
+                        t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(msg["content"]))
                     else:
-                        console.print(msg["content"], style=CONTENT_STYLE)
+                        t.add_row(Text(msg["content"], style=CONTENT_STYLE))
+                    console.print(t)
                     console.print("")
                 if msg["tool_calls"] is not None:
                     for tool_calls in msg["tool_calls"]:
@@ -352,7 +380,7 @@ def llm_response_manage(response, ctx: AgentContext, console: Console) -> list[d
         return too_calls
 
 
-def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: Console) -> list[dict[str, str]] | None:
+def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: Console) -> list[dict[str, Any]] | None:
     """realization of managing stream LLM responses in main agent-loop"""
 
     """check the type"""
@@ -405,7 +433,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
     assistant_reasoning = get_reasoning(dumped_msg)
     assistant_chat: str | None = dumped_msg.get("content", None)
     # (string, will be loaded to json when called)
-    assistant_tool_calls: list[dict[str, str]] | None = dumped_msg.get("tool_calls", None)
+    assistant_tool_calls: list[dict[str, Any]] | None = dumped_msg.get("tool_calls", None)
 
     """count update"""
     if assistant_reasoning is not None:
@@ -444,20 +472,32 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
     """display reasoning"""
     if collected_reasoning not in (None, ""):
         parts.append(Text("\n"))
+
+        t = Table(show_header=False, show_edge=False, padding=0,
+                  box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top")
         if as_md:
-            parts.append(ReasonMD("{Think}: " + collected_reasoning))
+            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + collected_reasoning))
         else:
-            parts.append(Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
+            t.add_row(Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
+        parts.append(t)
         parts.append(Text("\n"))
 
     """display chat"""
     if collected_content not in (None, ""):
         if collected_reasoning in (None, ""):
             parts.append(Text("\n"))
+
+        t = Table(show_header=False, show_edge=False, padding=0,
+                  box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top")
         if as_md:
-            parts.append(ContentMD(collected_content))
+            t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(collected_content))
         else:
-            parts.append(Text(collected_content, style=CONTENT_STYLE))
+            t.add_row(Text(collected_content, style=CONTENT_STYLE))
+        parts.append(t)
         parts.append(Text("\n"))
 
     return Group(*parts)
@@ -489,10 +529,15 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         else:
             reason_display = collected_reasoning
 
+        t = Table(show_header=False, show_edge=False, padding=0,
+                  box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top")
         if as_md:
-            parts.append(ReasonMD("{Think}: " + reason_display))
+            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + reason_display))
         else:
-            parts.append(Text("{Think}: " + reason_display, style=REASON_STYLE))
+            t.add_row(Text("{Think}: " + reason_display, style=REASON_STYLE))
+        parts.append(t)
         parts.append(Text("\n"))
 
     """display chat with truncation for long output"""
@@ -516,16 +561,21 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         else:
             display_content = collected_content
 
+        t = Table(show_header=False, show_edge=False, padding=0,
+                  box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top")
         if as_md:
-            parts.append(ContentMD(display_content))
+            t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(display_content))
         else:
-            parts.append(Text(display_content, style=CONTENT_STYLE))
+            t.add_row(Text(display_content, style=CONTENT_STYLE))
+        parts.append(t)
         parts.append(Text("\n"))
 
     return Group(*parts)
 
 
-def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, console: Console) -> list[dict[str, str]] | None:
+def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, console: Console) -> list[dict[str, Any]] | None:
     """realization of managing stream LLM responses in main agent-loop"""
 
     """initialize collectors for streaming response"""
@@ -640,7 +690,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
 
     """build the complete message from collected parts"""
     if collected_tool_calls:
-        converted_tool_calls: list[dict[str, str]] = [
+        converted_tool_calls: list[dict[str, Any]] = [
             collected_tool_calls[i] for i in sorted(collected_tool_calls.keys())
         ]
     else:

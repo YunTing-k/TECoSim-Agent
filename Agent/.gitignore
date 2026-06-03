@@ -4,6 +4,7 @@
 /gateway.bat
 /update_requirements.bat
 /session/*
+/cron/cron_configs.json
 /skills/*
 /mcps/mcps_configs.json
 /mcps/sources/*

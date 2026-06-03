@@ -15,6 +15,7 @@ Revision:
 2026.1.16      Yu Huang     1.2               Add function of param level logger\n
 2026.4.16      Yu Huang     1.3               Bug fix of no file written\n
 2026.5.31      Yu Huang     1.4               Define used file/dir. paths in constants.py\n
+2026.6.2       Yu Huang     1.5               Refactor logger with composition + explicit delegation + monkey-patch
 
 Details:
 ------------------------------------------------------------------------------------------------------------------------
@@ -38,9 +39,11 @@ logging.addLevelName(LOG_LEVEL_PARAM, "PARAM")
 
 
 class Logger:
+    """Custom logger wrapper that configures the shared 'logger' singleton and adds param()."""
     def __init__(self, name: str = 'log', dev_log: bool = False):
-        self.logger = logging.getLogger("logger")
-        self.logger.setLevel(logging.DEBUG)
+        # Always use the shared 'logger' singleton so early getLogger('logger') references are preserved
+        self._logger = logging.getLogger('logger')
+        self._logger.setLevel(logging.DEBUG)
         self.config = {
             'DEBUG': 'light_black',
             'PARAM': 'light_blue',
@@ -63,16 +66,93 @@ class Logger:
             sh = logging.StreamHandler()
             sh.setLevel(logging.DEBUG)
             sh.setFormatter(log_format)
-            self.logger.addHandler(sh)
-        # fh = logging.FileHandler(filename=LOG_PATH + self.name + '_' + time_format + '.txt', mode='w')
+            self._logger.addHandler(sh)
         fh = logging.FileHandler(filename=os.path.join(LOG_PATH, self.name + '_' + time_format + '.txt'), mode='w')
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(log_format)
-        self.logger.addHandler(fh)
+        self._logger.addHandler(fh)
 
+        # Register under the given name too, so logging.getLogger(name) also returns this instance
+        if name != 'logger':
+            logging.Logger.manager.loggerDict[name] = self._logger
+
+    # Custom method
     def param(self, msg, *args, **kwargs):
         """Log 'msg % args' with severity 'PARAM'."""
-        if self.isEnabledFor(LOG_LEVEL_PARAM):
-            self.log(LOG_LEVEL_PARAM, msg, *args, **kwargs)
+        if self._logger.isEnabledFor(LOG_LEVEL_PARAM):
+            self._logger.log(LOG_LEVEL_PARAM, msg, *args, **kwargs)
 
-    logging.Logger.param = param
+    # Delegate standard logging.Logger methods via properties (IDE jump goes to stdlib source)
+    @property
+    def debug(self):
+        """See logging.Logger.debug"""
+        return self._logger.debug
+
+    @property
+    def info(self):
+        """See logging.Logger.info"""
+        return self._logger.info
+
+    @property
+    def warning(self):
+        """See logging.Logger.warning"""
+        return self._logger.warning
+
+    @property
+    def error(self):
+        """See logging.Logger.error"""
+        return self._logger.error
+
+    @property
+    def critical(self):
+        """See logging.Logger.critical"""
+        return self._logger.critical
+
+    @property
+    def exception(self):
+        """See logging.Logger.exception"""
+        return self._logger.exception
+
+    @property
+    def log(self):
+        """See logging.Logger.log"""
+        return self._logger.log
+
+    @property
+    def isEnabledFor(self):
+        """See logging.Logger.isEnabledFor"""
+        return self._logger.isEnabledFor
+
+    @property
+    def getEffectiveLevel(self):
+        """See logging.Logger.getEffectiveLevel"""
+        return self._logger.getEffectiveLevel
+
+    @property
+    def setLevel(self):
+        """See logging.Logger.setLevel"""
+        return self._logger.setLevel
+
+    @property
+    def addHandler(self):
+        """See logging.Logger.addHandler"""
+        return self._logger.addHandler
+
+    @property
+    def removeHandler(self):
+        """See logging.Logger.removeHandler"""
+        return self._logger.removeHandler
+
+    @property
+    def hasHandlers(self):
+        """See logging.Logger.hasHandlers"""
+        return self._logger.hasHandlers
+
+
+# Monkey-patch: make param() available on logging.getLogger('logger') instances
+def _param(self: logging.Logger, msg, *args, **kwargs):
+    """Log 'msg % args' with severity 'PARAM'."""
+    if self.isEnabledFor(LOG_LEVEL_PARAM):
+        self.log(LOG_LEVEL_PARAM, msg, *args, **kwargs)
+
+logging.Logger.param = _param

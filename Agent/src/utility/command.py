@@ -19,6 +19,8 @@ Revision:
 2026.5.22      Yu Huang     1.6               Summarize session title support & Builtin command of list sessions\n
 2026.5.28      Yu Huang     1.7               Add read-only paths support & Add log for non-readonly builtin cmd\n
 2026.5.31      Yu Huang     1.8               Add builtin cmd for session removal & Define used file/dir. paths in constants.py\n
+2026.6.2       Yu Huang     1.9               Revise session list's layout and add usage info\n
+2026.6.3       Yu Huang     2.0               Add cron tasks support & Add configurable title in yes or no request TUI\n
 
 Details:
 Realization of builtin commands
@@ -335,7 +337,7 @@ def cmd_permission_list(args: list[str], ctx: AgentContext, console: Console):
         cmd_str.rstrip()
 
     hint = Text()
-    hint.append(f"  Tips: You can also toggle the permission config with following command: \n", style=f"bright_black")
+    hint.append(f"  Tips: You can also toggle the permission config with following builtin command: \n", style=f"bright_black")
     hint.append(f"        /permission_toggle ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[NAME OF PERMISSION]", style=f"bold {MAJOR_COLOR1}")
     hint.append(f" (Swap ", style=f"white")
@@ -393,9 +395,9 @@ def cmd_skill_list(args: list[str], ctx: AgentContext, console: Console):
         cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR1}")
         cmd_str.append(f": ", style=f"white")
         if len(skill["description"]) > limit:
-            cmd_str.append(f" {skill["description"][:limit]}...\n\n", style=f"white")
+            cmd_str.append(f"{skill["description"][:limit]}...\n\n", style=f"white")
         else:
-            cmd_str.append(f" {skill["description"]}\n\n", style=f"white")
+            cmd_str.append(f"{skill["description"]}\n\n", style=f"white")
     if cmd_str.plain.endswith("\n\n"):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -549,7 +551,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
         return
 
-    sessions_list:list[dict[str, str]] = []
+    sessions_list:list[dict[str, Any]] = []
     current_uuid = ctx.session_uuid
     for item in os.listdir(session_dir):
         item_path = os.path.join(session_dir, item)
@@ -562,25 +564,29 @@ def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
         try:
             with open(context_file, 'r', encoding='utf-8') as f:
                 context = json.load(f)
-            # only append other sessions
+            # only append other sessions (up-to-date status of current session may not sync with file)
             if item != current_uuid:
-                sessions_list.append({"uuid": item, "title": context.get("session_title", UNKNOWN_SESSION_TITLE)})
+                sessions_list.append({"uuid": item,
+                                      "title": context.get("session_title", UNKNOWN_SESSION_TITLE),
+                                      "input_tokens": context.get("last_input_tokens", "N/A")})
         except Exception as e:
             sys_log.error(f"Failed to load session {item}'s context with error {e}")
             console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
 
-    title = f"Available Sessions ({len(sessions_list)})"
+    title = f"Available Sessions ({len(sessions_list) + 1})"
     cmd_str = Text()
-    cmd_str.append(f"({AGENT_CONSOLE_ICON} This session)", style=f"bold {MAJOR_COLOR1}")
-    cmd_str.append(f" UUID: ", style=f"white")
+    cmd_str.append(f"UUID: ", style=f"white")
     cmd_str.append(f"{current_uuid}", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(f"  Session title: ", style=f"white")
-    cmd_str.append(f"{ctx.session_title}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"  Title: ", style=f"white")
+    cmd_str.append(f"{ctx.session_title}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f" ({ctx.last_input_tokens / 1000.0:.1f} K tokens) ", style=f"bright_black")
+    cmd_str.append(f"({AGENT_CONSOLE_ICON} Current)\n", style=f"bold {MAJOR_COLOR1}")
     for session in sessions_list:
-        cmd_str.append(f"Session UUID: ", style=f"white")
+        cmd_str.append(f"UUID: ", style=f"white")
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f"  Session title: ", style=f"white")
-        cmd_str.append(f"{session["title"]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f"  Title: ", style=f"white")
+        cmd_str.append(f"{session["title"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 
@@ -628,7 +634,7 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, console: Console):
             return
 
         """delete the session folder"""
-        token = ui_info.request_tui(console=console, request_desc=f"remove the session: {uuid_str}",
+        token = ui_info.request_tui(console=console, title="Remove Session", request_desc=f"remove the session: {uuid_str}",
                                     request_detail=f"This session will be deleted forever",
                                     cancel_str=f"Session remove cancelled")
         if token:
@@ -643,6 +649,70 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, console: Console):
     except Exception as e:
         sys_log.error(f"Remove session with args: {args} failed with error: {e}")
         console.print(f"Remove session with args: {args} failed with error: {e}", style="bold red")
+
+
+def cmd_cron_list(args: list[str], ctx: AgentContext, console: Console):
+    """query all cron tasks"""
+    title = f"Available Cron Tasks ({len(ctx.cron_tasks)} total, {ctx.active_cron} active)"
+    cmd_str = Text()
+    for cron_task in ctx.cron_tasks:
+        cmd_str.append(f"ID: ", style=f"white")
+        cmd_str.append(f"{cron_task["id"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f"  Pattern: ", style=f"white")
+        cmd_str.append(f"{cron_task["cron_str"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f"  Durable: ", style=f"white")
+        if not cron_task["durable"]:
+            cmd_str.append(f"False", style=f"bright_black")
+        else:
+            cmd_str.append(f"True", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f"  Repetitive: ", style=f"white")
+        if not cron_task["if_repeat"]:
+            cmd_str.append(f"False", style=f"bright_black")
+        else:
+            cmd_str.append(f"True", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f"  Active: ", style=f"white")
+        if not cron_task["if_repeat"] and cron_task["if_end"]:
+            cmd_str.append(f"False", style=f"bright_black")
+        else:
+            cmd_str.append(f"True", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f"\nPrompt: ", style=f"white")
+        cmd_str.append(f"{cron_task["prompt"]}\n\n", style=f"bright_black")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    hint = Text()
+    hint.append(f"  Tips: You can remove any cron task with following builtin command: ", style=f"bright_black")
+    hint.append(f"/cron_remove ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"[Cron ID]", style=f"bold {MAJOR_COLOR1}")
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
+    console.print("\n")
+
+
+def cmd_cron_remove(args: list[str], ctx: AgentContext, console: Console):
+    """remove a cron task with ID"""
+    try:
+        id_str: str = args[0]
+        token = ui_info.request_tui(console=console, title="Remove Cron Task", request_desc=f"remove the cron: {id_str}",
+                                    request_detail=f"This cron task will be deleted forever",
+                                    cancel_str=f"Cron task remove cancelled")
+        if not token:
+            sys_log.debug(f"Cron with ID: {id_str} remove cancelled")
+            console.print(f"Cron with ID: [{MAJOR_COLOR2}]{id_str}[/{MAJOR_COLOR2}] remove cancelled")
+            return
+
+        if_success, remove_info = ctx.remove_cron_task(id_str)
+        if not if_success:
+            sys_log.error(f"Remove cron task with id: {id_str} failed with error, details: {remove_info}")
+            console.print(f"Remove cron task with id: {id_str} failed with error, details: {remove_info}", style="bold red")
+        else:
+            sys_log.debug(f"Remove cron task with id: {id_str} successfully")
+            console.print(f"Remove cron task with id: [{MAJOR_COLOR2}]{id_str}[/{MAJOR_COLOR2}] successfully", style="bright_black")
+    except Exception as e:
+        sys_log.error(f"Remove cron task with args: {args} failed with error: {e}")
+        console.print(f"Remove cron task with args: {args} failed with error: {e}", style="bold red")
 
 
 class BuiltinCommands:
@@ -671,6 +741,8 @@ class BuiltinCommands:
             "update_title": (cmd_update_title, "update session title", "update title of this session with history immediately"),
             "session_list": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
             "session_remove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
+            "cron_list": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
+            "cron_remove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")

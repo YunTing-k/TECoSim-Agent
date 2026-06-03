@@ -20,6 +20,7 @@ Revision:
 2026.5.21      Yu Huang     1.7               Move load_configs to basic_utils.py\n
 2026.5.23      Yu Huang     1.8               Stream response display update\n
 2026.5.30      Yu Huang     1.9               Random spinner title support & Revise spinner logic with SIGINT pass through\n
+2026.6.3       Yu Huang     2.0               Add tool choice in branch LLM request\n
 
 Details:
 Client configuration, creation
@@ -120,7 +121,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
 
 
 def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
-                        api_configs: dict[str, Any], agent_configs: dict[str, Any]):
+                        api_configs: dict[str, Any], agent_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
     """Create fast LLM model request with LLM client, messages, tools, configs for non-loop of agent"""
     params: dict[str, Any] = {
         "model": api_configs["FAST_MODEL_NAME"],
@@ -133,6 +134,8 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
     """tools"""
     if tools is not None:
         params["tools"] = tools
+        if tool_choice is not None:
+            params["tool_choice"] = tool_choice
     """reasoning support"""
     if api_configs["FAST_MODEL_ENABLE_REASONING"]:
         params["reasoning_effort"] = api_configs["FAST_MODEL_REASONING_EFFORT"]

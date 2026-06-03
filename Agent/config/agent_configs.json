@@ -3,7 +3,10 @@
     "CONTEXT_THRESHOLD": 0.9,
     "DEEPSEEK_SUPPORT": true,
     "RENDER_RESPONSE_AS_MD": true,
+    "RESUME_DISPLAY_SKILLS": false,
+    "RESUME_DISPLAY_CRONS": false,
     "AUTO_SUMMARY_TRIGGER": 1,
+    "FLATTEN_BEFORE_SUMMARY": true,
     "RANDOM_PROGRESS_TITLE": true,
 
     "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",

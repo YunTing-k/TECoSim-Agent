@@ -15,6 +15,8 @@ Revision:
 2026.5.15      Yu Huang     1.2               Disable all skills support\n
 2026.5.21-22   Yu Huang     1.3               Agent MCPs support\n
 2026.5.31      Yu Huang     1.4               Add CLI session management support\n
+2026.6.2       Yu Huang     1.5               Add CLI command support of skill list\n
+2026.6.3       Yu Huang     1.6               Add cron tasks support\n
 
 Details:
 Argument definitions of the TECoSim agent
@@ -49,6 +51,24 @@ def tecosim_agent_args() -> Namespace:
     # session remove
     session_remove = session_subparsers.add_parser('remove', help='Remove a session with UUID')
     session_remove.add_argument('uuid', type=str, help='Session\'s UUID to remove')
+
+    """sub command for durable cron tasks"""
+    cron_parser = subparsers.add_parser('cron', help='Durable cron tasks operations')
+    cron_subparsers = cron_parser.add_subparsers(dest='cron_action', help='Durable cron tasks actions')
+
+    # durable cron task list
+    cron_list = cron_subparsers.add_parser('list', help='List all durable cron tasks')
+
+    # cron task remove
+    cron_remove = cron_subparsers.add_parser('remove', help='Remove a durable cron task with ID')
+    cron_remove.add_argument('id', type=str, help='Durable cron task\'s ID to remove')
+
+    """sub command for skills"""
+    skill_parser = subparsers.add_parser('skill', help='Skill operations')
+    skill_subparsers = skill_parser.add_subparsers(dest='skill_action', help='Skill actions')
+
+    # skill list
+    skill_list = skill_subparsers.add_parser('list', help='List all skills')
 
     """sub command for MCPs"""
     mcp_parser = subparsers.add_parser('mcp', help='MCP operations')

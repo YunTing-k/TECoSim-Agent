@@ -15,6 +15,7 @@ Revision:
 2026.5.21      Yu Huang     1.2               Bugfix of skipping URL caches when quering\n
 2026.5.23      Yu Huang     1.3               Bugfix of possible none usage update\n
 2026.5.30      Yu Huang     1.4               Revise spinner logic with SIGINT pass through\n
+2026.6.1       Yu Huang     1.5               Define all used status labels in constants.py\n
 
 Details:
 Web fetch and web search support of the TECoSim agent
@@ -39,6 +40,7 @@ from rich.console import Console
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.utility import client
 from src.context import prompt
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
@@ -99,7 +101,7 @@ def check_url(url: str, console: Console) -> tuple[str, bool]:
     for net in PRIVATE_NETS:
         if ip_addr in net:
             return f"URL: {url} is within private network", False
-    return "SUCCESS", True
+    return SUCCESS_LABEL, True
 
 
 def query_url_cache(url: str, ctx: AgentContext) -> str | None:
@@ -126,7 +128,7 @@ def web_single_fetch(url_in: str, ctx: AgentContext, console: Console) -> tuple[
     """query the cache"""
     content = query_url_cache(url, ctx)
     if content is not None:
-        return content, "SUCCESS", False, url
+        return content, SUCCESS_LABEL, False, url
 
     """fetch content from URL"""
     try:
@@ -154,7 +156,7 @@ def web_single_fetch(url_in: str, ctx: AgentContext, console: Console) -> tuple[
 
     """write to cache"""
     ctx.url_caches.append({"url": url, "time": datetime.now(), "content": markdown})
-    return markdown, "SUCCESS", if_redirect, final_url
+    return markdown, SUCCESS_LABEL, if_redirect, final_url
 
 
 web_fetch_system_prompt = ("You are TECoSim Agent, developed by Yu Huang (黄雨) from Shanghai Jiao Tong University. You are "
@@ -297,7 +299,7 @@ def web_search_exa(query: str, param: WebSearchParam, console: Console)\
                 "url": r.url,
                 "snippet": snippet
             })
-        return results, "SUCCESS"
+        return results, SUCCESS_LABEL
     except Exception as e:
         sys_log.error(f"Web search backend {"Exa"} with query {query} failed with error: {e}")
         console.print(f"Web search backend {"Exa"} with query {query} failed with error: {e}", style="bold red")
@@ -331,7 +333,7 @@ def web_search_tavily(query: str, param: WebSearchParam, console: Console)\
                 "url": r.get("url", "N/A"),
                 "snippet": snippet
             })
-        return results, "SUCCESS"
+        return results, SUCCESS_LABEL
     except Exception as e:
         sys_log.error(f"Web search backend {"Tavily"} with query {query} failed with error: {e}")
         console.print(f"Web search backend {"Tavily"} with query {query} failed with error: {e}", style="bold red")
@@ -365,7 +367,7 @@ def web_search_linkup(query: str, param: WebSearchParam, console: Console)\
                 "url": r.url if r.url else "N/A",
                 "snippet": snippet
             })
-        return results, "SUCCESS"
+        return results, SUCCESS_LABEL
     except Exception as e:
         sys_log.error(f"Web search backend {"Linkup"} with query {query} failed with error: {e}")
         console.print(f"Web search backend {"Linkup"} with query {query} failed with error: {e}", style="bold red")
@@ -400,7 +402,7 @@ def web_search_ddgs(query: str, param: WebSearchParam, console: Console)\
                     "url": r.get("href", "N/A"),
                     "snippet": snippet
                 })
-            return results, "SUCCESS"
+            return results, SUCCESS_LABEL
     except Exception as e:
         sys_log.error(f"Web search backend {"DDGS"} with query {query} failed with error: {e}")
         console.print(f"Web search backend {"DDGS"} with query {query} failed with error: {e}", style="bold red")

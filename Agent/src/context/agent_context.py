@@ -20,6 +20,7 @@ Revision:
 2026.5.27      Yu Huang     1.7               Glob and grep file support\n
 2026.5.28      Yu Huang     1.8               Add read-only paths support\n
 2026.5.31      Yu Huang     1.9               Define used file/dir. paths in constants.py\n
+2026.6.3       Yu Huang     2.0               Add cron tasks support\n
 
 Details:
 Agent's context management with save/load
@@ -31,6 +32,7 @@ import json
 import logging
 
 from pathlib import Path
+from croniter import croniter
 from openai import OpenAI
 from datetime import datetime
 from argparse import Namespace
@@ -52,12 +54,29 @@ class WebFetchCancelled(Exception):
 class WebSearchCancelled(Exception):
     """Raised when user cancels web search"""
 
-
 class URLCache(TypedDict):
     """URL cache with time and content"""
     url: str
     time: datetime
     content: str
+
+class CronDump(TypedDict):
+    """Cron task information to dump"""
+    id: str
+    prompt: str
+    cron_str: str
+    if_repeat: bool
+
+class CronTask(TypedDict):
+    """Cron task for runtime"""
+    id: str
+    prompt: str
+    cron_str: str
+    cron: croniter
+    next_time: datetime
+    durable: bool
+    if_repeat: bool
+    if_end: bool
 
 
 class AgentContext:
@@ -77,6 +96,11 @@ class AgentContext:
         self.llm_client: OpenAI | None = None  # (don't dump)
         self.url_caches: list[URLCache] = []  # (don't dump)
         self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump)
+        self.durable_crons: list[CronDump] = []  # (don't dump, read-only)
+        self.session_crons: list[CronDump] = []  # (don't dump, read-only)
+        self.cron_tasks: list[CronTask] = []
+        self.cron_ids: list[str] = []
+        self.active_cron: int = 0
         # params
         self.session_uuid: str = ""  # (don't dump)
         self.session_title: str = DEFAULT_SESSION_TITLE
@@ -105,6 +129,9 @@ class AgentContext:
         self.task_end: bool = True  # (don't dump)
         self.permissions: dict[str, bool] = {
             # basic tools
+            "create_cron": False,
+            "query_cron": False,
+            "remove_cron": False,
             f"{BASH_HIGH_RISK_LABEL}": False,
             f"{BASH_PACKAGE_LABEL}": False,
             f"{BASH_NETWORK_LABEL}": False,
@@ -127,7 +154,7 @@ class AgentContext:
             "skill": False,
             "web_fetch": False,
             "web_search": False,
-            # expert tools
+            # simulation tools
             "init_design": False,
             "copy_design": False,
             "launch_simulator": False,
@@ -136,12 +163,78 @@ class AgentContext:
 
 
     def file_read_log(self, path: str):
-        """read-in file log"""
+        """read-in file log, convert input path into absolute path"""
         file_path = os.path.abspath(path)
         if path not in self.files_read.keys():
             self.files_read[file_path] = 1
         else:
             self.files_read[file_path] += 1
+
+
+    def add_cron_task(self, cron_task: CronTask):
+        """add cron task to context"""
+        self.cron_tasks.append(cron_task)  # add task in runtime
+        self.cron_ids.append(cron_task["id"])   # add id
+        assert self.active_cron >= 0
+        self.active_cron += 1
+
+
+    def remove_cron_task(self, task_id: str) -> tuple[bool, str]:
+        """remove cron task from context with id"""
+        if not task_id in self.cron_ids:
+            return False, f"Cron task with id: {task_id} not found"
+
+        try:
+            for idx, cron_task in enumerate(self.cron_tasks):
+                if cron_task["id"] == task_id:
+                    if cron_task["if_repeat"]:
+                        assert self.active_cron >= 1
+                        self.active_cron -= 1
+                    if not cron_task["if_repeat"] and not cron_task["if_end"]:
+                        assert self.active_cron >= 1
+                        self.active_cron -= 1
+                    del self.cron_tasks[idx]
+                    break
+            for idx, cid in enumerate(self.cron_ids):
+                if cid == task_id:
+                    del self.cron_ids[idx]
+            return True, SUCCESS_LABEL
+        except Exception as e:
+            return False, f"Remove cron task with id: {task_id} failed with error: {e}"
+
+
+    def save_cron_task(self):
+        """save cron tasks to files (overwrite files, duplicate task will be dropped, so make sure the id is unique)"""
+        durable_crons: list[CronDump] = []
+        session_crons: list[CronDump] = []
+        for cron in self.cron_tasks:
+            cron_dump = CronDump(
+                id=cron["id"],
+                prompt=cron["prompt"],
+                cron_str=cron["cron_str"],
+                if_repeat=cron["if_repeat"]
+            )
+            if cron["durable"]:
+                if not cron["if_repeat"]:
+                    if not cron["if_end"]:
+                        durable_crons.append(cron_dump)
+                else:
+                    durable_crons.append(cron_dump)
+            else:
+                if not cron["if_repeat"]:
+                    if not cron["if_end"]:
+                        session_crons.append(cron_dump)
+                else:
+                    session_crons.append(cron_dump)
+
+        uuid_obj = uuid.UUID(self.session_uuid)
+        uuid_str = uuid_obj.__str__()
+        path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(session_crons, f, indent=2, ensure_ascii=False)
+
+        with open(CRON_CONFIGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(durable_crons, f, indent=2, ensure_ascii=False)
 
 
     def to_dict(self, console: Console, mute: bool = False) -> dict:
@@ -213,10 +306,12 @@ class AgentContext:
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
-            # path = SESSION_PATH + uuid_str + "/context.json"
+            """context save"""
             path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
+            """durable and session cron tasks save"""
+            self.save_cron_task()
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} saved")
                 console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
@@ -231,10 +326,14 @@ class AgentContext:
         try:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
-            # path = SESSION_PATH + uuid_str + "/context.json"
+            """context load"""
             path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
+            """session cron tasks load"""
+            path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
+            with open(path, "r", encoding="utf-8") as f:
+                self.session_crons = json.load(f)  # durable cron task need manually load
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} loaded")
                 console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")

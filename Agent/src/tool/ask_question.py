@@ -14,6 +14,7 @@ Revision:
 2026.4.23      Yu Huang     1.1               Multi-select support and render optimization\n
 2026.5.12      Yu Huang     1.2               TUI event trigger support\n
 2026.5.30      Yu Huang     1.3               Optimize the hardware occupancy of TUI\n
+2026.6.1       Yu Huang     1.4               Define TUI selection prefixes in constants.py\n
 
 Details:
 Ask user question TUI that TECoSim agent can call
@@ -76,11 +77,11 @@ def render_questions(questions: list[dict[str, Any]], active_idx: int, selected_
     body = Text()
     for option_idx, option in enumerate(active_question["options"]):
         is_selected_option = selected_indices[active_idx] == option_idx
-        prefix1 = "> " if is_selected_option else "  "
+        prefix1 = OPTIONS_TO_SELECT_PREFIX if is_selected_option else OPTIONS_UN_SELECT_PREFIX
         if active_question.get("multi_select"):
-            prefix2 = " ✓" if options_choices[active_idx][option_idx] else ""
+            prefix2 = OPTIONS_SELECTED_PREFIX if options_choices[active_idx][option_idx] else OPTIONS_UNSELECTED_PREFIX
         else:
-            prefix2 = " ✓" if options_choices[active_idx] == option_idx else ""
+            prefix2 = OPTIONS_SELECTED_PREFIX if options_choices[active_idx] == option_idx else OPTIONS_UNSELECTED_PREFIX
         if is_selected_option:
             label_style = f"bold {MAJOR_COLOR2}"
             desc_style = "italic white"

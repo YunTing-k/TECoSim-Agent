@@ -21,6 +21,8 @@ Revision:
 2026.5.28      Yu Huang     1.8               Multi-line user prompt input support\n
 2026.5.29      Yu Huang     1.9               Add unknown command's completer support\n
 2026.5.31      Yu Huang     2.0               Add CLI session management support & Define used file/dir. paths in constants.py\n
+2026.6.2       Yu Huang     2.1               Revise session list's layout and add usage info\n
+2026.6.3       Yu Huang     2.2               Revise session list info & Add configurable title in yes or no request TUI\n
 
 Details:
 Session management with create, resume
@@ -33,6 +35,7 @@ import json
 import shutil
 import logging
 
+from typing import Any
 from argparse import Namespace
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
@@ -257,7 +260,7 @@ def session_list_cli(console: Console):
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
         return
 
-    sessions_list:list[dict[str, str]] = []
+    sessions_list:list[dict[str, Any]] = []
     for item in os.listdir(session_dir):
         item_path = os.path.join(session_dir, item)
         if not os.path.isdir(item_path):
@@ -269,7 +272,9 @@ def session_list_cli(console: Console):
         try:
             with open(context_file, 'r', encoding='utf-8') as f:
                 context = json.load(f)
-            sessions_list.append({"uuid": item, "title": context.get("session_title", UNKNOWN_SESSION_TITLE)})
+            sessions_list.append({"uuid": item,
+                                  "title": context.get("session_title", UNKNOWN_SESSION_TITLE),
+                                  "input_tokens": context.get("last_input_tokens", -1)})
         except Exception as e:
             sys_log.error(f"Failed to load session {item}'s context with error {e}")
             console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
@@ -277,16 +282,16 @@ def session_list_cli(console: Console):
     title = f"Available Sessions ({len(sessions_list)})"
     cmd_str = Text()
     for session in sessions_list:
-        cmd_str.append(f"Session UUID: ", style=f"white")
+        cmd_str.append(f"UUID: ", style=f"white")
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f"  Session title: ", style=f"white")
-        cmd_str.append(f"{session["title"]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f"  Title: ", style=f"white")
+        cmd_str.append(f"{session["title"]}", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
-    console.print("\n")
 
 
 def session_remove_cli(args: Namespace, console: Console):
@@ -316,7 +321,7 @@ def session_remove_cli(args: Namespace, console: Console):
             return
 
         """delete the session folder"""
-        token = ui_info.request_tui(console=console, request_desc=f"remove the session: {uuid_str}",
+        token = ui_info.request_tui(console=console, title="Remove Session", request_desc=f"remove the session: {uuid_str}",
                                     request_detail=f"This session will be deleted forever",
                                     cancel_str=f"Session remove cancelled")
         if token:

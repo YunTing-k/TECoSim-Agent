@@ -12,6 +12,7 @@ Revision:
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.21-22   Yu Huang     1.0               First implementation\n
 2026.5.31      Yu Huang     1.1               Add keyboard interrupt & Define used file/dir. paths in constants.py\n
+2026.6.1       Yu Huang     1.2               Define all used status labels in constants.py\n
 
 Details:
 Support of standard MCP servers with type of stdio, http, sse
@@ -177,7 +178,7 @@ class MCPToolRouter:
             async with client:
                 raw_results = await client.call_tool_mcp(name=tool_name, arguments=arguments, timeout=timeout)
                 results = raw_results.model_dump()
-                return results, "SUCCESS"
+                return results, SUCCESS_LABEL
         except KeyboardInterrupt:
             sys_log.warning(f"Call tool with name: {tool_name} in MCP {client.name} is cancelled by user")
             console.print(f"Call tool with name: {tool_name} in MCP {client.name} is cancelled by user", style="bold yellow")
@@ -242,7 +243,6 @@ def mcp_list_cli(mcps_configs: list[dict[str, Any]], console: Console):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
-    console.print("\n")
 
 
 def mcp_add_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console: Console):

@@ -28,6 +28,9 @@ Revision:
 2026.5.29      Yu Huang     2.5               Add auto session summary trigger threshold\n
 2026.5.30      Yu Huang     2.6               Random spinner title support & Revise spinner logic with SIGINT pass through\n
 2026.5.31      Yu Huang     2.7               Add CLI session management support\n
+2026.6.1       Yu Huang     2.8               Define all used status labels in constants.py\n
+2026.6.2       Yu Huang     2.9               Add CLI command support of skill list\n
+2026.6.3       Yu Huang     3.0               Add cron tasks support\n
 
 Details:
 Main entry point of the TECoSim agent
@@ -42,7 +45,7 @@ from src.utility import sys_logger, cli_args, ui_info, client, command
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool.tool_execute import ToolCallsCancelled
-from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support
+from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
 from src.utility.basic_utils import load_configs
 from src.constants import *
 
@@ -50,7 +53,7 @@ from src.constants import *
 arguments = cli_args.tecosim_agent_args()
 
 """create logger"""
-sys_log = sys_logger.Logger(str(os.path.basename(__file__))[0:-3], arguments.log).logger
+sys_log = sys_logger.Logger(str(os.path.basename(__file__))[0:-3], arguments.log)
 
 """create console"""
 console = Console()
@@ -58,6 +61,12 @@ console = Console()
 if __name__ == '__main__':
     """Entry point for session operations"""
     session.session_entry_cli(arguments, console)
+
+    """Entry point for cron operations"""
+    cron_support.cron_entry_cli(arguments, console)
+
+    """Entry point for skill operations"""
+    skills_support.skill_entry_cli(arguments, console)
 
     """Entry point for MCP operations"""
     mcps_support.mcp_entry_cli(arguments, console)
@@ -109,15 +118,17 @@ if __name__ == '__main__':
     ctx.session_uuid = session_uuid
     ctx.agent_session = agent_session
 
+    """load durable cron tasks"""
+    ctx.durable_crons = load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+
     """config agent context"""
     # resume context
     if ctx.args.resume is not None:
-        ctx.load_context(console=console)
-    # set MCP permission
-    ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)
-    # get tools
-    ctx.tools = tool_def.create_tools_prompts(ctx)
-    # config other filed of context
+        ctx.load_context(console=console)  # session's context json and cron json
+    ctx.cron_tasks, ctx.cron_ids = cron_support.config_cron(ctx.durable_crons, ctx.session_crons, console=console)  # config crons
+    ctx.active_cron = len(ctx.cron_tasks)
+    ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)  # set MCP permission
+    ctx.tools = tool_def.create_tools_prompts(ctx)  # get tools
     ctx.task_end = True  # previous task is ended
 
     """set the terminal title"""
@@ -131,21 +142,27 @@ if __name__ == '__main__':
 
             """user input or tool results"""
             if ctx.task_end:
-                """user prompts & request"""
+                """check cron tasks"""
                 ui_info.usage_bar(ctx=ctx, console=console)
-                user_input = ui_info.get_user_prompt(ctx)
-                results = session.cmd_lexer(user_input, cmd_object)
-                if results is not None:  # command input
-                    request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, console)
-                    if not request_llm:
-                        continue
-                else:  # plain text input
-                    ctx.messages.append({"role": "user", "content": user_input})
-                    ctx.user_prompts += 1
-                    if ctx.user_prompts == ctx.agent_configs["AUTO_SUMMARY_TRIGGER"]:  # summarize according to history
-                        title = summarize_support.summarize_session(ctx=ctx, console=console)
-                        ctx.session_title = title if title else ERROR_SESSION_TITLE
-                        ui_info.set_terminal_title(ctx.session_title)
+                cron_triggerd = cron_support.cron_listen_tui(ctx=ctx, console=console)
+                if not cron_triggerd:
+                    """user prompts & request"""
+                    user_input = ui_info.get_user_prompt(ctx)
+                    results = session.cmd_lexer(user_input, cmd_object)
+                    if results is not None:  # command input
+                        request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, console)
+                        if not request_llm:
+                            continue
+                    else:  # plain text input
+                        ctx.messages.append({"role": "user", "content": user_input})
+                        ctx.user_prompts += 1
+                        if ctx.user_prompts == ctx.agent_configs["AUTO_SUMMARY_TRIGGER"]:  # summarize according to history
+                            title = summarize_support.summarize_session(ctx=ctx, console=console)
+                            ctx.session_title = title if title else ERROR_SESSION_TITLE
+                            ui_info.set_terminal_title(ctx.session_title)
+                else:
+                    """pass cron prompts to LLM"""
+                    pass
             else:
                 """second response with previous loop's tool results"""
                 pass
@@ -178,8 +195,8 @@ if __name__ == '__main__':
                     ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
-            sys_log.warning(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
-            console.print(f"LLM request timeout: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
+            sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
+            console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
             continue
         except RequestLLMCancelled:
             """LLM API request cancelled"""

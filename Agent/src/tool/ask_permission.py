@@ -14,6 +14,7 @@ Revision:
 2026.5.12      Yu Huang     1.1               TUI event trigger support\n
 2026.5.28      Yu Huang     1.2               Truncate permission request desc if it is too long\n
 2026.5.30      Yu Huang     1.3               Optimize the hardware occupancy of TUI\n
+2026.6.1       Yu Huang     1.4               Define TUI selection prefixes in constants.py\n
 
 Details:
 Ask user permission with TUI
@@ -52,8 +53,8 @@ def render_permission(active_idx: int, request_type: str, request_desc: str):
                 "No"]
     for i in range(3):
         is_selected = active_idx == i
-        prefix1 = "> " if is_selected else "  "
-        prefix2 = " ✓" if is_selected else ""
+        prefix1 = OPTIONS_TO_SELECT_PREFIX if is_selected else OPTIONS_UN_SELECT_PREFIX
+        prefix2 = OPTIONS_SELECTED_PREFIX if is_selected else OPTIONS_UNSELECTED_PREFIX
         if is_selected:
             label_style = f"bold {MAJOR_COLOR2}"
         else:

@@ -11,6 +11,7 @@ Revision:
 ------------------------------------------------------------------------------------------------------------------------
 [Date]         [By]         [Version]         [Change Log]\n
 2026.5.14      Yu Huang     1.0               First implementation\n
+2026.6.2       Yu Huang     1.1               Revise the mark of skill content & Add CLI command support of skill list\n
 
 Details:
 Support of standard agent skills
@@ -18,8 +19,12 @@ Support of standard agent skills
 """
 import os
 import logging
+import sys
 import yaml, glob
 
+from rich.text import Text
+from rich.panel import Panel
+from argparse import Namespace
 from rich.console import Console
 from pathlib import Path
 from src.constants import *
@@ -62,7 +67,7 @@ def get_skill_description(skill_name: str, skills: list[dict[str, str]]) -> str 
 
 
 def load_skill_content(skills_root: str, skill_name: str, console: Console, manual: bool = False) -> dict[str, str] | None:
-    """load content of a skill from skills_root with given skill_name"""
+    """load content of a skill from skills_root with given `skill_name`"""
     md_file = os.path.join(skills_root, skill_name, "SKILL.md")
     if not os.path.isfile(md_file):
         sys_log.warning(f"Skill file not found: {md_file}")
@@ -88,6 +93,41 @@ def load_skill_content(skills_root: str, skill_name: str, console: Console, manu
     sys_log.debug(f"Loaded skill content for {skill_name} with {len(body)} chars")
     console.print(f"Loaded skill content for [{MAJOR_COLOR2}]{skill_name}[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(body)}[/{MAJOR_COLOR2}] chars")
     if not manual:
-        return {"skill_directory": skill_folder, "skill_content": body}
+        return {"skill_directory": skill_folder,
+                "content": "<skill_content>\n" + body + "\n</skill_content>"}
     else:
-        return {"status": f"skill manually loaded by user with /{skill_name}", "skill_directory": skill_folder, "skill_content": body}
+        return {"status": f"skill manually loaded by user with /{skill_name}",
+                "skill_directory": skill_folder,
+                "content": "<skill_content>\n" + body + "\n</skill_content>"}
+
+
+def skill_entry_cli(args: Namespace, console: Console):
+    """skill CLI operations support"""
+    if args.command != "skill":
+        return
+
+    """skill operations"""
+    if args.skill_action == 'list':
+        skill_list_cli(console)
+    else:
+        sys_log.warning(f"Unknown skill action: {args.skill_action}")
+        console.print(f"Unknown skill action: {args.skill_action}", style="bold yellow")
+        sys.exit(-1)
+
+    """skill action doesn't entry main program"""
+    sys.exit(0)
+
+
+def skill_list_cli(console: Console):
+    """query all available skills (no truncate)"""
+    skills = load_all_skill_metas(skills_root=SKILLS_PATH, console=console)
+    title = f"Available Skills ({len(skills)})"
+    cmd_str = Text()
+    for skill in skills:
+        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR1}")
+        cmd_str.append(f": ", style=f"white")
+        cmd_str.append(f"{skill["description"]}\n\n", style=f"white")
+    if cmd_str.plain.endswith("\n\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))

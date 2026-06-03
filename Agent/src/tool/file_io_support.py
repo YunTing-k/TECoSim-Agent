@@ -17,6 +17,7 @@ Revision:
 2026.5.28      Yu Huang     1.4               Add read-only paths support & Bugfix preview of multi-line file edit\n
 2026.5.29      Yu Huang     1.5               Bugfix of check readonly paths when path is nonexists\n
 2026.5.30      Yu Huang     1.6               Optimize the hardware occupancy of TUI\n
+2026.6.1       Yu Huang     1.7               Define TUI selection prefixes in constants.py\n
 
 Details:
 Support of file io with read truncation, user permission TUI and corresponding methods
@@ -345,8 +346,8 @@ def render_edit_permission(path:str, active_idx: int):
                 "No"]
     for i in range(3):
         is_selected = active_idx == i
-        prefix1 = "> " if is_selected else "  "
-        prefix2 = " ✓" if is_selected else ""
+        prefix1 = OPTIONS_TO_SELECT_PREFIX if is_selected else OPTIONS_UN_SELECT_PREFIX
+        prefix2 = OPTIONS_SELECTED_PREFIX if is_selected else OPTIONS_UNSELECTED_PREFIX
         if is_selected:
             label_style = f"bold {MAJOR_COLOR2}"
         else:

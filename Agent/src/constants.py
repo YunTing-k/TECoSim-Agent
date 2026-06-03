@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 0
-TECOSIM_AGENT_UPDATE_VERSION: int = 16
+TECOSIM_AGENT_UPDATE_VERSION: int = 17
 """Basic configs"""
 LOG_PATH: str = "./log"
 API_CONFIGS_PATH: str = "./config/api_configs.json"
@@ -11,12 +11,21 @@ MCPS_PATH: str = "./mcps"
 SKILLS_PATH: str = "./skills"
 MCPS_CONFIGS_PATH: str = MCPS_PATH + "/mcps_configs.json"
 SESSION_PATH: str = "./session"
+CRON_CONFIGS_PATH: str = "./cron/cron_configs.json"
+CRON_TASK_ID_LEN: int = 8
 # files under session:
 USER_HISTORY_NAME: str = "user_history"
 MESSAGES_NAME: str = "messages.json"
 CONTEXT_NAME: str = "context.json"
+CRON_NAME: str = "cron_configs.json"
 SIM_DESIGN_NAME: str = "design"
 SIM_RUN_NAME: str = "run"
+FAIL_LABEL: str = "FAIL"
+SUCCESS_LABEL: str = "SUCCESS"
+TIMEOUT_LABEL: str = "TIMEOUT"
+CANCELLED_LABEL: str = "CANCELLED"
+DENIED_LABEL: str = "DENIED"
+TRUNCATED_LABEL: str = "TRUNCATED"
 """Tool calls params"""
 ASK_USER_QUESTION_MAX_QUESTION: int = 4
 ASK_USER_QUESTION_MIN_QUESTION: int = 1
@@ -51,18 +60,29 @@ BASH_UNKNOWN_LABEL = "BASH_UNKNOWN"  # unknown (7)
 BASH_SAFE_LABEL = "BASH_SAFE" # no-risk (8)
 BASH_EMPTY_LABEL = "BASH_EMPTY" # no-risk (9)
 """UI"""
+MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
+MAJOR_COLOR2: str = "#54A0FF"  # common major color
 AGENT_CONSOLE_ICON: str = "✦"
+REASON_ICON: str = "⟡"
+REASON_ICON_SYLTE: str = f"bold {MAJOR_COLOR2}"
+CONTENT_ICON: str = "●"
+CONTENT_ICON_SYLTE: str = f"bold {MAJOR_COLOR1}"
+MESSAGE_PRINT_MARGIN: int = 4
 DEFAULT_SESSION_TITLE: str = "(Empty session)"
 UNKNOWN_SESSION_TITLE: str = "(Unknown session)"
 ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
 PROGRESS_BAR_FULL: str = "█"  # █ ■
 PROGRESS_BAR_EMPTY: str = "░"  # ░ □
+CRON_LISTEN_COLOR_GRADIENT: int = 64
+CRON_LISTEN_COLOR_PERIOD: float = 2.0
 STOP_PROGRESS_WHEN_REQUEST: bool = False
+OPTIONS_TO_SELECT_PREFIX: str = "❯ "
+OPTIONS_UN_SELECT_PREFIX: str = "  "
+OPTIONS_SELECTED_PREFIX: str = " ✓"
+OPTIONS_UNSELECTED_PREFIX: str = ""
 KEY_LISTEN_SLEEP_TIME_MS: int = 100
 SPINNER_LIVE_CHECK_GAP_MS: int = 200
 SPINNER_TERMINATE_WAIT_S: int = 10
-MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
-MAJOR_COLOR2: str = "#54A0FF"  # common major color
 REASONING_COLOR: str = "#54A0FF"
 REASON_STYLE: str = f"italic {REASONING_COLOR}"
 CONTENT_STYLE: str = "none"

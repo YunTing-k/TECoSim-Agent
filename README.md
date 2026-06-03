@@ -84,16 +84,17 @@ This project is still under development. The basic goals are as follows:
   **MATLAB visualization scripts**: PDN layout plotting and UNet/UnetLand prediction comparison
 
 ### TECoSim 智能体核心框架 | TECoSim Agent Core Framework (Apr.-May 2026)
-- **当前版本**: 0.0.16
-  **Current version**: 0.0.16
+- **当前版本**: 0.0.17
+  **Current version**: 0.0.17
 - **Agent 主循环** (`Agent/src/main.py`)：基于 LLM 的流式交互框架，支持快速中断、退出 TUI
   **Agent main loop**: LLM-based streaming interaction framework with fast interruption and TUI exit support
-- **工具系统（17个工具） | Tool system (17 tools)** (`Agent/src/tool/`)：
+- **工具系统（20个工具） | Tool system (20 tools)** (`Agent/src/tool/`)：
   - 用户交互：`ask_user_question` | User interaction
   - 文件操作：`glob_file`, `grep_file`, `read_file`, `write_file`, `edit_file`（含 TUI diff 编辑视图，只读路径的编辑保护） | File operations (with TUI diff editing view)
   - Shell 执行：`bash`（含命令风险检测分级系统） | Shell execution (with risk-level detection system, and edit protection of readonly paths)
   - 网页获取：`web_fetch`（URL 安全校验、私有网络拦截、HTML-to-Markdown 转换、可配置缓存）、主agent-loop上下文隔离 | Web fetching (URL security check, private network interception, HTML-to-Markdown conversion, configurable cache, main agent-loop context isolation)
-  - 网络搜索：`web_search`（Domain黑名单/白名单、可配置代理和搜索模式的四种不同的后端`Exa`/`Tavily`/`Linkup`（需要API key）与`DDGS`（不需要key），主agent-loop上下文隔离 | Web fetching (Domain blacklist/whitelist, four configurable backends: `Exa`/`Tavily`/`Linkup` (API key required) and `DDGS` (no key), with proxy and search mode, main agent-loop context isolation)
+  - 网络搜索：`web_search` Domain黑名单/白名单、可配置代理和搜索模式的四种不同的后端`Exa`/`Tavily`/`Linkup`（需要API key）与`DDGS`（不需要key），主agent-loop上下文隔离 | Web fetching (Domain blacklist/whitelist, four configurable backends: `Exa`/`Tavily`/`Linkup` (API key required) and `DDGS` (no key), with proxy and search mode, main agent-loop context isolation)
+  - 定时任务：`create_cron`, `query_cron`, `remove_cron` 标准5段cron支持，重复任务和一次性任务支持，在REPL空闲时提供TUI监听cron task并自动追加任务到上下文 | Cron tasks: Support for standard 5-field cron syntax, support for recurring tasks and one-shot tasks, and provide a TUI to monitor cron tasks when the REPL is idle, automatically appending tasks to the context
   - 技能调用：`skill`（标准技能接口） | Skill invocation (standard skill interface)
   - 仿真器接口：`check_simulator`, `init_design`, `copy_design`, `query_design_list`, `launch_simulator`, `query_run_num`, `read_log` | Simulator interface
 - **会话管理** (`Agent/src/context/session.py`)：创建/恢复/删除会话，TUI 历史记录、自动补全、验证器
@@ -104,8 +105,9 @@ This project is still under development. The basic goals are as follows:
   **Context management**: Full state serialization (save/load/resume) with token usage stats, permission status, design list
 - **内置命令系统** (`Agent/src/utility/command.py`)：
   - **仿真设计/运行管理：** 查询设计列表 (`/design_list`)、查询运行次数 (`/run_list`)
-  - **信息查询：** 查看上下文用量 (`/context`)、查看已读文件 (`/fread_list`)、查看只读路径 (`/readonly_list`)、查看缓存URL (`/url_caches`)、查看会话列表 (`/session_list`)
+  - **信息查询：** 查看上下文用量 (`/context`)、查看已读文件 (`/fread_list`)、查看只读路径 (`/readonly_list`)、查看缓存URL (`/url_caches`)、查看会话列表 (`/session_list`)、查看定时任务列表 (`/cron_list`)
   - **会话管理：** 删除会话 (`/session_remove`)
+  - **定时任务管理：** 删除定时任务 (`/cron_remove`)
   - **只读路径管理：** 添加只读路径 (`/readonly_add`)、移除只读路径 (`/readonly_remove`)
   - **权限管理：** 查看权限配置 (`/permission_list`)、切换权限开关 (`/permission_toggle`)
   - **技能管理：** 列出可用技能 (`/skill_list`)、列出已加载技能 (`/skills_loaded`)、加载指定技能 (`/<skill_name>`)
@@ -114,8 +116,9 @@ This project is still under development. The basic goals are as follows:
   
   **Built-in command system**:
   - **Simulation Design/Run Management:** Query design list (`/design_list`), query run count (`/run_list`)
-  - **Information Queries:** View context usage (`/context`), view read files (`/fread_list`), view read-only paths (`/readonly_list`), view cached URLs (`/url_caches`), view session list (`/session_list`)
+  - **Information Queries:** View context usage (`/context`), view read files (`/fread_list`), view read-only paths (`/readonly_list`), view cached URLs (`/url_caches`), view session list (`/session_list`), view cron task list (`/cron_list`)
   - **Session Management:** Remove session (`/session_remove`)
+  - **Cron Tasks Management:** Remove cron task (`/cron_remove`)
   - **Read-only Path Management:** Add read-only paths (`/readonly_add`), remove read-only paths (`/readonly_remove`)
   - **Permission Management:** View permission configs (`/permission_list`), toggle permission switches (`/permission_toggle`)
   - **Skill Management:** List available skills (`/skill_list`), list loaded skills (`/skills_loaded`), load a skill (`/<skill_name>`)

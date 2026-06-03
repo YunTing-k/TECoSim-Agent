@@ -21,6 +21,9 @@ Revision:
 2026.5.30      Yu Huang     1.8               Optimize the hardware occupancy of TUI & Random spinner title support &
                                               Revise spinner logic with SIGINT pass through\n
 2026.5.31      Yu Huang     1.9               Add standard yes or no request TUI\n
+2026.5.31      Yu Huang     2.0               Fix the bug of nested progress wrapper function\n
+2026.6.3       Yu Huang     2.1               Add gradient clor list generation with RGB and hex format & Add configurable
+                                              title in yes or no request TUI\n
 
 Details:
 UI information of agent dev version, ASCII art banner of start, error
@@ -60,6 +63,25 @@ def set_terminal_title(title: str):
         print(f"\033]0;{AGENT_CONSOLE_ICON} TECoSim Agent\007", end="", flush=True)
 
 
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    """convert rgb to hex color"""
+    r, g, b = rgb
+    for value, name in [(r, 'R'), (g, 'G'), (b, 'B')]:
+        if not isinstance(value, int):
+            sys_log.error(f"Invalid RGB value: {name}={value} must be integer")
+            raise TypeError(f"Invalid RGB value: {name}={value} must be integer")
+        if value < 0 or value > 255:
+            sys_log.error(f"Invalid RGB value: {name}={value} out of range [0, 255]")
+            raise ValueError(f"Invalid RGB value: {name}={value} out of range [0, 255]")
+
+    try:
+        hex_color = f"#{r:02X}{g:02X}{b:02X}"
+        return hex_color
+    except Exception as e:
+        sys_log.error(f"Failed to convert RGB {rgb} to hex with error: {e}")
+        raise RuntimeError(f"Failed to convert RGB {rgb} to hex with error: {e}")
+
+
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     """convert hex color to rgb"""
     hex_color = hex_color.lstrip('#').upper()
@@ -80,8 +102,35 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
         b = int(hex_color[4:6], 16)
         return r, g, b
     except Exception as e:
-        sys_log.error(f"Failed to convert hex color: {hex_color} to RGB tuples")
-        raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples")
+        sys_log.error(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
+        raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
+
+
+def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int) -> tuple[list[int], list[int], list[int]]:
+    """get gradient color RGB list according to RGB color and gradient"""
+    r_list: list[int] = []
+    g_list: list[int] = []
+    b_list: list[int] = []
+    for i in range(gradient):
+        ratio = i / (gradient - 1)
+        r_list.append(int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio))
+        g_list.append(int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio))
+        b_list.append(int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))
+    return r_list, g_list, b_list
+
+
+def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int) -> list[str]:
+    """get gradient color hex list according to hex color and gradient"""
+    start_rgb = hex_to_rgb(start_hex)
+    end_rgb = hex_to_rgb(end_hex)
+    h_list: list[str] = []
+    for i in range(gradient):
+        ratio = i / (gradient - 1)
+        h_list.append(rgb_to_hex((
+            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
+            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
+            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))))
+    return h_list
 
 
 def vertical_color_grad_text(text: str, start_rgb: tuple, end_rgb: tuple) -> Text:
@@ -224,7 +273,39 @@ def loading_spinner_rap(func: Callable, *args,
                         waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
                         with_progress: bool = False,
                         **kwargs) -> Any:
-    """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt"""
+    """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt
+
+    NOTE: signal.signal() can only be called from the main thread. When called from a
+    worker thread (e.g., nested inside another loading_spinner_rap), the signal setup
+    is skipped — the outer spinner's SIGINT handler already propagates KeyboardInterrupt
+    to this thread via ctypes injection, so it can still be interrupted.
+    """
+    is_main_thread = threading.current_thread() is threading.main_thread()
+
+    if not is_main_thread:
+        # Running in a worker thread — signal.signal() would raise:
+        #   "signal only works in main thread of the main interpreter"
+        # The outer spinner's SIGINT handler already injects KeyboardInterrupt into
+        # this thread via PyThreadState_SetAsyncExc, so Ctrl+C still works.
+        # Just run the function synchronously with a Progress display (no signal ops).
+        with Progress(
+                GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
+                SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
+                TimeElapsedColumn(),
+                transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+        ) as progress:
+            task = progress.add_task(waiting_desc, total=None)
+            try:
+                if not with_progress:
+                    ret = func(*args, **kwargs)
+                else:
+                    ret = func(*args, progress=progress, **kwargs)
+                progress.update(task, description=done_desc)
+                return ret
+            except Exception as e:
+                progress.update(task, description=fail_desc)
+                raise e
+
     result = [None]
     exception: list[Exception | None] = [None]
     stop_event = threading.Event()
@@ -240,9 +321,9 @@ def loading_spinner_rap(func: Callable, *args,
             ident = th.ident
             if ident is not None:
                 tid = ctypes.c_long(ident)
-                ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                t_ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(
                     tid, ctypes.py_object(KeyboardInterrupt))
-                if ret != 1:
+                if t_ret != 1:
                     # Failed to inject / invalid thread, clear to avoid dangling exception
                     ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
 
@@ -261,15 +342,15 @@ def loading_spinner_rap(func: Callable, *args,
                     """target function without progress"""
                     try:
                         result[0] = func(*args, **kwargs)
-                    except Exception as e:
-                        exception[0] = e
+                    except Exception as err:
+                        exception[0] = err
             else:
                 def target():
                     """target function with progress"""
                     try:
                         result[0] = func(*args, progress=progress, **kwargs)
-                    except Exception as e:
-                        exception[0] = e
+                    except Exception as err:
+                        exception[0] = err
 
             t = threading.Thread(target=target, daemon=True)
             worker_thread[0] = t
@@ -308,10 +389,10 @@ def get_user_prompt(ctx: AgentContext) -> str:
     return ""
 
 
-def render_request(request_desc: str, request_detail: str | None, active_idx: int):
+def render_request(title: str, request_desc: str, request_detail: str | None, active_idx: int):
     """render the yes or no request panel according to the selection"""
     panels = []
-    header_text = Text("Exit", style=f"bold {MAJOR_COLOR1}")
+    header_text = Text(title, style=f"bold {MAJOR_COLOR1}")
     body = Text()
     body.append(f"\nAre you sure to ", style="white")
     body.append(f"{request_desc}", style=f"bold {MAJOR_COLOR2}")
@@ -321,8 +402,8 @@ def render_request(request_desc: str, request_detail: str | None, active_idx: in
     str_list = ["Yes", "No"]
     for i in range(2):
         is_selected = active_idx == i
-        prefix1 = "> " if is_selected else "  "
-        prefix2 = " ✓" if is_selected else ""
+        prefix1 = OPTIONS_TO_SELECT_PREFIX if is_selected else OPTIONS_UN_SELECT_PREFIX
+        prefix2 = OPTIONS_SELECTED_PREFIX if is_selected else OPTIONS_UNSELECTED_PREFIX
         if is_selected:
             label_style = f"bold {MAJOR_COLOR2}"
         else:
@@ -335,7 +416,7 @@ def render_request(request_desc: str, request_detail: str | None, active_idx: in
     return Group(*panels, hint)
 
 
-def request_tui(console: Console, request_desc: str, request_detail: str | None, cancel_str: str="Request canceled") -> bool:
+def request_tui(console: Console, title: str, request_desc: str, request_detail: str | None, cancel_str: str="Request canceled") -> bool:
     """top realization of request yes or no TUI"""
     active_idx = 0  # default active option
 
@@ -345,18 +426,18 @@ def request_tui(console: Console, request_desc: str, request_detail: str | None,
         try:
             with input_device.raw_mode():
                 input_device.flush_keys()
-                with Live(render_request(request_desc, request_detail, active_idx),
+                with Live(render_request(title, request_desc, request_detail, active_idx),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:
                         key_press = input_device.read_keys()
                         for key in key_press:
                             if key.key == Keys.Up:
                                 active_idx = (active_idx - 1) % 2
-                                live.update(render_request(request_desc, request_detail, active_idx))
+                                live.update(render_request(title, request_desc, request_detail, active_idx))
                                 live.refresh()
                             elif key.key == Keys.Down:
                                 active_idx = (active_idx + 1) % 2
-                                live.update(render_request(request_desc, request_detail, active_idx))
+                                live.update(render_request(title, request_desc, request_detail, active_idx))
                                 live.refresh()
                             elif key.key == Keys.Enter:
                                 action = "choose"
@@ -400,8 +481,8 @@ def render_exit(ctx: AgentContext, active_idx: int):
     str_list = ["Yes", "No"]
     for i in range(2):
         is_selected = active_idx == i
-        prefix1 = "> " if is_selected else "  "
-        prefix2 = " ✓" if is_selected else ""
+        prefix1 = OPTIONS_TO_SELECT_PREFIX if is_selected else OPTIONS_UN_SELECT_PREFIX
+        prefix2 = OPTIONS_SELECTED_PREFIX if is_selected else OPTIONS_UNSELECTED_PREFIX
         if is_selected:
             label_style = f"bold {MAJOR_COLOR2}"
         else:
