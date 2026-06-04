@@ -5,8 +5,9 @@
 /update_requirements.bat
 /session/**/*.json
 /session/**/user_history
-# /cron/cron_configs.json
+/cron/cron_configs.json
 /mcps/sources/**/
+/mcps/mcps_configs.json
 /skills/**/
 /src/__pycache__
 /src/context/__pycache__
