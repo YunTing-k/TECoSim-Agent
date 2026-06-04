@@ -1,1 +1,19 @@
 /.VSCodeCounter
+/.vscode
+/.idea
+/gateway.bat
+/update_requirements.bat
+/session/**/*.json
+/session/**/user_history
+# /cron/cron_configs.json
+/mcps/sources/**/
+/skills/**/
+/src/__pycache__
+/src/context/__pycache__
+/src/tool/__pycache__
+/src/utility/__pycache__
+/test/__pycache__
+/test/test_config.py
+/log/*.txt
+/ssim.log
+/changelog.txt
