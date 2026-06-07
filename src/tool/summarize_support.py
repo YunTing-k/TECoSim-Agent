@@ -164,11 +164,11 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
 
     """get title"""
     try:
-        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
-                                                   ctx.llm_client, messages, tools, ctx.api_configs, ctx.agent_configs, tool_choice,
-                                                   waiting_desc="Session summarizing ...", done_desc="LLM summary latency",
-                                                   intrp_desc="Session summary interrupted", fail_desc="Session summary failed",
-                                                   spinner="arrow3", if_random=False)
+        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+                                                              ctx.llm_client, messages, tools, ctx.api_configs, ctx.agent_configs, tool_choice,
+                                                              waiting_desc="Session summarizing ...", done_desc="LLM summary latency",
+                                                              intrp_desc="Session summary interrupted", fail_desc="Session summary failed",
+                                                              spinner="arrow3", if_random=False)
         ctx.total_llm_requests += 1  # main loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:

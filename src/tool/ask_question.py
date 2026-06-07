@@ -15,6 +15,8 @@ Revision:
 2026.5.30      Yu Huang      1.3      Optimize the hardware occupancy of TUI
 2026.6.1       Yu Huang      1.4      Define TUI selection prefixes in constants.py
 2026.6.4       Yu Huang      1.5      Add assert to avoid possible type mismatch in ask question TUI
+2026.6.7       Yu Huang      1.6      Revise the display style of all ask permission TUIs & Add newline and space padding
+                                      for all ask permission TUIs
 
 Details:
 ---------
@@ -85,10 +87,10 @@ def render_questions(questions: list[dict[str, Any]], active_idx: int, selected_
             prefix2 = OPTIONS_SELECTED_PREFIX if options_choices[active_idx] == option_idx else OPTIONS_UNSELECTED_PREFIX
         if is_selected_option:
             label_style = f"bold {MAJOR_COLOR2}"
-            desc_style = "italic white"
+            desc_style = SELECTED_QUESTION_OPTION_COLOR
         else:  # default
             label_style = "white"
-            desc_style = "italic bright_black"
+            desc_style = "bright_black"
         body.append(f"{prefix1}{option['label']}{prefix2}\n", style=label_style)
         description = option.get("description", "(No desc.)")
         if option.get("label") == QUESTION_OTHER_LABEL:
@@ -117,7 +119,7 @@ def get_user_input(questions: list[dict[str, Any]], active_idx: int, selected_in
         is_empty = True
         is_modify = False
         cache = user_cache[active_idx]
-        user_input = agent_session.prompt(f"{AGENT_CONSOLE_ICON} Your idea about [{question['header']}]: ", default=cache)
+        user_input = agent_session.prompt(f"{AGENT_CONSOLE_ICON} Your idea about [{question['header']}]: \n  ", default=cache)
         user_cache[active_idx] = user_input
         if user_input.strip():
             is_empty = False

@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.5.12      Yu Huang      1.0      Separate from tool_def.py
 2026.5.28      Yu Huang      1.1      Revise the bash risk evaluate
+2026.6.5       Yu Huang      1.2      Render bash command as Markdown support
 
 Details:
 ---------
@@ -22,8 +23,12 @@ import logging
 import re
 import shlex
 
+from rich.text import Text
+from rich.table import Table
+from rich.console import Group
 from src.constants import *
 from src.context.agent_context import AgentContext
+from src.utility.basic_utils import BashMD
 
 sys_log = logging.getLogger('logger')
 
@@ -318,7 +323,7 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         # If -c or -e (inline script), treat as unknown / higher risk
         for t in s_tokens[1:]:
             if t in ('-c', '-e'):
-                return BASH_UNKNOWN_LABEL, f"Inline script execution: {cmd}", 7
+                return BASH_INLINE_SCRIPT_LABEL, f"Inline script execution: {cmd}", 4
         return BASH_FILE_LABEL, f"Script execution: {cmd}", 4
 
     # Safe commands (read-only / informational)
@@ -524,3 +529,34 @@ def evaluate_bash_risk(commands: str, ctx: AgentContext) -> tuple[str, str, int]
     # Pick the fragment with the *lowest* level (= highest risk)
     idx = min(range(len(cmd_level_list)), key=lambda i: cmd_level_list[i])
     return cmd_risk_list[idx], cmd_reason_list[idx], cmd_level_list[idx]
+
+
+def get_bash_render(commands: str, as_md: bool) -> Group:
+    """get the renderable of a bash command string"""
+    parts = []
+    lines = commands.strip('\n').split('\n')
+    line_count = len(lines)
+    line_num_width = len(str(line_count))
+
+    if as_md:
+        t = Table(show_header=False, show_edge=False, padding=(0, 0, 0, BASH_VIEW_LEFT_SPACE_MARGIN),
+                  box=None, collapse_padding=True)
+        t.add_column(vertical="middle")
+        numbered_lines = []
+        for i, line in enumerate(lines, 1):
+            numbered_lines.append(f"{i:>{line_num_width}}:{' ' * BASH_VIEW_LINE_NUM_MARGIN}{line}")
+        numbered_commands = "\n".join(numbered_lines)
+        bash_content = BashMD("```bash\n" + numbered_commands.strip('\n') + "\n```")
+        t.add_row(bash_content)
+    else:
+        t = Table(show_header=False, show_edge=False, padding=0,
+                  box=None, collapse_padding=True)
+        t.add_column(no_wrap=True, vertical="middle")
+        t.add_column(vertical="middle")
+        line_numbers = "\n".join(
+            f"{' ' * BASH_VIEW_LEFT_SPACE_MARGIN}{i:>{line_num_width}}{":" + ' ' * BASH_VIEW_LINE_NUM_MARGIN}"
+            for i in range(1, line_count + 1))
+        t.add_row(Text(f"{line_numbers}", style=f"bright_black"), Text(commands.strip('\n')))
+
+    parts.append(t)
+    return Group(*parts)

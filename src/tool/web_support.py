@@ -191,11 +191,11 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
     """process the Markdown content with prompt through LLM"""
     messages = create_web_fetch_prompts(in_prompt, content)
     try:
-        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
-                                                    ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                    waiting_desc = "Web fetch summarizing ...", done_desc = "LLM summary latency",
-                                                    intrp_desc = "Web fetch interrupted", fail_desc = "Web fetch failed",
-                                                    spinner = "arrow3", if_random = False)
+        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+                                                              ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
+                                                              waiting_desc = "Web fetch summarizing ...", done_desc = "LLM summary latency",
+                                                              intrp_desc = "Web fetch interrupted", fail_desc = "Web fetch failed",
+                                                              spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -455,11 +455,11 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
     """process the web search returns content with prompt through LLM"""
     messages = create_web_search_prompts(query, content)
     try:
-        response: ChatCompletion = client.llm_request_with_spinner(client.request_branch_fast,
-                                                    ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                    waiting_desc = "Web search summarizing ...", done_desc = "LLM summary latency",
-                                                    intrp_desc="Web search interrupted", fail_desc="Web search failed",
-                                                    spinner = "arrow3", if_random = False)
+        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+                                                              ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
+                                                              waiting_desc = "Web search summarizing ...", done_desc = "LLM summary latency",
+                                                              intrp_desc="Web search interrupted", fail_desc="Web search failed",
+                                                              spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:

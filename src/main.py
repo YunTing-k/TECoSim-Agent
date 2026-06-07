@@ -30,6 +30,9 @@ Revision:
 2026.6.1       Yu Huang      2.8      Define all used status labels in constants.py
 2026.6.2       Yu Huang      2.9      Add CLI command support of skill list
 2026.6.3       Yu Huang      3.0      Add cron tasks support
+2026.6.5       Yu Huang      3.1      Add --nosystem, --notools, --nocrons support
+2026.6.6       Yu Huang      3.2      Basic support of agent tasks as Scoreboard with lock
+2026.6.7       Yu Huang      3.3      Support of agent tasks display & Refactor agent listening
 
 Details:
 ---------
@@ -42,9 +45,10 @@ import openai
 
 from pathlib import Path
 from rich.console import Console
-from src.utility import sys_logger, cli_args, ui_info, client, command
+from src.utility import sys_logger, cli_args, ui_info, client, command, agent_listen
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
+from src.tool.scoreboard import Scoreboard
 from src.tool.tool_execute import ToolCallsCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
 from src.utility.basic_utils import load_configs
@@ -92,11 +96,19 @@ if __name__ == '__main__':
 
     """load skills and query prompts"""
     if not ctx.args.noskills:
+        # skills are readonly in runtime
         ctx.skills = skills_support.load_all_skill_metas(skills_root=SKILLS_PATH, console=console)
+    else:
+        sys_log.debug("All skills are disabled in main agent and subagent")
+        console.print("All skills are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
 
     """load MCPs configs and configure MCPs"""
     if not ctx.args.nomcps:
+        # MCPs are readonly in runtime
         ctx.mcps_configs = load_configs(configs_path=MCPS_CONFIGS_PATH, name="MCPs", console=console)
+    else:
+        sys_log.debug("All MCPs are disabled in main agent and subagent")
+        console.print("All MCPs are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
     mcp_clients = mcps_support.config_mcps(configs=ctx.mcps_configs, init_timeout=ctx.agent_configs["MCP_INIT_TIMEOUT_S"],
                                            timeout=ctx.agent_configs["MCP_TIMEOUT_S"], console=console)
     ctx.mcp_router = mcps_support.MCPToolRouter(clients=mcp_clients)
@@ -119,18 +131,42 @@ if __name__ == '__main__':
     ctx.session_uuid = session_uuid
     ctx.agent_session = agent_session
 
+    """create/resume scoreboard"""
+    board = Scoreboard()
+    board.session_uuid = ctx.session_uuid
+    sys_log.debug("Scoreboard of TECoSim Agent created")
+    console.print(f"Scoreboard of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
+    if ctx.args.resume is not None:
+        board.load_from_file(console=console, mute=False)
+
     """load durable cron tasks"""
-    ctx.durable_crons = load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+    if not ctx.args.nocrons:
+        # cron tasks can be modified in runtime, first read durable tasks
+        ctx.durable_crons = load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+    else:
+        sys_log.debug("All cron tasks are disabled in main agent and subagent")
+        console.print("All cron tasks are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
 
     """config agent context"""
     # resume context
     if ctx.args.resume is not None:
-        ctx.load_context(console=console)  # session's context JSON and cron JSON
+        # load session's context
+        # 1). read main context JSON
+        # 2). read session tasks (cron tasks can be modified in runtime)
+        # all context will be saved in save_sessions
+        ctx.load_context(console=console)
     ctx.cron_tasks, ctx.cron_ids = cron_support.config_cron(ctx.durable_crons, ctx.session_crons, console=console)  # config crons
     ctx.active_cron = len(ctx.cron_tasks)
     ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)  # set MCP permission
-    ctx.tools = tool_def.create_tools_prompts(ctx)  # get tools
-    ctx.task_end = True  # previous task is ended
+    # get all agent tools
+    # 1). agent tools (basic, simulation)
+    # 2). MCPs tools
+    if not ctx.args.notools:
+        ctx.tools = tool_def.create_tools_prompts(ctx)
+    else:
+        sys_log.debug("All tools in main agent are disabled")
+        console.print("All tools in main agent are disabled", style=f"bold {MAJOR_COLOR1}")
+    ctx.task_end = True  # previous task is always ended
 
     """set the terminal title"""
     ui_info.set_terminal_title(ctx.session_title)
@@ -138,20 +174,20 @@ if __name__ == '__main__':
     """core agent loop"""
     while True:
         try:
-            """save messages and context"""
-            file_io_support.save_sessions(ctx, console, True)
+            """save messages, context and scoreboard"""
+            file_io_support.save_sessions(ctx, board, console, True)
 
             """user input or tool results"""
             if ctx.task_end:
                 """check cron tasks"""
                 ui_info.usage_bar(ctx=ctx, console=console)
-                cron_triggerd = cron_support.cron_listen_tui(ctx=ctx, console=console)
+                cron_triggerd = agent_listen.listen_tui(ctx=ctx, board=board, console=console)
                 if not cron_triggerd:
                     """user prompts & request"""
                     user_input = ui_info.get_user_prompt(ctx)
                     results = session.cmd_lexer(user_input, cmd_object)
                     if results is not None:  # command input
-                        request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, console)
+                        request_llm = cmd_object.execute_cmd(results[0], results[1], ctx, board, console)
                         if not request_llm:
                             continue
                     else:  # plain text input
@@ -170,8 +206,8 @@ if __name__ == '__main__':
 
             """send LLM request"""
             sys_log.debug("LLM request start")
-            response = client.llm_request_with_spinner(client.request_loop_main, ctx.llm_client, ctx,
-                                                       if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
+            response = client.llm_request_spinner(client.request_loop_main, ctx.llm_client, ctx,
+                                                  if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
             sys_log.debug("LLM request end")
 
             """manage the LLM response"""
@@ -182,8 +218,11 @@ if __name__ == '__main__':
                 ctx.task_end = False
                 sys_log.debug("Tools call start")
                 ctx.tool_calls_prompts += len(assistant_tool_calls)
-                tools_response = tool_execute.tool_calls_with_spinner(tool_execute.execute_tools, assistant_tool_calls, ctx,
-                                                if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
+                tools_response = tool_execute.tool_calls_spinner_board(
+                    tool_execute.execute_tools,
+                    assistant_tool_calls, ctx, board,
+                    board=board,
+                    if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
                 ctx.messages.extend(tools_response)
                 ctx.tool_results_prompts += len(tools_response)
             else:
@@ -210,15 +249,15 @@ if __name__ == '__main__':
             sys_log.warning(f"LLM request canceled, but the connection is not killed, token consumption can't be avoided")
             console.print(f"LLM request canceled, but the connection is not killed, token consumption can't be avoided",
                           style="bold yellow")
-            ui_info.normal_exit(ctx, console, "TECoSim Agent exits with RequestLLMCancelled")
+            ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with RequestLLMCancelled")
         except ToolCallsCancelled:
             """Tool calls are cancelled and doesn't handle properly"""
             sys_log.error(f"Tool calls are cancelled, but the interrupt is not handled properly")
             console.print(f"Tool calls are cancelled, but the interrupt is not handled properly", style="bold red")
-            ui_info.normal_exit(ctx, console, "TECoSim Agent exits with KeyboardInterrupt")
+            ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")
         except KeyboardInterrupt:
             """User interrupt"""
-            ui_info.normal_exit(ctx, console, "TECoSim Agent exits with KeyboardInterrupt")
+            ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")
         except Exception as e:
             """Unexpected error"""
-            ui_info.error_exit(ctx, console, e)
+            ui_info.error_exit(ctx, board, console, e)

@@ -15,7 +15,7 @@ The modern display systems represent a **complex multi-level coupled hierarchica
 </div>
 
 之前的个人项目[TECoSim仿真器](https://github.com/YunTing-k/TECoSim) （暂未开源），采用**自底向上逐层抽象** + **系统级端到端仿真** 的**跨层次协同的仿真方法**对显示系统进行建模与仿真。
-With my previous project [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not open yet), we can modeling the display system with a **cross-level co-simulation methodology** that combines **bottom-up hierarchical abstraction** with **system-level end-to-end simulation**.
+With my previous project [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not open yet), we can model the display system with a **cross-level co-simulation methodology** that combines **bottom-up hierarchical abstraction** with **system-level end-to-end simulation**.
 
 建模的层级包括 | The modeling levels includes:
 1. - **物理层（Material/Interface）**：底层物理材料、界面的光、电学特性
@@ -71,10 +71,12 @@ This project is still under development. The basic goals are as follows:
   **Natural language driven display panel design**: Simply describe your design goals in natural language, and the agent automatically completes the entire workflow of panel design, simulation, and verification
 - **TECoSim 仿真器无缝集成**：智能体自动配置仿真参数、调用仿真器、解析输出结果
   **Seamless TECoSim simulator integration**: The agent automatically configures simulation parameters, invokes the simulator, and parses output results
-- **多工具协同**：内置 20+ 工具（文件操作、Shell 执行、网页获取、网络搜索、定时任务等）
-  **Multi-tool collaboration**: Built-in 20+ tools (file operations, shell execution, web fetching, web search, cron tasks, etc.)
+- **多工具协同**：内置 20+ 工具（文件操作、Shell 执行、网页获取、网络搜索、定时任务、任务看板等）
+  **Multi-tool collaboration**: Built-in 20+ tools (file operations, shell execution, web fetching, web search, cron tasks, scoreboard tasks, etc.)
 - **双模型架构**：主模型处理复杂/模糊任务，快速模型处理简单/确定性任务
   **Dual-model architecture**: Primary model handles complex/ambiguous tasks, fast model handles simple/deterministic tasks
+- **Agent 任务看板（Scoreboard）**：线程安全的任务系统，支持任务创建/更新/查询/列表、状态流转与依赖管理，在监听 TUI 和执行 Spinner 中实时显示任务进度
+  **Agent scoreboard task system**: Thread-safe task management with create/update/get/list operations, status transitions and dependency tracking, with real-time progress display in listening TUI and execution spinner
 - **完善的权限控制**：所有敏感操作均需用户通过 TUI 确认
   **Comprehensive permission control**: All sensitive operations require user confirmation via TUI
 - **会话管理**：支持多会话创建/恢复/删除，自动保存上下文与消息历史
@@ -132,6 +134,9 @@ python -m src.main
 |------|-------------------|
 | `-l`, `--log` | 启用开发者日志（输出到控制台） / Enable developer logger (output to console) |
 | `-r <UUID>`, `--resume <UUID>` | 恢复指定会话 / Resume a session with given UUID |
+| `--nosystem` | 禁用主智能体系统提示词 / Disable main agent's system prompts |
+| `--notools` | 禁用主智能体工具 / Disable main agent's tools |
+| `--nocrons` | 禁用所有定时任务 / Disable all cron tasks |
 | `--noskills` | 禁用所有技能 / Disable all skills |
 | `--nomcps` | 禁用所有 MCP / Disable all MCPs |
 | `--dangerously_allow_all` | **危险**：允许所有权限（可能损坏您的文件或系统） / **Dangerous**: Allow all permissions (may damage your files or system) |
@@ -186,6 +191,8 @@ All commands start with `/` in the agent interaction interface:
 | `/mcp_list` | 查看 MCP 信息 / View MCP information |
 | `/cron_list` | 查看定时任务列表 / View cron task list |
 | `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
+| `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
+| `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
 | `/update_title` | 更新当前会话标题 / Update current session title |
 
 ---
@@ -389,6 +396,7 @@ Configuration files are located in the `./config/` directory:
 | `FLATTEN_BEFORE_SUMMARY` | 摘要前是否扁平化消息 / Flatten messages before summary |
 | `RANDOM_PROGRESS_TITLE` | 随机进度标题 / Random progress title |
 | `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 渲染响应 / Render response as Markdown |
+| `RENDER_BASH_AS_MD` | 是否以 Markdown 渲染 Bash 命令输出 / Render bash command output as Markdown |
 | `DEEPSEEK_SUPPORT` | 是否启用 DeepSeek 格式支持 / Enable DeepSeek format support |
 | `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB）/ File read size limit (MB) |
 | `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB）/ File read LLM context limit (KB) |
@@ -416,13 +424,16 @@ Configuration files are located in the `./config/` directory:
 | 版本号 Version | Agent 当前版本号 / Current agent version |
 | 基础路径 Base Paths | 日志、会话、配置、技能、MCP、cron 等路径 / Paths for logs, sessions, configs, skills, MCPs, crons |
 | 文件命名规范 File Naming | 会话目录下的子文件命名 / File names under session directories |
-| 状态标签 Status Labels | 工具/操作返回的状态标签（失败、成功、超时等）/ Status labels for tool/operation returns |
+| 状态标签 Status Labels | 工具/操作返回的状态标签（失败、成功、超时、禁用等）及任务状态（pending/in_progress/completed/deleted）/ Status labels for tool/operation returns and task statuses |
 | **工具名称 Tool Names** | **所有 Agent 工具的字符串名称（可统一修改）/ All tool string names (centrally managed)** |
 | 工具参数 Tool Params | 各工具的默认参数与行为限制 / Default params and limits for tools |
 | Bash 风险等级 Bash Risk | Bash 命令的风险分类标签 / Risk classification labels for bash commands |
 | UI 配置 UI Configs | 颜色、图标、进度条、提示词列表 / Colors, icons, progress bars, prompt lists |
+| 任务看板 Task Board | Scoreboard 任务系统的图标、颜色、状态显示参数 / Task display params for Scoreboard |
+| 监听 TUI Listen TUI | Agent 监听模式的渐变色彩与动画参数 / Listen TUI gradient color and animation params |
 | 流式显示 Streaming | LLM 流式响应与 TUI 的显示参数 / Display params for streaming LLM responses |
 | 编辑视图 Edit View | 文件编辑 TUI 的 diff 视图参数 / Diff view params for file edit TUI |
+| Bash 视图 Bash View | Bash 命令输出的行号视图参数 / Line number view params for bash output |
 | URL 缓存 URL Cache | URL 缓存显示参数 / URL cache display params |
 | MCP 参数 MCP Params | MCP 工具描述显示限制 / MCP tool description limit |
 
@@ -439,6 +450,10 @@ All tool names are defined in `TOOL_NAME_*` constants. To rename a tool (e.g., t
 | `TOOL_NAME_CREATE_CRON` | `create_cron` | 创建定时任务 / Create a cron task |
 | `TOOL_NAME_QUERY_CRON` | `query_cron` | 查询定时任务列表 / Query cron task list |
 | `TOOL_NAME_REMOVE_CRON` | `remove_cron` | 删除定时任务 / Remove a cron task |
+| `TOOL_NAME_CREATE_TASK` | `create_task` | 创建任务 / Create a task |
+| `TOOL_NAME_UPDATE_TASK` | `update_task` | 更新任务 / Update a task |
+| `TOOL_NAME_GET_TASK` | `get_task` | 获取任务详情 / Get task details |
+| `TOOL_NAME_LIST_TASK` | `list_task` | 列出任务 / List tasks |
 | `TOOL_NAME_BASH` | `bash` | 执行 Shell 命令 / Execute bash commands |
 | `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns |
 | `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents |
@@ -471,6 +486,7 @@ All tool names are defined in `TOOL_NAME_*` constants. To rename a tool (e.g., t
 | `BASH_CHMOD_LABEL` | 低风险 Low (4) | 修改文件权限 / Change file permissions |
 | `BASH_CHOWN_LABEL` | 低风险 Low (4) | 修改文件所有者 / Change file owner |
 | `BASH_FILE_LABEL` | 低风险 Low (4) | 文件操作（cp, mv, mkdir 等）/ File operations |
+| `BASH_INLINE_SCRIPT_LABEL` | 低风险 Low (4) | 内联脚本（python -c, node -e 等）/ Inline script execution |
 | `BASH_REPOSITORY_MODIFY_LABEL` | 中风险 Med (5) | Git 修改仓库历史 / Git modifies repo history |
 | `BASH_STAGE_CHANGE_LABEL` | 中风险 Med (6) | Git 暂存更改 / Git stages changes |
 | `BASH_UNKNOWN_LABEL` | 未知 Unknown (7) | 未分类命令 / Unclassified command |
@@ -501,6 +517,8 @@ All tool names are defined in `TOOL_NAME_*` constants. To rename a tool (e.g., t
 | `OPTIONS_TO_SELECT_PREFIX` | `❯ ` | TUI 选项中当前聚焦项的前缀 / Focused option prefix in TUI |
 | `OPTIONS_UN_SELECT_PREFIX` | `  ` | TUI 选项中未聚焦项的前缀 / Unfocused option prefix in TUI |
 | `OPTIONS_SELECTED_PREFIX` | ` ✓` | TUI 选项中已选择项的标记 / Selected option suffix in TUI |
+| `SELECTED_QUESTION_OPTION_COLOR` | `#A6CEFF` | TUI 中已选择的选项颜色 / Color for selected option |
+| `TUI_USER_COMMENT_COLOR` | `#A6CEEF` | 用户注释文本颜色 / Color for user comment text |
 
 #### 样式与格式 | Styles & Formatting
 
@@ -510,7 +528,42 @@ All tool names are defined in `TOOL_NAME_*` constants. To rename a tool (e.g., t
 | `CONTENT_ICON_SYLTE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
 | `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
+| `BASH_STYLE` | `none` | Bash 命令输出样式 / Bash output style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
+
+#### 任务看板 | Task Board
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|---------------|----------------|--------------|
+| `TASK_DISPLAYS_BEFORE_ARCHIVED` | `3` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
+| `MUTE_TASK_OP_INFO` | `true` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
+| `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
+| `TASK_VIEW_RIGHT_MARGIN` | `1` | 任务列表状态图标右侧缩进 / Right margin for task status icons |
+| `TASK_COLOR_GRADIENT` | `128` | 任务动画渐变阶数 / Gradient color steps for task animation |
+| `TASK_COLOR_PERIOD` | `2.0` | 任务动画周期（秒）/ Task animation period (seconds) |
+| `TASK_PENDING_WITHOUT_OWNER_ICON` | `○` | 无归属待处理任务图标 / Icon for pending task without owner |
+| `TASK_PENDING_WITH_OWNER_ICON` | `●` | 有归属待处理/进行中任务图标 / Icon for pending/in-progress task with owner |
+| `TASK_COMPLETED_ICON` | `✓` | 已完成任务图标 / Icon for completed task |
+| `TASK_DELETED_ICON` | `✗` | 已删除任务图标 / Icon for deleted task |
+| `TASK_PENDING_COLOR_START` | `#545454` | 待处理任务渐变起始色 / Gradient start for pending tasks |
+| `TASK_PENDING_COLOR_END` | `#DBDBDB` | 待处理任务渐变终止色 / Gradient end for pending tasks |
+| `TASK_IN_PROGRESS_COLOR_START` | `#FF9FF3`（亮粉） | 进行中任务渐变起始色 / Gradient start for in-progress tasks |
+| `TASK_IN_PROGRESS_COLOR_END` | `#54A0FF`（蓝） | 进行中任务渐变终止色 / Gradient end for in-progress tasks |
+| `TASK_COMPLETED_COLOR` | `#8CDCA0`（绿） | 已完成任务颜色 / Color for completed tasks |
+| `TASK_DELETED_COLOR` | `#767676`（灰） | 已删除任务颜色 / Color for deleted tasks |
+
+#### 监听 TUI | Listen TUI
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|---------------|----------------|--------------|
+| `LISTEN_TUI_COLOR_START` | `#FF9FF3`（亮粉） | 监听 TUI 标题渐变起始色 / Listen TUI gradient start |
+| `LISTEN_TUI_COLOR_END` | `#54A0FF`（蓝） | 监听 TUI 标题渐变终止色 / Listen TUI gradient end |
+| `LISTEN_TUI_COLOR_GRADIENT` | `128` | 监听 TUI 渐变色阶数 / Listen TUI gradient steps |
+| `LISTEN_TUI_COLOR_PERIOD` | `2.0` | 监听 TUI 动画周期（秒）/ Listen TUI animation period (seconds) |
+| `CRON_LISTEN_COLOR_START` | `#FF9FF3`（亮粉） | Cron 监听渐变起始色 / Cron listen gradient start |
+| `CRON_LISTEN_COLOR_END` | `#54A0FF`（蓝） | Cron 监听渐变终止色 / Cron listen gradient end |
+| `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
+| `CRON_LISTEN_COLOR_PERIOD` | `2.0` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
 
 #### 会话标题 | Session Titles
 
@@ -534,7 +587,7 @@ All tool names are defined in `TOOL_NAME_*` constants. To rename a tool (e.g., t
 | `TOOLS_EXECUTION_SPINNER` | `bouncingBall` | 工具执行时的 spinner 样式 / Spinner style for tool execution |
 | `SPINNER_LIVE_CHECK_GAP_MS` | `200` | Spinner 子线程轮询间隔（毫秒）/ Polling gap for spinner thread (ms) |
 | `SPINNER_TERMINATE_WAIT_S` | `10` | 中断后等待子线程退出的最长时间（秒）/ Max wait for sub-thread exit after interrupt (s) |
-| `PROGRESS_DISPLAY_REFRESH_RATE` | `20` | 进度条 TUI 刷新率（次/秒）/ Progress TUI refresh rate (fps) |
+| `PROGRESS_DISPLAY_REFRESH_RATE` | `30` | 进度条 TUI 刷新率（次/秒）/ Progress TUI refresh rate (fps) |
 
 #### 随机进度标题 | Random Progress Titles
 
@@ -569,13 +622,6 @@ All these lists can be customized in `constants.py`
 | `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Enter: Submit)` | 输入框固定提示文字 / Fixed hint text at prompt input |
 | `KEY_LISTEN_SLEEP_TIME_MS` | `100` | TUI 键盘轮询间隔（毫秒）/ TUI keyboard poll interval (ms) |
 
-#### Cron 监听 TUI | Cron Listening TUI
-
-| 常量 Constant | 默认值 Default | 用途 Purpose |
-|---------------|----------------|--------------|
-| `CRON_LISTEN_COLOR_GRADIENT` | `64` | 监听动画渐变色阶数 / Gradient color steps for listening animation |
-| `CRON_LISTEN_COLOR_PERIOD` | `2.0` | 监听动画周期（秒）/ Listening animation period (seconds) |
-
 #### 编辑视图 | Edit View
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
@@ -585,11 +631,22 @@ All these lists can be customized in `constants.py`
 | `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `EDIT_VIEW_LINE_SPACE_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
 
+#### Bash 视图 | Bash View
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|---------------|----------------|--------------|
+| `BASH_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
+| `BASH_VIEW_LINE_NUM_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+
 ### 其他关键常量 | Other Key Constants
 
 | 常量 Constant | 默认值 Default | 说明 Description |
 |---------------|----------------|------------------|
-| `TECOSIM_AGENT_UPDATE_VERSION` | `18` | 当前 Agent 更新版本号 / Current agent update version |
+| `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
+| `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `0` | Agent 更新版本号 / Agent update version |
+| `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID / Main agent identifier |
+| `TASKS_NAME` | `"tasks.json"` | Scoreboard 任务持久化文件名 / Scoreboard task persistence file name |
 | `LOG_PATH` | `"./log"` | 日志文件输出目录 / Log file output directory |
 | `SESSION_PATH` | `"./session"` | 会话持久化目录 / Session persistence directory |
 | `CRON_CONFIGS_PATH` | `"./cron/cron_configs.json"` | 持久化定时任务配置文件 / Durable cron config file path |

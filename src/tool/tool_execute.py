@@ -23,6 +23,8 @@ Revision:
 2026.5.30      Yu Huang      2.1      Random spinner title support & Revise spinner logic with SIGINT pass through
 2026.6.1       Yu Huang      2.2      Define all used status labels in constants.py
 2026.6.3       Yu Huang      2.3      Add cron tasks support
+2026.6.6       Yu Huang      2.4      Basic support of agent tasks as Scoreboard with lock
+2026.6.7       Yu Huang      2.5      Support of task displays in scoreboard
 
 Details:
 ---------
@@ -37,8 +39,9 @@ import logging
 from typing import Callable, Any
 from rich.progress import Progress
 from src.tool import tool_def
-from src.utility.ui_info import loading_spinner_rap
+from src.utility.ui_info import loading_spinner, loading_spinner_with_board
 from src.context.agent_context import AgentContext
+from src.tool.scoreboard import Scoreboard
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -48,11 +51,11 @@ class ToolCallsCancelled(Exception):
     """Raised when user cancels tool calls (but this should never happen, because each tool should handle Ctrl+C int)"""
 
 
-def tool_calls_with_spinner(func: Callable, *args,
-                             waiting_desc: str | None = None, done_desc: str | None = None,
-                             intrp_desc: str | None = None, fail_desc: str | None = None,
-                             spinner: str | None = None, if_random: bool, **kwargs) -> Any:
-    """Tool calls with spinner through loading_spinner_rap"""
+def tool_calls_spinner(func: Callable, *args,
+                       waiting_desc: str | None = None, done_desc: str | None = None,
+                       intrp_desc: str | None = None, fail_desc: str | None = None,
+                       spinner: str | None = None, if_random: bool, **kwargs) -> Any:
+    """Tool calls with spinner through loading_spinner"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
     else:
@@ -76,25 +79,74 @@ def tool_calls_with_spinner(func: Callable, *args,
         spinner_choice = spinner
     else:
         spinner_choice = TOOLS_EXECUTION_SPINNER
-    result = loading_spinner_rap(func, *args,
-                                 waiting_desc=waiting_title, done_desc=done_title,
-                                 intrp_desc=intrp_title, fail_desc=fail_title,
-                                 spinner=spinner_choice,
-                                 out_except=ToolCallsCancelled("Tool call is cancelled by user"),
-                                 with_progress=True,  # add progress to target function
-                                 **kwargs)
+    result = loading_spinner(func, *args,
+                             waiting_desc=waiting_title, done_desc=done_title,
+                             intrp_desc=intrp_title, fail_desc=fail_title,
+                             spinner=spinner_choice,
+                             out_except=ToolCallsCancelled("Tool call is cancelled by user"),
+                             with_progress=True,  # add progress to target function
+                             **kwargs)
     return result
 
 
-def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, progress: Progress) -> list[dict[str, Any]]:
+def tool_calls_spinner_board(func: Callable, *args,
+                             board: Scoreboard,
+                             waiting_desc: str | None = None, done_desc: str | None = None,
+                             intrp_desc: str | None = None, fail_desc: str | None = None,
+                             spinner: str | None = None, if_random: bool, **kwargs) -> Any:
+    """Tool calls with spinner and scoreboard through loading_spinner_with_board"""
+    if waiting_desc is not None:
+        waiting_title = waiting_desc
+    else:
+        if if_random:
+            waiting_title = random.choice(TOOLS_EXECUTION_TITLE_LIST)
+        else:
+            waiting_title = TOOLS_EXECUTION_TITLE_LIST[0]
+    if done_desc is not None:
+        done_title = done_desc
+    else:
+        done_title = TOOLS_EXECUTION_DONE_TITLE
+    if intrp_desc is not None:
+        intrp_title = intrp_desc
+    else:
+        intrp_title = TOOLS_EXECUTION_INTRP_TITLE
+    if fail_desc is not None:
+        fail_title = fail_desc
+    else:
+        fail_title = TOOLS_EXECUTION_FAIL_TITLE
+    if spinner is not None:
+        spinner_choice = spinner
+    else:
+        spinner_choice = TOOLS_EXECUTION_SPINNER
+    result = loading_spinner_with_board(func, *args,
+                                        board=board,
+                                        waiting_desc=waiting_title, done_desc=done_title,
+                                        intrp_desc=intrp_title, fail_desc=fail_title,
+                                        spinner=spinner_choice,
+                                        out_except=ToolCallsCancelled("Tool call is cancelled by user"),
+                                        with_progress=True,  # add progress to target function
+                                        **kwargs)
+    return result
+
+
+def if_tool_mute(func_name: str) -> bool:
+    """check if tool is muted"""
+    if MUTE_TASK_OP_INFO:
+        if func_name in (TOOL_NAME_CREATE_TASK, TOOL_NAME_UPDATE_TASK, TOOL_NAME_GET_TASK, TOOL_NAME_LIST_TASK):
+            return True
+    return False
+
+
+def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Scoreboard, progress: Progress) -> list[dict[str, Any]]:
     """execute the tools in the LLM tool calls with AgentContext"""
     messages = []
     for tool_call in tool_calls:
         func_name = tool_call["function"]["name"]
         arguments = json.loads(tool_call["function"]["arguments"])
         sys_log.debug(f"Using tool: {func_name}")
-        progress.console.print(f"Using tool: [{MAJOR_COLOR1}]{func_name}[/{MAJOR_COLOR1}]", style="bright_black")
-        [results, user_addons] = call_tools(func_name, arguments, ctx, progress)
+        if not if_tool_mute(func_name):
+            progress.console.print(f"Using tool: [{MAJOR_COLOR1}]{func_name}[/{MAJOR_COLOR1}]", style="bright_black")
+        [results, user_addons] = call_tools(func_name, arguments, ctx, board, progress)
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call["id"],
@@ -108,7 +160,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, progress:
     return messages
 
 
-def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, progress: Progress)\
+def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, progress: Progress)\
         -> tuple[dict[str, Any], dict[str, Any] | None]:
     """actual top tools call with func name, arguments and AgentContext"""
     try:
@@ -117,6 +169,18 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, pro
             user_addons = None
         elif func_name == TOOL_NAME_ASK_QUESTION:
             results = tool_def.ask_user_question(arguments, ctx, progress)
+            user_addons = None
+        elif func_name == TOOL_NAME_CREATE_TASK:
+            results = tool_def.create_task(arguments, board, progress)
+            user_addons = None
+        elif func_name == TOOL_NAME_UPDATE_TASK:
+            results = tool_def.update_task(arguments, ctx, board, progress)
+            user_addons = None
+        elif func_name == TOOL_NAME_GET_TASK:
+            results = tool_def.get_task(arguments, ctx, board, progress)
+            user_addons = None
+        elif func_name == TOOL_NAME_LIST_TASK:
+            results = tool_def.list_task(ctx, board, progress)
             user_addons = None
         elif func_name == TOOL_NAME_CREATE_CRON:
             results = tool_def.create_cron(arguments, ctx, progress)

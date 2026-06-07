@@ -12,6 +12,7 @@ Revision:
 2026.5.21      Yu Huang      1.0      First implementation
 2026.5.22      Yu Huang      1.1      Summarize session title support
 2026.5.29      Yu Huang      1.2      Add agent's Markdown render style
+2026.6.5       Yu Huang      1.3      Render bash command as Markdown support
 
 Details:
 ---------
@@ -50,6 +51,16 @@ class ContentMD(Markdown):
     def __init__(self, markup: str):
         super().__init__(markup)
         self.style = CONTENT_STYLE
+        self.code_theme = "one-dark"
+        self.hyperlinks = True
+        self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
+
+
+class BashMD(Markdown):
+    """TECoSim agent Markdown render for bash command"""
+    def __init__(self, markup: str):
+        super().__init__(markup)
+        self.style = BASH_STYLE
         self.code_theme = "one-dark"
         self.hyperlinks = True
         self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
@@ -210,3 +221,10 @@ def get_user_input(user_cache: str, agent_session: PromptSession, default_str: s
     if cache != user_input:
         is_modify = True
     return user_input, is_empty, is_modify
+
+
+def is_list_of_int(obj) -> bool:
+    """chek if the given object is a list of int"""
+    if not isinstance(obj, list):
+        return False
+    return all(isinstance(item, int) for item in obj)

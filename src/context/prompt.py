@@ -24,6 +24,7 @@ Revision:
 2026.5.31      Yu Huang      2.2      Define used file/dir. paths in constants.py
 2026.6.2       Yu Huang      2.3      Add left padding with icon when printing LLM's messages & Revise the mark of skill content
 2026.6.3       Yu Huang      2.4      Add flag of if display skills and crons when resuming session
+2026.6.5       Yu Huang      2.5      Add --nosystem, --notools, --nocrons support & Bugfix of rendering msgs in non-Markdown format
 
 Details:
 ---------
@@ -158,7 +159,7 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "# Session-specific guidance\n"
                 f" - If you do not understand why the user has denied a tool call, use the `{TOOL_NAME_ASK_QUESTION}` to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
-                " - User can manually load full prompt of skill to context with /<skill-name> (e.g., /translate)\n"}]
+                " - User can manually load full prompt of skill to context with /<skill-name>\n"}]
                 # " - Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
                 # "Subagents are valuable for parallelizing independent queries or for protecting the main context window "
                 # "from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating "
@@ -205,7 +206,12 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
 
 def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console) -> list[dict[str, Any]]:
     """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
-    messages = create_system_prompts(ctx)
+    if not ctx.args.nosystem:
+        messages = create_system_prompts(ctx)
+    else:
+        messages = []
+        sys_log.debug("System prompts in main agent are disabled")
+        console.print("System prompts in main agent are disabled", style=f"bold {MAJOR_COLOR1}")
     if session_uuid is None:
         pass
     else:
@@ -267,7 +273,8 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
                                   ReasonMD("{Think}: " + assistant_reasoning))
                     else:
-                        t.add_row(Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
+                        t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                                  Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
                     console.print(t)
                     console.print("")
 
@@ -283,7 +290,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     if as_md:
                         t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(msg["content"]))
                     else:
-                        t.add_row(Text(msg["content"], style=CONTENT_STYLE))
+                        t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), Text(msg["content"], style=CONTENT_STYLE))
                     console.print(t)
                     console.print("")
                 if msg["tool_calls"] is not None:
@@ -479,9 +486,11 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
         t.add_column(vertical="top")
         if as_md:
-            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + collected_reasoning))
+            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                      ReasonMD("{Think}: " + collected_reasoning))
         else:
-            t.add_row(Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
+            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                      Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -497,7 +506,7 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
         if as_md:
             t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(collected_content))
         else:
-            t.add_row(Text(collected_content, style=CONTENT_STYLE))
+            t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), Text(collected_content, style=CONTENT_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -537,7 +546,7 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         if as_md:
             t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + reason_display))
         else:
-            t.add_row(Text("{Think}: " + reason_display, style=REASON_STYLE))
+            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), Text("{Think}: " + reason_display, style=REASON_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -569,7 +578,7 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         if as_md:
             t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(display_content))
         else:
-            t.add_row(Text(display_content, style=CONTENT_STYLE))
+            t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), Text(display_content, style=CONTENT_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 

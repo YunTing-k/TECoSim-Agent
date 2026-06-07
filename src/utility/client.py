@@ -20,6 +20,7 @@ Revision:
 2026.5.23      Yu Huang      1.8      Stream response display update
 2026.5.30      Yu Huang      1.9      Random spinner title support & Revise spinner logic with SIGINT pass through
 2026.6.3       Yu Huang      2.0      Add tool choice in branch LLM request
+2026.6.3       Yu Huang      2.1      Support of task displays in scoreboard
 
 Details:
 ---------
@@ -33,9 +34,10 @@ import logging
 from openai import OpenAI
 from rich.console import Console
 from typing import Callable, Any
-from src.utility.ui_info import loading_spinner_rap
+from src.utility.ui_info import loading_spinner, loading_spinner_with_board
 from src.context.agent_context import RequestLLMCancelled
 from src.context.agent_context import AgentContext
+from src.tool.scoreboard import Scoreboard
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -58,11 +60,11 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
         raise RuntimeError(e)
 
 
-def llm_request_with_spinner(func: Callable, *args,
-                             waiting_desc: str | None = None, done_desc: str | None = None,
-                             intrp_desc: str | None = None, fail_desc: str | None = None,
-                             spinner: str | None = None, if_random: bool, **kwargs) -> Any:
-    """LLM request with spinner through loading_spinner_rap"""
+def llm_request_spinner(func: Callable, *args,
+                        waiting_desc: str | None = None, done_desc: str | None = None,
+                        intrp_desc: str | None = None, fail_desc: str | None = None,
+                        spinner: str | None = None, if_random: bool, **kwargs) -> Any:
+    """LLM request with spinner through loading_spinner"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
     else:
@@ -86,11 +88,49 @@ def llm_request_with_spinner(func: Callable, *args,
         spinner_choice = spinner
     else:
         spinner_choice = LLM_REQUEST_SPINNER
-    result = loading_spinner_rap(func, *args,
-                                 waiting_desc=waiting_title, done_desc=done_title,
-                                 intrp_desc=intrp_title, fail_desc=fail_title,
-                                 spinner=spinner_choice,
-                                 out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
+    result = loading_spinner(func, *args,
+                             waiting_desc=waiting_title, done_desc=done_title,
+                             intrp_desc=intrp_title, fail_desc=fail_title,
+                             spinner=spinner_choice,
+                             out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
+    return result
+
+
+def llm_request_spinner_board(func: Callable, *args,
+                              board: Scoreboard,
+                              waiting_desc: str | None = None, done_desc: str | None = None,
+                              intrp_desc: str | None = None, fail_desc: str | None = None,
+                              spinner: str | None = None, if_random: bool, **kwargs) -> Any:
+    """LLM request with spinner and scoreboard through loading_spinner_with_board"""
+    if waiting_desc is not None:
+        waiting_title = waiting_desc
+    else:
+        if if_random:
+            waiting_title = random.choice(LLM_REQUEST_TITLE_LIST)
+        else:
+            waiting_title = LLM_REQUEST_TITLE_LIST[0]
+    if done_desc is not None:
+        done_title = done_desc
+    else:
+        done_title = LLM_REQUEST_DONE_TITLE
+    if intrp_desc is not None:
+        intrp_title = intrp_desc
+    else:
+        intrp_title = LLM_REQUEST_INTRP_TITLE
+    if fail_desc is not None:
+        fail_title = fail_desc
+    else:
+        fail_title = LLM_REQUEST_FAIL_TITLE
+    if spinner is not None:
+        spinner_choice = spinner
+    else:
+        spinner_choice = LLM_REQUEST_SPINNER
+    result = loading_spinner_with_board(func, *args,
+                                        board=board,
+                                        waiting_desc=waiting_title, done_desc=done_title,
+                                        intrp_desc=intrp_title, fail_desc=fail_title,
+                                        spinner=spinner_choice,
+                                        out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
     return result
 
 

@@ -3,6 +3,7 @@
     "CONTEXT_THRESHOLD": 0.9,
     "DEEPSEEK_SUPPORT": true,
     "RENDER_RESPONSE_AS_MD": true,
+    "RENDER_BASH_AS_MD": true,
     "RESUME_DISPLAY_SKILLS": false,
     "RESUME_DISPLAY_CRONS": false,
     "AUTO_SUMMARY_TRIGGER": 1,

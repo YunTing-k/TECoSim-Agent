@@ -23,6 +23,8 @@ Revision:
 2026.5.31      Yu Huang      2.0      Fix the bug of nested progress wrapper function
 2026.6.3       Yu Huang      2.1      Add gradient clor list generation with RGB and hex format & Add configurable title in
                                       yes or no request TUI
+2026.6.7       Yu Huang      2.2      Support of task displays in scoreboard & Fix the bug of uncaught exception in spinner &
+                                      Fix the bug of cut-off issued when resume from permission TUI
 
 Details:
 ---------
@@ -38,6 +40,7 @@ import ctypes
 import logging
 import threading
 
+from datetime import datetime
 from rich.console import Group, Console
 from rich.panel import Panel
 from rich.text import Text
@@ -47,10 +50,10 @@ from rich.progress import Progress, ProgressColumn, SpinnerColumn, TimeElapsedCo
 from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.formatted_text import ANSI
-from contextlib import contextmanager
 from typing import Callable, Any
 from src.context import prompt
 from src.context.agent_context import AgentContext
+from src.tool.scoreboard import Scoreboard, get_tasks_render
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -256,28 +259,14 @@ class GradientTextColumn(ProgressColumn):
         )
 
 
-@contextmanager
-def loading_spinner(waiting_desc: str, done_desc: str, spinner: str = "dots2"):
-    """context manager for rich.Progress with any time-consuming operation (no rapid interrupt)"""
-    with Progress(
-        GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
-        SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
-        TimeElapsedColumn(),
-        transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
-    ) as progress:
-        task = progress.add_task(waiting_desc, total=None)
-        yield progress
-        progress.update(task, description=done_desc)
-
-
-def loading_spinner_rap(func: Callable, *args,
-                        waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
-                        with_progress: bool = False,
-                        **kwargs) -> Any:
+def loading_spinner(func: Callable, *args,
+                    waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
+                    with_progress: bool = False,
+                    **kwargs) -> Any:
     """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt
 
     NOTE: signal.signal() can only be called from the main thread. When called from a
-    worker thread (e.g., nested inside another loading_spinner_rap), the signal setup
+    worker thread (e.g., nested inside another loading_spinner), the signal setup
     is skipped — the outer spinner's SIGINT handler already propagates KeyboardInterrupt
     to this thread via ctypes injection, so it can still be interrupted.
     """
@@ -343,14 +332,14 @@ def loading_spinner_rap(func: Callable, *args,
                     """target function without progress"""
                     try:
                         result[0] = func(*args, **kwargs)
-                    except Exception as err:
+                    except (Exception, KeyboardInterrupt) as err:
                         exception[0] = err
             else:
                 def target():
                     """target function with progress"""
                     try:
                         result[0] = func(*args, progress=progress, **kwargs)
-                    except Exception as err:
+                    except (Exception, KeyboardInterrupt) as err:
                         exception[0] = err
 
             t = threading.Thread(target=target, daemon=True)
@@ -366,8 +355,11 @@ def loading_spinner_rap(func: Callable, *args,
                     # Thread didn't handle the interrupt, force cancel
                     progress.update(task, description=intrp_desc)
                     raise out_except
-                # else: thread handled KeyboardInterrupt and finished,
-                # fall through to return its result normally
+                # Thread handled the interrupt and finished.
+                # Regardless of whether target() caught the KeyboardInterrupt,
+                # the user pressed Ctrl+C so we must raise out_except.
+                progress.update(task, description=intrp_desc)
+                raise out_except
             progress.update(task, description=done_desc if exception[0] is None else fail_desc)
             if exception[0] is not None:
                 raise exception[0]
@@ -375,6 +367,154 @@ def loading_spinner_rap(func: Callable, *args,
     finally:
         # set SIGINT handler with original_handler
         signal.signal(signal.SIGINT, original_handler)
+
+
+def loading_spinner_with_board(func: Callable, *args,
+                               board: Scoreboard,
+                               waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str,
+                               spinner: str, out_except: Exception,
+                               with_progress: bool = False,
+                               **kwargs) -> Any:
+    """Spinner with a live scoreboard text below, for any time-consuming operation.
+
+    Progress bar (spinner + elapsed) on the first line, scoreboard tasks
+    rendered as text underneath — updated live on each refresh cycle.
+
+    NOTE: signal.signal() can only be called from the main thread.
+    """
+    is_main_thread = threading.current_thread() is threading.main_thread()
+
+    color_list1 = grad_color_hex_list(TASK_PENDING_COLOR_START, TASK_PENDING_COLOR_END, TASK_COLOR_GRADIENT)
+    color_list1 = color_list1 + color_list1[::-1]
+    color_list2 = grad_color_hex_list(TASK_IN_PROGRESS_COLOR_START, TASK_IN_PROGRESS_COLOR_END, TASK_COLOR_GRADIENT)
+    color_list2 = color_list2 + color_list2[::-1]
+    base_time = datetime.now()
+
+    progress = Progress(
+        GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
+        SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
+        TimeElapsedColumn(),
+        transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+    )
+
+    # Store reference to the outer Live so worker thread can pause/resume it
+    # during permission TUI (see pause_for_permission / resume_from_permission).
+    progress._outer_live = None  # placeholder, set after Live is created
+
+    def make_group() -> Group:
+        return Group(
+            progress,
+            get_tasks_render(board.list_tasks(), datetime.now(), base_time, color_list1, color_list2)
+        )
+
+    if not is_main_thread:
+        with Live(make_group(), refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+            progress._outer_live = live
+            task_id = progress.add_task(waiting_desc, total=None)
+            try:
+                if not with_progress:
+                    ret = func(*args, **kwargs)
+                else:
+                    ret = func(*args, progress=progress, **kwargs)
+                progress.update(task_id, description=done_desc)
+                live.update(make_group())
+                return ret
+            except Exception as e:
+                progress.update(task_id, description=fail_desc)
+                live.update(make_group())
+                raise e
+            finally:
+                board.archive_tasks()
+
+    result = [None]
+    exception: list[Exception | None] = [None]
+    stop_event = threading.Event()
+    worker_thread: list[threading.Thread | None] = [None]
+
+    def sigint_handler(signum, frame):
+        """SIGINT handler: signal sub-thread and let it handle cleanup"""
+        stop_event.set()
+        th = worker_thread[0]
+        if th is not None:
+            ident = th.ident
+            if ident is not None:
+                tid = ctypes.c_long(ident)
+                t_ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                    tid, ctypes.py_object(KeyboardInterrupt))
+                if t_ret != 1:
+                    ctypes.pythonapi.PyThreadState_SetAsyncExc(tid, None)
+
+    original_handler = signal.signal(signal.SIGINT, sigint_handler)
+    try:
+        def target():
+            try:
+                if not with_progress:
+                    result[0] = func(*args, **kwargs)
+                else:
+                    result[0] = func(*args, progress=progress, **kwargs)
+            except (Exception, KeyboardInterrupt) as err:
+                exception[0] = err
+
+        t = threading.Thread(target=target, daemon=True)
+        worker_thread[0] = t
+
+        with Live(make_group(), refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+            progress._outer_live = live
+            task_id = progress.add_task(waiting_desc, total=None)
+            t.start()
+            while t.is_alive() and not stop_event.is_set():
+                t.join(SPINNER_LIVE_CHECK_GAP_MS / 1000.0)
+                live.update(make_group())
+            if stop_event.is_set():
+                t.join(SPINNER_TERMINATE_WAIT_S)
+                if t.is_alive():
+                    progress.update(task_id, description=intrp_desc)
+                    live.update(make_group())
+                    raise out_except
+                progress.update(task_id, description=intrp_desc)
+                live.update(make_group())
+                raise out_except
+            desc = done_desc if exception[0] is None else fail_desc
+            progress.update(task_id, description=desc)
+            live.update(make_group())
+            if exception[0] is not None:
+                raise exception[0]
+            return result[0]
+    finally:
+        signal.signal(signal.SIGINT, original_handler)
+        board.archive_tasks()
+
+
+def pause_for_permission(progress):
+    """Pause the outer Live before showing a permission TUI from the worker thread.
+
+    Stops the outer Live (restore cursor, pop render hook, stop auto-refresh)
+    so the permission TUI's Live can take over the console cleanly without
+    interference from prompt_toolkit or overlapping renders.
+
+    CRITICAL: Does NOT touch `progress.live` (Progress's internal Live).
+    `progress.live` is never started by `Progress.start()` when Progress
+    is used inside an outer `Live` (as in `loading_spinner_with_board`).
+    Instead, operates on the outer Live stored at `progress._outer_live`.
+    """
+    outer_live = getattr(progress, '_outer_live', None)
+    if outer_live is not None:
+        outer_live.stop()
+
+
+def resume_from_permission(progress):
+    """Resume the outer Live after a permission TUI has finished.
+
+    Restarts the outer Live (hide cursor, register render hook, start
+    auto-refresh) so normal spinner + scoreboard display resumes.
+
+    Prints a newline before restarting to ensure the Live starts on a
+    fresh line, preventing overlap with content printed while paused.
+    """
+    outer_live = getattr(progress, '_outer_live', None)
+    if outer_live is not None:
+        progress.console.print()
+        outer_live.start()
 
 
 def get_user_prompt(ctx: AgentContext) -> str:
@@ -549,13 +689,14 @@ def exit_tui(ctx: AgentContext, console: Console) -> bool:
             return False
 
 
-def normal_exit(ctx: AgentContext, console: Console, exit_str: str):
+def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str: str):
     """normal exit of agent"""
     token = exit_tui(ctx, console)
     if token:
         try:
             prompt.save_messages(ctx, console)
             ctx.save_context(console)
+            board.save_to_file(console)
         except Exception as e:
             sys_log.error(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally")
             console.print(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally", style="bold red")
@@ -568,11 +709,12 @@ def normal_exit(ctx: AgentContext, console: Console, exit_str: str):
         console.print("Exit canceled", style="bright_black")
 
 
-def error_exit(ctx: AgentContext, console: Console, error: Exception):
+def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Exception):
     """error exit of agent"""
     try:
         prompt.save_messages(ctx, console)
         ctx.save_context(console)
+        board.save_to_file(console)
     except Exception as e:
         sys_log.error(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally")
         console.print(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally", style="bold red")

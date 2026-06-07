@@ -20,6 +20,7 @@ Revision:
 2026.5.28      Yu Huang      1.8      Add read-only paths support
 2026.5.31      Yu Huang      1.9      Define used file/dir. paths in constants.py
 2026.6.3       Yu Huang      2.0      Add cron tasks support
+2026.6.5       Yu Huang      2.1      Add --nosystem, --notools, --nocrons support
 
 Details:
 ---------
@@ -101,9 +102,10 @@ class AgentContext:
         self.durable_crons: list[CronDump] = []  # (don't dump, read-only)
         self.session_crons: list[CronDump] = []  # (don't dump, read-only)
         self.cron_tasks: list[CronTask] = []
-        self.cron_ids: list[str] = []
-        self.active_cron: int = 0
+        self.cron_ids: list[str] = []  # (don't dump)
+        self.active_cron: int = 0  # (don't dump)
         # params
+        self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump)
         self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
@@ -144,6 +146,7 @@ class AgentContext:
             BASH_CHMOD_LABEL: False,
             BASH_CHOWN_LABEL: False,
             BASH_FILE_LABEL: False,
+            BASH_INLINE_SCRIPT_LABEL: False,
             BASH_REPOSITORY_MODIFY_LABEL: False,
             BASH_STAGE_CHANGE_LABEL: False,
             BASH_UNKNOWN_LABEL: False,
@@ -207,6 +210,8 @@ class AgentContext:
 
     def save_cron_task(self):
         """save cron tasks to files (overwrite files, duplicate task will be dropped, so make sure the id is unique)"""
+        if self.args.nocrons:  # no cron tasks, no need to save anything
+            return
         durable_crons: list[CronDump] = []
         session_crons: list[CronDump] = []
         for cron in self.cron_tasks:
@@ -333,9 +338,10 @@ class AgentContext:
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
             """session cron tasks load"""
-            path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
-            with open(path, "r", encoding="utf-8") as f:
-                self.session_crons = json.load(f)  # durable cron task need manually load
+            if not self.args.nocrons:
+                path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
+                with open(path, "r", encoding="utf-8") as f:
+                    self.session_crons = json.load(f)  # durable cron task need manually load
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} loaded")
                 console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")

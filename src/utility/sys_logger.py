@@ -15,6 +15,7 @@ Revision:
 2026.4.16      Yu Huang      1.3      Bug fix of no file written
 2026.5.31      Yu Huang      1.4      Define used file/dir. paths in constants.py
 2026.6.2       Yu Huang      1.5      Refactor logger with composition + explicit delegation + monkey-patch
+2026.6.7       Yu Huang      1.6      Fix the bug of logging error of emoji
 
 Details:
 ---------
@@ -62,7 +63,7 @@ class Logger:
             sh.setLevel(logging.DEBUG)
             sh.setFormatter(log_format)
             self._logger.addHandler(sh)
-        fh = logging.FileHandler(filename=os.path.join(LOG_PATH, self.name + '_' + time_format + '.txt'), mode='w')
+        fh = logging.FileHandler(filename=os.path.join(LOG_PATH, self.name + '_' + time_format + '.txt'), mode='w', encoding='utf-8')
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(log_format)
         self._logger.addHandler(fh)

@@ -34,6 +34,10 @@ Revision:
 2026.6.4       Yu Huang      3.2      Add support of comment when user deny permission request
 2026.6.4       Yu Huang      3.3      Normalize old/new strings for CRLF and quote marks handling & add debug info on edit_file
                                       match failure & Fix the bug of encoding in bash tool & Manage all agent tools' names in constants.py
+2026.6.5       Yu Huang      3.4      Add --nosystem, --notools, --nocrons support & Revise tools prompts of skill & Render bash
+                                      command as Markdown support & Bugfix of submit action in all ask permission TUIs
+2026.6.6       Yu Huang      3.5      Basic support of agent tasks as Scoreboard with lock
+2026.6.7       Yu Huang      3.6      Add scoreboard display in tool execute spinner & Add fallback if bash encounter encoding error
 
 Details:
 ---------
@@ -46,13 +50,16 @@ import os
 import subprocess
 import logging
 import shutil
+import tempfile
 
 from typing import Any
 from datetime import datetime
 from rich.progress import Progress
 from src.utility import ui_info
+from src.utility.ui_info import pause_for_permission, resume_from_permission
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, create_cron_impl
+from src.tool.scoreboard import Scoreboard, args_to_taskupdate, task_to_info, tasks_to_info
 from src.tool.file_filter_support import glob_impl, grep_impl
 from src.tool.file_io_support import read_line_with_limit, match_line_ranges, get_match_debug_info, find_actual_string, ask_edit_tui, check_read_only
 from src.tool.simulator_support import clean_stdout_log, clean_stderr_log
@@ -60,7 +67,7 @@ from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.web_support import web_search_top, web_search_process
 from src.tool.ask_permission import ask_permission_tui
-from src.tool.bash_support import evaluate_bash_risk
+from src.tool.bash_support import evaluate_bash_risk, get_bash_render
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled
 from src.constants import *
 
@@ -73,6 +80,10 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     prompts: list[dict[str, Any]] = [
         # basic tools
         tool_ask_user_question_def(),
+        tool_create_task_def(),
+        tool_update_task_def(),
+        tool_get_task_def(),
+        tool_list_task_def(),
         tool_create_cron_def(),
         tool_query_cron_def(),
         tool_remove_cron_def(),
@@ -242,14 +253,11 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
                                        f"{QUESTION_OTHER_LABEL} are needed)", style="bold red")
                 return {"status": FAIL_LABEL, "info": f"question {idx} has no options"}
         sys_log.debug(f"{func_name}: waiting for user selection")
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         try:
             answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
         finally:
-            progress.live.transient = if_tran
-            progress.start()
+            resume_from_permission(progress)
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected")
         progress.console.print(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected", style="bright_black")
         return {
@@ -269,6 +277,347 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         sys_log.error(f"{func_name} {FAIL_LABEL}: Ask user question failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Ask user question failed with error: {e}", style="bold red")
         return {"status": FAIL_LABEL, "info": f"Ask user question failed with error: {e}"}
+
+
+def tool_create_task_def() -> dict[str, Any]:
+    """tool definition of creating a task (TOOL_NAME_CREATE_TASK)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_CREATE_TASK,
+            "description": "Use this tool to create a structured task list for current session. This helps you track progress, "
+                           "organize complex tasks, cooperation in agent teams, and demonstrate thoroughness to the user.\n"
+                           "It also helps the user understand the progress of the task and overall progress of their requests.\n\n"
+                           "## Task Fields\n\n"
+                           "- `subject`: A brief, actionable title in imperative form (e.g., \"Fix authentication bug "
+                           "in login flow\")\n"
+                           "- `description`: What needs to be done\n"
+                           f"All tasks are created with status `{TASK_PENDING_LABEL}` and a unique integer task id.\n\n"
+                           "## Usage\n\n"
+                           "- After receiving new instructions, immediately capture user requirements as tasks\n"
+                           f"- Use `{TOOL_NAME_LIST_TASK}` first to avoid creating duplicate tasks\n"
+                           "- Create tasks with clear, specific subjects that describe the outcome\n"
+                           f"- After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set up dependencies (`add_blocks` / "
+                           f"`add_blocked_by`) if needed\n"
+                           f"- When you start working on a task, use `{TOOL_NAME_UPDATE_TASK}` to mark it as `{TASK_IN_PROGRESS_LABEL}` "
+                           f"BEFORE beginning work\n"
+                           f"- After completing a task, use `{TOOL_NAME_UPDATE_TASK}` to mark it as `{TASK_COMPLETED_LABEL}` "
+                           f"and add any new follow-up tasks discovered during implementation\n"
+                           "## When to Use This Tool\n\n"
+                           "Use this tool proactively in these scenarios:\n\n"
+                           "- Complex multi-step tasks "
+                           "- When a task requires 3 or more distinct steps or actions\n"
+                           "- Non-trivial and complex tasks: Tasks that require careful planning or multiple operations\n"
+                           "- User explicitly requests todo list: When the user directly asks you to use the todo list\n"
+                           "- User provides multiple tasks: When user provides a list of things to be done (numbered or "
+                           "comma-separated)\n"
+                           "## When NOT to Use This Tool\n\n"
+                           "Skip using this tool when:\n"
+                           "- There is only a single, straightforward task\n"
+                           "- The task is trivial and tracking it provides no organizational benefit\n"
+                           "- The task can be completed in less than 3 trivial steps\n"
+                           "- The task is purely conversational or informational\n\n"
+                           "NOTE that you should not use this tool if there is only one trivial task to do. In this case "
+                           "you are better off just doing the task directly.\n\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "A brief title for the task.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What needs to be done.",
+                    },
+                },
+                "required": ["subject", "description"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def create_task(arguments: dict[str, Any], board: Scoreboard, progress: Progress) -> dict[str, Any]:
+    """tool realization of creating a task with arguments"""
+    func_name = TOOL_NAME_CREATE_TASK
+    try:
+        subject = str(arguments["subject"])
+        description = str(arguments["description"])
+        """creat task"""
+        if_success, create_info = board.create_task(subject, description)
+        if if_success:
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Create task success with info: {create_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Create task success with info: {create_info}",
+                                       style="bright_black")
+            return {"status": SUCCESS_LABEL, "info": create_info}
+        else:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Create task failed with error, details: {create_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Create task failed with error, details: {create_info}",
+                                       style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Create task failed with error, details: {create_info}"}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Create task failed with error: {e}")
+        if not MUTE_TASK_OP_INFO:
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Create task failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Create task failed with error: {e}"}
+
+
+def tool_update_task_def() -> dict[str, Any]:
+    """tool definition of updating a task (TOOL_NAME_UPDATE_TASK)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_UPDATE_TASK,
+            "description": "Use this tool to update a task in the task list.\n\n"
+                           "## When to Use This Tool\n\n"
+                           "**Claim a task:**\n"
+                           "- All tasks are created without owner, claim the task with `if_claim` = true (default is false)\n"
+                           "**Mark claimed tasks as resolved:**\n"
+                           "Only task owner can mark their task as resolved when:\n"
+                           "- You have completed the work described in a task\n"
+                           "- A task is no longer needed or has been superseded\n"
+                           "- IMPORTANT: Always mark your assigned & claimed tasks as resolved when you finish them\n"
+                           f"- After resolving, call `{TOOL_NAME_LIST_TASK}` to find your next task\n\n"
+                           f"- ONLY mark a task as `{TASK_COMPLETED_LABEL}` when you have FULLY accomplished it\n"
+                           f"- If you encounter errors, blockers, or cannot finish, keep the task as `{TASK_IN_PROGRESS_LABEL}`\n"
+                           "- When blocked, create a new task describing what needs to be resolved\n"
+                           f"- Never mark a task as `{TASK_COMPLETED_LABEL}` if:\n"
+                           "  - Tests are failing\n"
+                           "  - Implementation is partial\n"
+                           "  - You encountered unresolved errors\n"
+                           "  - You couldn't find necessary files or dependencies\n\n"
+                           "**Delete claimed tasks:**\n"
+                           "- Only task owner can delete tasks, if you want to delete a task without owner, you must claim it first\n"
+                           f"- When a task is no longer relevant or was created in error. Setting status to `{TASK_DELETED_LABEL}`, "
+                           f"and the task will be permanently removed automatically\n\n"
+                           "**Update task details:**\n"
+                           "- When requirements change or become clearer\n"
+                           "- When establishing or updating dependencies between tasks\n\n"
+                           "## Fields You Can Update\n\n"
+                           "- **status**: The task status (claimer-only) (see Status Workflow below)\n"
+                           "- **subject**: Change the task title (claimer-only) (imperative form, e.g., \"Run tests\")\n"
+                           "- **description**: Change the task description (claimer-only)\n"
+                           "- **add_blocks**: Mark tasks that cannot start until this one completes (any agent)\n"
+                           "- **add_blocked_by**: Mark tasks that must complete before this one can start (any agent)\n\n"
+                           "## Status Workflow\n\n"
+                           f"Status progresses: `{TASK_PENDING_LABEL}` → `{TASK_IN_PROGRESS_LABEL}` → `{TASK_COMPLETED_LABEL}` "
+                           f"(can not roll back status)\n\n"
+                           f"Use `{TASK_DELETED_LABEL}` to permanently remove a task.\n\n"
+                           "## Staleness\n\n"
+                           f"Make sure to read a task's latest state using `{TOOL_NAME_LIST_TASK}` before updating it.\n\n"
+                           "## Examples\n\n"
+                           "Mark task as in progress when starting work:\n"
+                           f"`task_id`: 1, `status`: {TASK_IN_PROGRESS_LABEL}\n"
+                           "Mark task as completed after finishing work:\n"
+                           f"`taskId`: 1, `status`: {TASK_COMPLETED_LABEL}\n"
+                           "Delete a task:\n"
+                           f"`taskId`: 1, `status`: {TASK_DELETED_LABEL}\n"
+                           "Claim a task:\n"
+                           f"`taskId`: 1, `if_claim`: true\n"
+                           "Set up task dependencies:\n"
+                           "`taskId`: 3, `add_blocked_by`: [1, 2]\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The ID of the task to update.",
+                    },
+                    "if_claim": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "If claim a task without owner.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "New subject for the task.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description for the task.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [f"{TASK_PENDING_LABEL}", f"{TASK_IN_PROGRESS_LABEL}", f"{TASK_COMPLETED_LABEL}", f"{TASK_DELETED_LABEL}"],
+                        "description": "New status for the task.",
+                    },
+                    "add_blocks": {
+                        "description": "Task IDs that this task blocks",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    },
+                    "add_blocked_by": {
+                        "description": "Task IDs that block this task",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    },
+                },
+                "required": ["task_id"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def update_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
+    """tool realization of updating a task with arguments, AgentContext and Scoreboard"""
+    func_name = TOOL_NAME_UPDATE_TASK
+    try:
+        """get data for update"""
+        if_success, task, task_info = args_to_taskupdate(arguments, ctx.agent_id)
+        if not if_success:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Update task failed with error, details: {task_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Update task failed with error, details: {task_info}",
+                                       style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Update task failed with error, details: {task_info}"}
+        """update task"""
+        assert task is not None
+        if_success, update_info = board.update_task(task)
+        if if_success:
+            sys_log.debug(f"{func_name} {DONE_LABEL}: Update task done with info: {update_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {DONE_LABEL}: Update task done with info: {update_info}",
+                                       style="bright_black")
+            return {"status": DONE_LABEL, "info": update_info}
+        else:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Update task failed with error, details: {update_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Update task failed with error, details: {update_info}",
+                                       style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Update task failed with error, details: {update_info}"}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Update task failed with error: {e}")
+        if not MUTE_TASK_OP_INFO:
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Update task failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Update task failed with error: {e}"}
+
+
+def tool_get_task_def() -> dict[str, Any]:
+    """tool definition of getting a task (TOOL_NAME_GET_TASK)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_GET_TASK,
+            "description": "Use this tool to retrieve a task by its task ID from the task list.\n\n"
+                           "## When to Use This Tool\n\n"
+                           "- When you need the full description and context before starting work on a task\n"
+                           "- To understand task dependencies (what it blocks, what blocks it)\n"
+                           "- After being assigned a task, to get complete requirements\n\n"
+                           "## Output\n\n"
+                           "Returns full task details:\n"
+                           "- **subject**: Task title\n"
+                           "- **description**: Detailed requirements and context\n"
+                           "- **owner id**: Agent ID of this task owner\n"
+                           f"- **status**: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, `{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
+                           "- **blocks**: Tasks waiting on this one to complete\n"
+                           "- **blocked_by**: Tasks that must complete before this one can start\n\n"
+                           "## Tips\n\n"
+                           "- After fetching a task, verify its `blocked_by` list is empty before beginning work.\n"
+                           f"- Use {TOOL_NAME_LIST_TASK} to see all tasks in summary form.\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The ID of the task to get.",
+                    },
+                },
+                "required": ["task_id"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def get_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
+    """tool realization of getting a task with arguments, AgentContext and Scoreboard"""
+    func_name = TOOL_NAME_GET_TASK
+    try:
+        """get task"""
+        if_success, task, get_info = board.get_task(arguments["task_id"])
+        if if_success:
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get task success")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get task success", style="bright_black")
+            assert task is not None
+            task_info = task_to_info(task, ctx.agent_id)
+            return {"status": SUCCESS_LABEL, "info": task_info}
+        else:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}",
+                                       style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Get task failed with error, details: {get_info}"}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error: {e}")
+        if not MUTE_TASK_OP_INFO:
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Get task failed with error: {e}"}
+
+
+def tool_list_task_def() -> dict[str, Any]:
+    """tool definition of listing a task (TOOL_NAME_LIST_TASK)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_LIST_TASK,
+            "description": "Use this tool to list all tasks in the task list.\n\n"
+                           "## When to Use This Tool\n\n"
+                           f"- To see what tasks are available to work on (status: `{TASK_PENDING_LABEL}`, no owner, not blocked)\n"
+                           "- To check overall progress on the project\n"
+                           "- To find tasks that are blocked and need dependencies resolved\n"
+                           "- After completing a task, to check for newly unblocked work or claim the next available task\n"
+                           "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are available, "
+                           "as earlier tasks often set up context for later ones\n\n"
+                           "## Output\n\n"
+                           "Returns a summary of each task:\n"
+                           "- **task ID**: Task identifier (use with TaskGet, TaskUpdate)\n"
+                           "- **subject**: Brief description of the task\n"
+                           "- **owner ID**: Agent ID of this task owner\n"
+                           f"- **status**: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, `{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
+                           "- **blocked_by**: List of open task IDs that must be resolved first (tasks with blocked by cannot "
+                           "be claimed until dependencies resolve)\n\n"
+                           f"Use {TOOL_NAME_GET_TASK} with a specific task ID to view full details including description and comments.\n",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def list_task(ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
+    """tool realization of listing tasks with AgentContext and Scoreboard"""
+    func_name = TOOL_NAME_LIST_TASK
+    try:
+        """get task"""
+        tasks = board.list_tasks()
+        tasks_info = tasks_to_info(tasks, ctx.agent_id)
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List task success")
+        if not MUTE_TASK_OP_INFO:
+            progress.console.print(f"{func_name} {SUCCESS_LABEL}: List task success", style="bright_black")
+        return {"status": SUCCESS_LABEL, "info": tasks_info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: List task failed with error: {e}")
+        if not MUTE_TASK_OP_INFO:
+            progress.console.print(f"{func_name} {FAIL_LABEL}: List task failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"List task failed with error: {e}"}
 
 
 def tool_create_cron_def() -> dict[str, Any]:
@@ -338,25 +687,26 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     """tool realization of creating a cron task with arguments and AgentContext"""
     func_name = TOOL_NAME_CREATE_CRON
     try:
+        """check if cron tasks are disabled"""
+        if ctx.args.nocrons:
+            return {"status": DISABLED_LABEL, "info": f"All cron tasks are disabled by user in this launch of agent with "
+                                                      f"`--nocrons` argument"}
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"cron pattern: {arguments.get("cron")}, "
                                          f"prompt: {arguments.get("prompt")}, "
                                          f"if_repeat: {arguments.get("if_repeat", True)}, "
                                          f"durable: {arguments.get("durable", False)},",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
 
-        """creat cron tasks"""
+        """creat cron task"""
         cron_task, if_success, create_info = create_cron_impl(arguments, ctx.cron_ids)
         if if_success and cron_task is not None:
             ctx.add_cron_task(cron_task)
@@ -436,21 +786,18 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     func_name = TOOL_NAME_REMOVE_CRON
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"task id: {arguments.get("id")}",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
 
-        """remove cron tasks"""
+        """remove cron task"""
         task_id = str(arguments.get("id"))
         if_success, remove_info = ctx.remove_cron_task(task_id)
         if if_success:
@@ -556,78 +903,92 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         """evaluate the risk of bash command"""
         risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
+        command = arguments["command"]
+        progress.console.print(get_bash_render(command, ctx.agent_configs["RENDER_BASH_AS_MD"]))
         token, info = ask_permission_tui(ctx, risk, f"bash description: {arguments["description"]}, "
-                                         f"risk level: {level} with reason: {reason}. Full command: {arguments["command"]}",
+                                         f"risk level: {level} with reason: {reason}.\n(Full command is shown above)",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
         """execute command"""
-        command = arguments["command"]
-        limit = BASH_COMMAND_VIEW_CHAR_MAX
-        if len(command) > limit:
-            command_str = command[:limit] + " ... (truncated)"
-        else:
-            command_str = command
         description = arguments.get("description", "")
         timeout = arguments.get("timeout", BASH_TIMEOUT_MS_DEFAULT)
         sys_log.debug(f"{func_name}: {description} start")
         progress.console.print(f"{func_name}: {description} start", style="bright_black")
-        proc = subprocess.Popen(["bash", "-c", command],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        _tmp_script_path = None
         try:
-            stdout, stderr = proc.communicate(timeout=timeout / 1000)
-        except KeyboardInterrupt:
-            proc.terminate()
+            proc = subprocess.Popen(["bash", "-c", command],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        except (UnicodeEncodeError, OSError):
+            # Windows gbk codec can't encode non-gbk chars (emoji, etc.) in command line.
+            # Fallback: write command to a temp script and run `bash script.sh`.
+            sys_log.debug(f"{func_name}: fallback to temp script for command containing non-gbk characters")
+            progress.console.print(f"{func_name}: fallback to temp script for command containing non-gbk characters", style="bright_black")
+            tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, encoding='utf-8')
+            tmp.write("#!/bin/bash\n")
+            tmp.write(command)
+            tmp.close()
+            _tmp_script_path = tmp.name
+            proc = subprocess.Popen(["bash", _tmp_script_path],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        try:
             try:
-                proc.communicate(timeout=1)
+                stdout, stderr = proc.communicate(timeout=timeout / 1000)
+            except KeyboardInterrupt:
+                proc.terminate()
+                try:
+                    proc.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                sys_log.error(f"{func_name} {CANCELLED_LABEL}: {description} with command: {command} is cancelled by user. "
+                              f"Command interrupted")
+                progress.console.print(f"{func_name} {CANCELLED_LABEL}: {description} is "
+                                       f"cancelled by user. Command interrupted", style="bold red")
+                return {"status": CANCELLED_LABEL,  # no need to return results if user cancel
+                        "info": "bash command is cancelled by user. Command interrupted"}
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-            sys_log.error(f"{func_name} {CANCELLED_LABEL}: {description} with command: {command_str} is cancelled by user. "
-                          f"Command interrupted")
-            progress.console.print(f"{func_name} {CANCELLED_LABEL}: {description} with command: {command_str} is "
-                                   f"cancelled by user. Command interrupted", style="bold red")
-            return {"status": CANCELLED_LABEL,  # no need to return results if user cancel
-                    "info": "bash command is cancelled by user. Command interrupted"}
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                stdout, stderr = proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-            sys_log.error(f"{func_name} {TIMEOUT_LABEL}: "
-                          f"{description} with command: {command_str} timeout > {timeout / 1000} s. Command interrupted")
-            progress.console.print(f"{func_name} {TIMEOUT_LABEL}: "
-                                   f"{description} with command: {command_str} timeout > {timeout / 1000} s. Command "
-                                   f"interrupted", style="bold red")
-            return {"status": TIMEOUT_LABEL,
+                proc.terminate()
+                try:
+                    stdout, stderr = proc.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                sys_log.error(f"{func_name} {TIMEOUT_LABEL}: "
+                              f"{description} with command: {command} timeout > {timeout / 1000} s. Command interrupted")
+                progress.console.print(f"{func_name} {TIMEOUT_LABEL}: "
+                                       f"{description} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
+                return {"status": TIMEOUT_LABEL,
+                        "return code": proc.returncode,
+                        "stdout": stdout.decode('utf-8', errors='replace'),
+                        "stderr": stderr.decode('utf-8', errors='replace')}
+            except Exception as e:
+                proc.terminate()
+                try:
+                    proc.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                raise RuntimeError(e)
+            sys_log.debug(f"{func_name}: {description} with command {command} done")
+            progress.console.print(f"{func_name}: {description} done", style="bright_black")
+            return {"status": DONE_LABEL,
                     "return code": proc.returncode,
                     "stdout": stdout.decode('utf-8', errors='replace'),
                     "stderr": stderr.decode('utf-8', errors='replace')}
-        except Exception as e:
-            proc.terminate()
-            try:
-                proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-            raise RuntimeError(e)
-        sys_log.debug(f"{func_name}: {description} with command {command_str} done")
-        progress.console.print(f"{func_name}: {description} with command {command_str} done", style="bright_black")
-        return {"status": "DONE",
-                "return code": proc.returncode,
-                "stdout": stdout.decode('utf-8', errors='replace'),
-                "stderr": stderr.decode('utf-8', errors='replace')}
+        finally:
+            if _tmp_script_path is not None:
+                try:
+                    os.unlink(_tmp_script_path)
+                except OSError:
+                    pass
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Command execute with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Command execute with error: {e}", style="bold red")
@@ -681,13 +1042,10 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_GLOB_FILE
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name, f"pattern: {arguments.get("pattern")}, "
                                          f"path: {arguments.get("path", os.getcwd())}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -810,9 +1168,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_GREP_FILE
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"pattern: {arguments.get("pattern")}, "
                                          f"path: {arguments.get("path", os.getcwd())}, "
@@ -823,8 +1179,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"context: {arguments.get("context")}, "
                                          f"head_limit: {arguments.get("head_limit", GREP_FILE_HEAD_LIMIT_DEFAULT)}, "
                                          f"multiline: {arguments.get("multiline", False)}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -926,9 +1281,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_READ_FILE
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, "
                                          f"method: {arguments["method"]}, "
@@ -936,8 +1289,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"offset: {arguments.get("offset", "None")}, "
                                          f"encoding: {arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)}",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1136,17 +1488,14 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     func_name = TOOL_NAME_WRITE_FILE
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, "
                                          f"mode: {arguments.get("mode", WRITE_FILE_MODE_DEFAULT)}, "
                                          f"create_dirs: {arguments.get("create_dirs", True)}, "
                                          f"encoding: {arguments.get("encoding", WRITE_FILE_ENCODING_DEFAULT)}",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1356,14 +1705,14 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                             f"identify the instance."}
         multi_match = True if (count > 1 and replace_all) else False
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
-        token = ask_edit_tui(file_path, actual_old, new_string_norm, raw_line, match_lines, multi_match, ctx, progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        pause_for_permission(progress)
+        token, info = ask_edit_tui(file_path, actual_old, new_string_norm, raw_line, match_lines, multi_match, ctx, progress.console)
+        resume_from_permission(progress)
         if not token:
-            return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if info is None:
+                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            else:
+                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
         """apply edit with replacement (use actual_old for consistency with matching, avoid double CR)"""
         if count > 1 and replace_all:  # multiple replace
             edit_str = raw_str.replace(actual_old, new_string_norm)
@@ -1406,32 +1755,31 @@ def tool_skill_def() -> dict[str, Any]:
             "description": "Execute a skill within the main conversation. When users ask you to perform tasks, check if any "
                            "of the available skills match. Skills provide specialized capabilities and domain knowledge.\n"
                            "How to invoke:\n"
-                           "- Use this tool with the skill name and optional arguments\n"
-                           "- Examples:\n"
-                           "  - `skill: \"pdf\"` - invoke the pdf skill\n"
-                           "  - `skill: \"review-pr\", args: \"123\"` - invoke with arguments\n"
-                           "  - `skill: \"ms-office-suite:pdf\"` - invoke using fully qualified name\n"
+                           "- Use this tool with the skill `name` and optional `purpose`\n"
+                           "- FORMAT EXAMPLE (not actual skills):\n"
+                           "  - `name: \"ms-office-suite:pdf\"`, `purpose: invoke the pdf skill to read ...`\n"
+                           "  - `name: \"svg-diagram\"`, `purpose: draw svg diagram on ... with the skill`\n"
+                           "  - `name: \"<skill_name>\"`, `purpose: \"<purpose to invode skill>\"`\n"
                            "Important:\n"
-                           "- Available skills and their description are listed in system messages\n"
-                           "- When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the relevant "
-                           f"`{TOOL_NAME_SKILL}` tool BEFORE generating any other response about the task\n"
-                           "- NEVER mention a skill without actually calling this tool\n"
-                           "- Do not invoke a skill that is already running\n"
+                           "- All available skills and their description are listed in your system prompts\n"
+                           f"- When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the `{TOOL_NAME_SKILL}` "
+                           f"tool with relevant skill's name BEFORE generating any other response about the task\n"
+                           "- Do not invoke a skill that is already running or nonexists\n"
                            "- If the skill has ALREADY been loaded (by you or user), this tool will error, follow the "
                            "instructions directly instead of calling this tool again\n",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "args": {
+                    "name": {
                         "type": "string",
-                        "description": "Optional arguments for the skill.",
+                        "description": "The full name of the skill to invoke.",
                     },
-                    "skill": {
+                    "purpose": {
                         "type": "string",
-                        "description": "The skill name. E.g., \"translate\", \"review-pr\", or \"pdf\"."
-                    }
+                        "description": "Optional purpose for invoking the skill.",
+                    },
                 },
-                "required": ["skill"],
+                "required": ["name"],
                 "additionalProperties": False,
             },
         }
@@ -1443,16 +1791,17 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
     """tool realization of launching skill with AgentContext"""
     func_name = TOOL_NAME_SKILL
     try:
-        name = str(arguments["skill"])
+        """check if skills are disabled"""
+        if ctx.args.noskills:
+            return {"status": DISABLED_LABEL, "info": f"All skills are disabled by user in this launch of agent with "
+                                                      f"`--noskills` argument"}, None
+        name = str(arguments["name"])
         """permission request"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
-        token, info = ask_permission_tui(ctx, "{func_name}",
-                                         f"skill name: {arguments["skill"]}, "
-                                         f"args: {arguments.get("args", "None")}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, f"{func_name}",
+                                         f"skill name: {arguments["name"]}, "
+                                         f"purpose: {arguments.get("purpose", "None")}", progress.console)
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}, None
@@ -1538,14 +1887,11 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         url = arguments["url"]
         prompt = arguments["prompt"]
         """permission request"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"URL: {arguments["url"]}, "
                                          f"prompt: {arguments["prompt"]}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1560,7 +1906,7 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             return {"status": FAIL_LABEL, "info": f"URL {url} is not valid. Detail: {check_info}"}
 
         """fetch content"""
-        content, content_info, if_redirect, final_url = ui_info.loading_spinner_rap(
+        content, content_info, if_redirect, final_url = ui_info.loading_spinner(
             web_single_fetch, url, ctx, progress.console,
             waiting_desc="Web fetching ...", done_desc="Web fetch time cost",
             intrp_desc="Web fetch interrupted", fail_desc="Web fetch failed",
@@ -1655,13 +2001,10 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     try:
         query = arguments["query"]
         """permission request"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"Web search with keywords {query}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1669,7 +2012,7 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
 
         """web search"""
-        content, content_info = ui_info.loading_spinner_rap(
+        content, content_info = ui_info.loading_spinner(
             web_search_top, query, ctx, progress.console,
             waiting_desc="Web searching ...", done_desc="Web search time cost",
             intrp_desc="Web search interrupted", fail_desc="Web search failed",
@@ -1712,12 +2055,9 @@ def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progr
         else:
             mcp_name = mcp_client.name
         """permission request"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1821,13 +2161,10 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     func_name = TOOL_NAME_INIT_DESIGN
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"initialize a new design with id {arguments["id"]}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1889,14 +2226,11 @@ def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     func_name = TOOL_NAME_COPY_DESIGN
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"copy design with id {arguments["source_id"]} to create a new design with "
                                          f"id {arguments["target_id"]}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -1993,14 +2327,11 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     func_name = TOOL_NAME_LAUNCH_SIM
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"launch simulation run under design with id: {arguments["id"]}",
                                          progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
@@ -2269,17 +2600,14 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
     func_name = TOOL_NAME_READ_LOG
     try:
         """request permission"""
-        if_tran = progress.live.transient
-        progress.live.transient = True
-        progress.stop()
+        pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"run id: {arguments["id"]}, "
                                          f"type: {arguments["log_type"]}, "
                                          f"method: {arguments["method"]}, "
                                          f"read-in line: {arguments.get("line_num", "None")}, "
                                          f"offset: {arguments.get("offset", "None")}", progress.console)
-        progress.live.transient = if_tran
-        progress.start()
+        resume_from_permission(progress)
         if not token:
             if info is None:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}

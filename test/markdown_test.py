@@ -1,4 +1,5 @@
 from rich.text import Text
+from rich.table import Table
 from rich.console import Group, Console
 from rich.markdown import Markdown
 
@@ -143,3 +144,41 @@ console.print(get_block_render("# This is a reasoning block\n- list1\n- list2\n\
                                "", True))
 console.print("End   ↑\n")
 
+console.print(Markdown("```bash\n"
+                       "grep error < log.txt >> errors.log ; echo done\n"
+                       "cat file.txt | sort > sorted.txt && uniq\n"
+                       "echo \"hello | world\" > out.txt | grep foo\n"
+                       "```", code_theme="one-dark"))
+
+def get_bash_render(commands: str, as_md: bool) -> Group:
+    """get the renderable of a bash command string"""
+    parts = []
+    lines = commands.strip('\n').split('\n')
+    line_count = len(lines)
+    line_num_width = len(str(line_count))
+
+    line_numbers = "\n".join(f"{' ' * 3}{i:>{line_num_width}}{' ' * 1}" for i in range(1, line_count + 1))
+    print(repr(line_numbers))
+    t = Table(show_header=False, show_edge=False, padding=0,
+              box=None, collapse_padding=True)
+    t.add_column(no_wrap=True, vertical="middle")
+    t.add_column(vertical="middle")
+    if as_md:
+        bash_content = Markdown("```bash\n" + commands + "\n```", code_theme="one-dark")
+        t.add_row(Text(f"{line_numbers}", style=f"bright_black"), bash_content)
+    else:
+        t.add_row(Text(f"{line_numbers}", style=f"bright_black"), Text(commands.strip('\n')))
+
+    parts.append(t)
+    return Group(*parts)
+
+console.print()
+console.print(get_bash_render("grep error < log.txt >> errors.log ; echo done\n"
+                       "cat file.txt | sort > sorted.txt && uniq\n"
+                       "echo \"hello | world\" > out.txt | grep foo\n", True))
+
+console.print(Markdown("```bash linenums=\"1\"\n"
+                       "grep error < log.txt >> errors.log ; echo done # [line 1]\n"
+                       "[line 2] cat file.txt | sort > sorted.txt && uniq\n"
+                       "3 echo \"hello | world\" > out.txt | grep foo\n"
+                       "```", code_theme="one-dark"))

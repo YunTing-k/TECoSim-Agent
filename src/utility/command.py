@@ -20,6 +20,7 @@ Revision:
 2026.5.31      Yu Huang      1.8      Add builtin cmd for session removal & Define used file/dir. paths in constants.py
 2026.6.2       Yu Huang      1.9      Revise session list's layout and add usage info
 2026.6.3       Yu Huang      2.0      Add cron tasks support & Add configurable title in yes or no request TUI
+2026.6.7       Yu Huang      2.1      Support of tasks query in Scoreboard
 
 Details:
 ---------
@@ -40,6 +41,7 @@ from rich.text import Text
 from rich.panel import Panel
 from src.utility import ui_info, basic_utils
 from src.context.agent_context import AgentContext
+from src.tool.scoreboard import Scoreboard, TaskStatus
 from src.tool import summarize_support
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.constants import *
@@ -56,7 +58,7 @@ def cmd_unknown(console: Console):
     console.print(cmd_str)
 
 
-def cmd_design_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_design_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the list of current designs"""
     cmd_str = Text()
     cmd_str.append(f"{TOOL_NAME_QUERY_DESIGN}", style=f"bold {MAJOR_COLOR1}")
@@ -67,7 +69,7 @@ def cmd_design_list(args: list[str], ctx: AgentContext, console: Console):
     console.print(cmd_str)
 
 
-def cmd_run_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_run_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the amount of launched simulation"""
     cmd_str = Text()
     cmd_str.append(f"{TOOL_NAME_QUERY_RUN}", style=f"bold {MAJOR_COLOR1}")
@@ -76,7 +78,7 @@ def cmd_run_list(args: list[str], ctx: AgentContext, console: Console):
     console.print(cmd_str)
 
 
-def cmd_context(args: list[str], ctx: AgentContext, console: Console):
+def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the token usage, message and API requests statistics"""
     title = "TECoSim Agent Context Usage"
     if ctx.total_input_tokens <= 0:
@@ -181,7 +183,7 @@ def cmd_context(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_fread_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_fread_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the absolute paths of all read files"""
     title = "TECoSim Agent Files Read"
     cmd_str = Text()
@@ -200,7 +202,7 @@ def cmd_fread_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_readonly_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_readonly_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the absolute paths of all readonly paths"""
     title = (f"TECoSim Agent Readonly Paths "
              f"({len(ctx.system_read_only_paths)} system, {len(ctx.read_only_paths)} custom)")
@@ -243,7 +245,7 @@ def cmd_readonly_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_readonly_add(args: list[str], ctx: AgentContext, console: Console):
+def cmd_readonly_add(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """add a readonly path into list (converted to absolute path)"""
     if len(args) == 0:
         sys_log.warning(f"Unable to add readonly path, target path is empty")
@@ -272,7 +274,7 @@ def cmd_readonly_add(args: list[str], ctx: AgentContext, console: Console):
     console.print(cmd_str)
 
 
-def cmd_readonly_remove(args: list[str], ctx: AgentContext, console: Console):
+def cmd_readonly_remove(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """remove a readonly path from list"""
     if len(args) == 0:
         sys_log.warning(f"Unable to remove readonly path, target index is empty")
@@ -310,7 +312,7 @@ def cmd_readonly_remove(args: list[str], ctx: AgentContext, console: Console):
     console.print(cmd_str)
 
 
-def cmd_permission_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_permission_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query the configs of always-allowed-configurable tool calls permission token"""
     title = "TECoSim Agent Tool Call Permission"
     cmd_str = Text()
@@ -352,7 +354,7 @@ def cmd_permission_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_permission_toggle(args: list[str], ctx: AgentContext, console: Console):
+def cmd_permission_toggle(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """toggle the permission token of the tool calls permission with given name"""
     cmd_str = Text()
     if ctx.args.dangerously_allow_all:
@@ -387,7 +389,7 @@ def cmd_permission_toggle(args: list[str], ctx: AgentContext, console: Console):
     console.print(f"Unknown permission name {arg_name}, toggle failed", style=f"bold yellow")
 
 
-def cmd_skill_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_skill_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all available skills (truncate)"""
     title = f"Available Skills ({len(ctx.skills)})"
     limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
@@ -406,7 +408,7 @@ def cmd_skill_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_skills_loaded(args: list[str], ctx: AgentContext, console: Console):
+def cmd_skills_loaded(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all loaded skills (no truncate)"""
     title = f"Loaded Skills ({len(ctx.loaded_skills)})"
     cmd_str = Text()
@@ -428,7 +430,7 @@ def skill_bound_command(name: str, func: Callable, *args, **kwargs):
     return bound_func
 
 
-def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, console: Console):
+def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """manually load the full prompts of skill to context immediately"""
     try:
         content = load_skill_content(SKILLS_PATH, skill_name, console, True)
@@ -451,7 +453,7 @@ def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, console
             {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
 
 
-def cmd_url_caches(args: list[str], ctx: AgentContext, console: Console):
+def cmd_url_caches(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all cached URLs"""
     title = f"Cached URLs ({len(ctx.url_caches)})"
     cmd_str = Text()
@@ -477,7 +479,7 @@ def cmd_url_caches(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_mcp_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_mcp_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query MCPs info"""
     mcps_configs = ctx.mcps_configs
     mcps_ini_info = ctx.mcp_router.mcps_ini_info
@@ -535,7 +537,7 @@ def cmd_mcp_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_update_title(args: list[str], ctx: AgentContext, console: Console):
+def cmd_update_title(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """update title of this session with history immediately"""
     title = summarize_support.summarize_session(ctx=ctx, console=console)
     ctx.session_title = title if title else ERROR_SESSION_TITLE
@@ -544,7 +546,7 @@ def cmd_update_title(args: list[str], ctx: AgentContext, console: Console):
     console.print("Session title updated", style="bright_black")
 
 
-def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all sessions"""
     session_dir = SESSION_PATH
     if not os.path.exists(session_dir):
@@ -602,7 +604,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_session_remove(args: list[str], ctx: AgentContext, console: Console):
+def cmd_session_remove(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """remove a session with UUID"""
     session_dir = SESSION_PATH
     if not os.path.exists(session_dir):
@@ -652,7 +654,7 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, console: Console):
         console.print(f"Remove session with args: {args} failed with error: {e}", style="bold red")
 
 
-def cmd_cron_list(args: list[str], ctx: AgentContext, console: Console):
+def cmd_cron_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all cron tasks"""
     title = f"Available Cron Tasks ({len(ctx.cron_tasks)} total, {ctx.active_cron} active)"
     cmd_str = Text()
@@ -692,7 +694,7 @@ def cmd_cron_list(args: list[str], ctx: AgentContext, console: Console):
     console.print("\n")
 
 
-def cmd_cron_remove(args: list[str], ctx: AgentContext, console: Console):
+def cmd_cron_remove(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """remove a cron task with ID"""
     try:
         id_str: str = args[0]
@@ -714,6 +716,124 @@ def cmd_cron_remove(args: list[str], ctx: AgentContext, console: Console):
     except Exception as e:
         sys_log.error(f"Remove cron task with args: {args} failed with error: {e}")
         console.print(f"Remove cron task with args: {args} failed with error: {e}", style="bold red")
+
+
+def cmd_task_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query all non-archived agent tasks"""
+    tasks = board.list_tasks()
+    title = f"Non-archived Agent Tasks ({len(tasks)})"
+    cmd_str = Text()
+    for task in tasks:
+        subject = task["subject"]
+        status = task["status"].value
+        owner = task["owner"]
+        cmd_str.append(f"Task ID: ", style=f"white")
+        cmd_str.append(f"{task["task_id"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Owner ID: ", style=f"white")
+        if owner is None:
+            cmd_str.append(f"(None)", style=f"{MAJOR_COLOR2}")
+        else:
+            cmd_str.append(f"{task["owner"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Status: ", style=f"white")
+        cmd_str.append(f"{status}\n", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f"Subject: ", style=f"white")
+        if status == TaskStatus.PENDING:
+            if owner is None:
+                cmd_str.append(
+                    f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITHOUT_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                    style=TASK_PENDING_WITHOUT_OWNER_ICON_STYLE)
+                cmd_str.append(f"{subject}\n", style=TASK_PENDING_WITHOUT_OWNER_STYLE)
+            else:
+                cmd_str.append(
+                    f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITH_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                    style=f"bold {TASK_PENDING_COLOR_END}")
+                cmd_str.append(f"{subject}\n", style=f"{TASK_PENDING_COLOR_END}")
+        elif status == TaskStatus.IN_PROGRESS:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITH_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_IN_PROGRESS_COLOR_END}")
+            cmd_str.append(f"{subject}\n", style=f"{TASK_IN_PROGRESS_COLOR_END}")
+        elif status == TaskStatus.COMPLETED:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_COMPLETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_COMPLETED_COLOR}")
+            cmd_str.append(f"{subject}\n", style=TASK_COMPLETED_COLOR)
+        elif status == TaskStatus.DELETED:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_DELETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_DELETED_COLOR}")
+            cmd_str.append(f"{subject}\n", style=f"strike {TASK_DELETED_COLOR}")
+        cmd_str.append(f"Description: ", style=f"white")
+        cmd_str.append(f"{task["description"]}\n", style=f"bright_black")
+        cmd_str.append(f"Blocks: ", style=f"white")
+        cmd_str.append(f"{task["blocks"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Blocked By: ", style=f"white")
+        cmd_str.append(f"{task["blocked_by"]}\n\n", style=f"{MAJOR_COLOR2}")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    hint = Text()
+    hint.append(f"  Tips: Resolved agent tasks will be archived after {TASK_DISPLAYS_BEFORE_ARCHIVED} times of displays.\n", style=f"bright_black")
+    hint.append(f"        You can query all history agent tasks with following builtin command: ", style=f"bright_black")
+    hint.append(f"/task_list_all ", style=f"bold {MAJOR_COLOR2}")
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print(hint)
+    console.print("\n")
+
+
+
+def cmd_task_list_all(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query all history agent tasks"""
+    tasks = board.list_all_tasks()
+    title = f"History Agent Tasks ({len(tasks)})"
+    cmd_str = Text()
+    for task in tasks:
+        subject = task["subject"]
+        status = task["status"].value
+        owner = task["owner"]
+        cmd_str.append(f"Task ID: ", style=f"white")
+        cmd_str.append(f"{task["task_id"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Owner ID: ", style=f"white")
+        if owner is None:
+            cmd_str.append(f"(None)", style=f"{MAJOR_COLOR2}")
+        else:
+            cmd_str.append(f"{task["owner"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Status: ", style=f"white")
+        cmd_str.append(f"{status}\n", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f"Subject: ", style=f"white")
+        if status == TaskStatus.PENDING:
+            if owner is None:
+                cmd_str.append(
+                    f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITHOUT_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                    style=TASK_PENDING_WITHOUT_OWNER_ICON_STYLE)
+                cmd_str.append(f"{subject}\n", style=TASK_PENDING_WITHOUT_OWNER_STYLE)
+            else:
+                cmd_str.append(
+                    f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITH_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                    style=f"bold {TASK_PENDING_COLOR_END}")
+                cmd_str.append(f"{subject}\n", style=f"{TASK_PENDING_COLOR_END}")
+        elif status == TaskStatus.IN_PROGRESS:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_PENDING_WITH_OWNER_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_IN_PROGRESS_COLOR_END}")
+            cmd_str.append(f"{subject}\n", style=f"{TASK_IN_PROGRESS_COLOR_END}")
+        elif status == TaskStatus.COMPLETED:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_COMPLETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_COMPLETED_COLOR}")
+            cmd_str.append(f"{subject}\n", style=TASK_COMPLETED_COLOR)
+        elif status == TaskStatus.DELETED:
+            cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_DELETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
+                        style=f"bold {TASK_DELETED_COLOR}")
+            cmd_str.append(f"{subject}\n", style=f"strike {TASK_DELETED_COLOR}")
+        cmd_str.append(f"Description: ", style=f"white")
+        cmd_str.append(f"{task["description"]}\n", style=f"bright_black")
+        cmd_str.append(f"Blocks: ", style=f"white")
+        cmd_str.append(f"{task["blocks"]}", style=f"{MAJOR_COLOR2}")
+        cmd_str.append(f", Blocked By: ", style=f"white")
+        cmd_str.append(f"{task["blocked_by"]}\n\n", style=f"{MAJOR_COLOR2}")
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
 
 
 class BuiltinCommands:
@@ -744,6 +864,8 @@ class BuiltinCommands:
             "session_remove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
             "cron_list": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
             "cron_remove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
+            "task_list": (cmd_task_list, "list agent tasks", "list all agent tasks that are not archived"),
+            "task_list_all": (cmd_task_list_all, "list all agent tasks", "list all history agent tasks"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")
@@ -793,7 +915,7 @@ class BuiltinCommands:
                       f"[{MAJOR_COLOR2}]{len(self._commands)}[/{MAJOR_COLOR2}] builtin commands available")
 
 
-    def cmd_help(self, args: list[str], ctx: AgentContext, console: Console):
+    def cmd_help(self, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
         """print all available commands"""
         title = "Available Commands"
         cmd_str = Text()
@@ -809,7 +931,7 @@ class BuiltinCommands:
         console.print("\n")
 
 
-    def execute_cmd(self, cmd: str, args: list[str], ctx: AgentContext, console: Console) -> bool:
+    def execute_cmd(self, cmd: str, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
         """execute builtin command, return if goto the LLM request"""
         if cmd == BUILTIN_UNKNOWN:
             sys_log.debug("Unknown command called, nothing happen")
@@ -817,7 +939,7 @@ class BuiltinCommands:
             return False
         else:
             sys_log.debug(f"Command call: {cmd} with args {args} start")
-            self._commands[cmd][0](args, ctx, console)
+            self._commands[cmd][0](args, ctx, board, console)
             sys_log.debug(f"Command call: {cmd} done")
             if cmd in self._request_commands:
                 return True

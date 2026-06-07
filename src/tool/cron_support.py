@@ -10,6 +10,7 @@ Description: Cron task management support
 Revision:
 ---------
 2026.6.3       Yu Huang      1.0      First implementation
+2026.6.7       Yu Huang      1.1      Remove cron listen to agent_listen.py
 
 Details:
 ---------
@@ -19,10 +20,8 @@ repetitive and one-shot tasks. Provides task checking/triggering (appends cron p
 for durable cron management.
 """
 import sys
-import time
 import json
 import uuid
-import rich.box
 import logging
 
 from argparse import Namespace
@@ -31,9 +30,7 @@ from datetime import datetime
 from typing import Any
 from rich.text import Text
 from rich.panel import Panel
-from rich.console import Group, Console
-from rich.live import Live
-from prompt_toolkit.input import create_input
+from rich.console import Console
 from src.context.agent_context import AgentContext, CronDump, CronTask
 from src.constants import *
 from src.utility import ui_info, basic_utils
@@ -208,48 +205,6 @@ def create_cron_impl(arguments: dict[str, Any], id_list: list[str]) -> tuple[Cro
             if_end=False), True, SUCCESS_LABEL
     except Exception as e:
         return None, False, f"Create cron task failed with error: {e}"
-
-
-
-def render_cron_listen(active_cron: int, base_time: datetime, color_list: list[str]) -> Group:
-    """render the cron listening before user input"""
-    panels = []
-    time_diff = (datetime.now() - base_time).total_seconds()
-    position_in_period = time_diff % CRON_LISTEN_COLOR_PERIOD
-    index = int((position_in_period / CRON_LISTEN_COLOR_PERIOD) * len(color_list)) % len(color_list)
-    color = color_list[index]
-    prefix_str = Text(f"{AGENT_CONSOLE_ICON} {active_cron} cron tasks listening ... \n", style=f"bold {color}")
-    prefix_str = prefix_str.append(f"  Press any key to quit listening and type your words", style=f"bright_black")
-    panels.append(Panel(prefix_str, box=rich.box.SQUARE))
-    return Group(*panels)
-
-
-def cron_listen_tui(ctx: AgentContext, console: Console) -> bool:
-    """realization of cron listening TUI before user input"""
-    if ctx.active_cron == 0:
-        return False
-    base_time = datetime.now()
-    color_list = ui_info.grad_color_hex_list(MAJOR_COLOR1, MAJOR_COLOR2, CRON_LISTEN_COLOR_GRADIENT)
-    color_list = color_list + color_list[::-1]
-    while True:
-        input_device = create_input()
-        try:
-            with input_device.raw_mode():
-                input_device.flush_keys()
-                with Live(render_cron_listen(ctx.active_cron, base_time, color_list),
-                          console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
-                    while True:
-                        key_press = input_device.read_keys()
-                        cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks
-                        if cron_triggerd:
-                            return True
-                        if key_press:
-                            return False
-                        live.update(render_cron_listen(ctx.active_cron, base_time, color_list))
-                        live.refresh()
-                        time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
-        finally:
-            input_device.close()
 
 
 def cron_entry_cli(args: Namespace, console: Console):

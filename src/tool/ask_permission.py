@@ -15,6 +15,9 @@ Revision:
 2026.5.30      Yu Huang      1.3      Optimize the hardware occupancy of TUI
 2026.6.1       Yu Huang      1.4      Define TUI selection prefixes in constants.py
 2026.6.4       Yu Huang      1.5      Add support of comment when user deny permission request
+2026.6.6       Yu Huang      1.6      Bugfix of submit action in all ask permission TUIs
+2026.6.7       Yu Huang      1.7      Revise the display style of all ask permission TUIs & Add newline and space padding
+                                      for all ask permission TUIs
 
 Details:
 ---------
@@ -67,7 +70,7 @@ def render_permission(active_idx: int, request_type: str, request_desc: str, use
             body.append(f"{prefix1}{str_list[i]}{prefix2}\n\n", style=label_style)
         else:
             body.append(f"{prefix1}{str_list[i]}{prefix2}\n", style=label_style)
-            body.append(f"    {user_cache}\n\n", style="bright_black")
+            body.append(f"    {user_cache}\n\n", style=TUI_USER_COMMENT_COLOR)
     if body.plain.endswith("\n"):
         body.rstrip()
     panels.append(Panel(body, title=header_text, title_align="left", border_style=MAJOR_COLOR2))
@@ -147,7 +150,7 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
             if ctx.agent_session is not None:
                 console.print()
                 user_cache, is_empty, is_modify = get_user_input(user_cache, ctx.agent_session,
-                                                                 f"{AGENT_CONSOLE_ICON} Your comment for request: ")
+                                                                 f"{AGENT_CONSOLE_ICON} Your comment for request: \n  ")
                 if is_empty:  # if empty, unselect
                     active_idx = 2
                 elif is_modify:  # if non-empty and modified, select
@@ -157,10 +160,11 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
             else:
                 active_idx = 2
         if action == "submit":
-            if user_cache.strip():
-                return False, user_cache
-            else:
-                return False, None
+            if active_idx == 3:
+                if user_cache.strip():
+                    return False, user_cache
+                else:
+                    return False, None
         if action == "cancel":
             if len(request_desc) > limit:
                 sys_log.warning(f"Quest: {request_type} with desc. {request_desc[:limit]} ... (truncated) canceled, "
