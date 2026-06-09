@@ -2,18 +2,15 @@
     "MERGE_SYSTEM_PROMPTS": true,
     "CONTEXT_THRESHOLD": 0.9,
     "DEEPSEEK_SUPPORT": true,
-    "RENDER_RESPONSE_AS_MD": true,
-    "RENDER_BASH_AS_MD": true,
-    "RESUME_DISPLAY_SKILLS": false,
-    "RESUME_DISPLAY_CRONS": false,
     "AUTO_SUMMARY_TRIGGER": 1,
     "FLATTEN_BEFORE_SUMMARY": true,
-    "RANDOM_PROGRESS_TITLE": true,
 
+    "BASH_PATH": "bash",
+    "RIPGREP_PATH": "rg",
+    "RIPGREP_TIMEOUT_S": 20,
     "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",
     "SIMULATOR_TIMEOUT_S": 3600,
 
-    "GREP_FILE_TIMEOUT_S": 20,
     "READ_FILE_MB_LIMIT": 100,
     "READ_FILE_LLM_KB_LIMIT": 500,
 
@@ -35,5 +32,11 @@
     "WEB_SEARCH_LLM_CHAR_LIMIT": 12000,
 
     "MCP_INIT_TIMEOUT_S": 60,
-    "MCP_TIMEOUT_S": 60
+    "MCP_TIMEOUT_S": 60,
+
+    "RENDER_RESPONSE_AS_MD": true,
+    "RENDER_BASH_AS_MD": true,
+    "RESUME_DISPLAY_SKILLS": false,
+    "RESUME_DISPLAY_CRONS": false,
+    "RANDOM_PROGRESS_TITLE": true
 }

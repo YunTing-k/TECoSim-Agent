@@ -38,18 +38,21 @@ Revision:
                                       command as Markdown support & Bugfix of submit action in all ask permission TUIs
 2026.6.6       Yu Huang      3.5      Basic support of agent tasks as Scoreboard with lock
 2026.6.7       Yu Huang      3.6      Add scoreboard display in tool execute spinner & Add fallback if bash encounter encoding error
+2026.6.8       Yu Huang      3.7      Bash and ripgrep path configurable support
+2026.6.9       Yu Huang      3.8      Add design and run support for simulator & Merge task get/list into task query & Revise the prompts
+                                      of task tools & Revise the prompts simulation tools
 
 Details:
 ---------
-Tool definitions (OpenAI function-calling schema) and their realizations for all 20+ agent tools. Organized as: (1) basic
-tools - ask user question, cron, bash (with permission/per-subprocess/risk-eval), glob/grep, read/write/edit file, skill,
-web fetch/search; (2) simulation tools - check simulator, init/copy/query design, launch sim, query run, read log;
-(3) MCP tool dispatch via TOOL_NAME_CALL_MCP. Each tool handles permission TUI, logging, and error reporting.
+Tool definitions (OpenAI function-calling schema) and their realizations for all 25+ agent tools. Organized as: (1) basic
+tools - ask user question, cron (create/query/remove), bash (with permission/per-subprocess/risk-eval), glob/grep,
+read/write/edit file, skill, web fetch/search; (2) task tools - create/update/query task via Scoreboard with dependency
+tracking; (3) simulation tools - check simulator, init/copy/query design, launch sim, query run, read log;
+(4) MCP tool dispatch via TOOL_NAME_CALL_MCP. Each tool handles permission TUI, logging, and error reporting.
 """
 import os
 import subprocess
 import logging
-import shutil
 import tempfile
 
 from typing import Any
@@ -57,12 +60,15 @@ from datetime import datetime
 from rich.progress import Progress
 from src.utility import ui_info
 from src.utility.ui_info import pause_for_permission, resume_from_permission
+from src.utility.basic_utils import read_line_with_limit
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, create_cron_impl
 from src.tool.scoreboard import Scoreboard, args_to_taskupdate, task_to_info, tasks_to_info
 from src.tool.file_filter_support import glob_impl, grep_impl
-from src.tool.file_io_support import read_line_with_limit, match_line_ranges, get_match_debug_info, find_actual_string, ask_edit_tui, check_read_only
-from src.tool.simulator_support import clean_stdout_log, clean_stderr_log
+from src.tool.file_io_support import (
+    match_line_ranges, get_match_debug_info, find_actual_string, ask_edit_tui, check_read_only)
+from src.tool.simulator_support import (
+    init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.web_support import web_search_top, web_search_process
@@ -82,8 +88,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_ask_user_question_def(),
         tool_create_task_def(),
         tool_update_task_def(),
-        tool_get_task_def(),
-        tool_list_task_def(),
+        tool_query_task_def(),
         tool_create_cron_def(),
         tool_query_cron_def(),
         tool_remove_cron_def(),
@@ -99,7 +104,6 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         # simulation tools
         tool_check_simulator_def(),
         tool_init_design_def(),
-        tool_copy_design_def(),
         tool_query_design_def(),
         tool_launch_sim_def(),
         tool_query_run_def(),
@@ -295,7 +299,7 @@ def tool_create_task_def() -> dict[str, Any]:
                            f"All tasks are created with status `{TASK_PENDING_LABEL}` and a unique integer task id.\n\n"
                            "## Usage\n\n"
                            "- After receiving new instructions, immediately capture user requirements as tasks\n"
-                           f"- Use `{TOOL_NAME_LIST_TASK}` first to avoid creating duplicate tasks\n"
+                           f"- Use `{TOOL_NAME_QUERY_TASK}` first to avoid creating duplicate tasks\n"
                            "- Create tasks with clear, specific subjects that describe the outcome\n"
                            f"- After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set up dependencies (`add_blocks` / "
                            f"`add_blocked_by`) if needed\n"
@@ -311,14 +315,8 @@ def tool_create_task_def() -> dict[str, Any]:
                            "- User explicitly requests todo list: When the user directly asks you to use the todo list\n"
                            "- User provides multiple tasks: When user provides a list of things to be done (numbered or "
                            "comma-separated)\n"
-                           "## When NOT to Use This Tool\n\n"
-                           "Skip using this tool when:\n"
-                           "- There is only a single, straightforward task\n"
-                           "- The task is trivial and tracking it provides no organizational benefit\n"
-                           "- The task can be completed in less than 3 trivial steps\n"
-                           "- The task is purely conversational or informational\n\n"
-                           "NOTE that you should not use this tool if there is only one trivial task to do. In this case "
-                           "you are better off just doing the task directly.\n\n",
+                           "A good rule of thumb: each task should represent a meaningful milestone "
+                           "(e.g. \"Collect data\"), not individual tool calls (e.g. \"Read file A\").\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -381,7 +379,7 @@ def tool_update_task_def() -> dict[str, Any]:
                            "- You have completed the work described in a task\n"
                            "- A task is no longer needed or has been superseded\n"
                            "- IMPORTANT: Always mark your assigned & claimed tasks as resolved when you finish them\n"
-                           f"- After resolving, call `{TOOL_NAME_LIST_TASK}` to find your next task\n\n"
+                           f"- After resolving, call `{TOOL_NAME_QUERY_TASK}` to find your next task\n\n"
                            f"- ONLY mark a task as `{TASK_COMPLETED_LABEL}` when you have FULLY accomplished it\n"
                            f"- If you encounter errors, blockers, or cannot finish, keep the task as `{TASK_IN_PROGRESS_LABEL}`\n"
                            "- When blocked, create a new task describing what needs to be resolved\n"
@@ -408,7 +406,7 @@ def tool_update_task_def() -> dict[str, Any]:
                            f"(can not roll back status)\n\n"
                            f"Use `{TASK_DELETED_LABEL}` to permanently remove a task.\n\n"
                            "## Staleness\n\n"
-                           f"Make sure to read a task's latest state using `{TOOL_NAME_LIST_TASK}` before updating it.\n\n"
+                           f"Make sure to read a task's latest state using `{TOOL_NAME_QUERY_TASK}` before updating it.\n\n"
                            "## Examples\n\n"
                            "Mark task as in progress when starting work:\n"
                            f"`task_id`: 1, `status`: {TASK_IN_PROGRESS_LABEL}\n"
@@ -503,97 +501,44 @@ def update_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard,
         return {"status": FAIL_LABEL, "info": f"Update task failed with error: {e}"}
 
 
-def tool_get_task_def() -> dict[str, Any]:
-    """tool definition of getting a task (TOOL_NAME_GET_TASK)"""
+def tool_query_task_def() -> dict[str, Any]:
+    """tool definition of querying tasks (TOOL_NAME_QUERY_TASK)"""
     tool_def = {
         "type": "function",
         "function": {
-            "name": TOOL_NAME_GET_TASK,
-            "description": "Use this tool to retrieve a task by its task ID from the task list.\n\n"
-                           "## When to Use This Tool\n\n"
-                           "- When you need the full description and context before starting work on a task\n"
-                           "- To understand task dependencies (what it blocks, what blocks it)\n"
-                           "- After being assigned a task, to get complete requirements\n\n"
-                           "## Output\n\n"
-                           "Returns full task details:\n"
-                           "- **subject**: Task title\n"
-                           "- **description**: Detailed requirements and context\n"
-                           "- **owner id**: Agent ID of this task owner\n"
-                           f"- **status**: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, `{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
-                           "- **blocks**: Tasks waiting on this one to complete\n"
-                           "- **blocked_by**: Tasks that must complete before this one can start\n\n"
+            "name": TOOL_NAME_QUERY_TASK,
+            "description": "Use this tool to retrieve a task by its task ID to get full details or list brief "
+                           "information of all tasks without params.\n\n"
+                           "## Usage\n\n"
+                           "- Get a task by its task ID (`task_id`), this tool will return:\n"
+                           "  - subject: Task title\n"
+                           "  - description: Detailed requirements and context\n"
+                           "  - owner id: Agent ID of this task owner\n"
+                           f"  - status: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, "
+                           f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
+                           "  - blocks: Tasks waiting on this one to complete\n"
+                           "  - blocked_by: Tasks that must complete before this one can start\n"
+                           "- Get the full list without `task_id`, this tool will return a summary of each task:\n"
+                           "  - task ID: Task identifier\n"
+                           "  - subject: Brief description of the task\n"
+                           "  - owner ID: Agent ID of this task owner\n"
+                           f"  - status: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, "
+                           f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
+                           "  - blocked_by: List of open task IDs that must be resolved first\n\n"
                            "## Tips\n\n"
                            "- After fetching a task, verify its `blocked_by` list is empty before beginning work.\n"
-                           f"- Use {TOOL_NAME_LIST_TASK} to see all tasks in summary form.\n",
+                           "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are "
+                           "available, as earlier tasks often set up context for later ones\n",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task_id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "The ID of the task to get.",
+                        "description": "The ID of the task to get. If this parameter is not given, return "
+                                       "the list of all tasks.",
                     },
                 },
-                "required": ["task_id"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def get_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
-    """tool realization of getting a task with arguments, AgentContext and Scoreboard"""
-    func_name = TOOL_NAME_GET_TASK
-    try:
-        """get task"""
-        if_success, task, get_info = board.get_task(arguments["task_id"])
-        if if_success:
-            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get task success")
-            if not MUTE_TASK_OP_INFO:
-                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get task success", style="bright_black")
-            assert task is not None
-            task_info = task_to_info(task, ctx.agent_id)
-            return {"status": SUCCESS_LABEL, "info": task_info}
-        else:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}")
-            if not MUTE_TASK_OP_INFO:
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}",
-                                       style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Get task failed with error, details: {get_info}"}
-    except Exception as e:
-        sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error: {e}")
-        if not MUTE_TASK_OP_INFO:
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error: {e}", style="bold red")
-        return {"status": FAIL_LABEL, "info": f"Get task failed with error: {e}"}
-
-
-def tool_list_task_def() -> dict[str, Any]:
-    """tool definition of listing a task (TOOL_NAME_LIST_TASK)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": TOOL_NAME_LIST_TASK,
-            "description": "Use this tool to list all tasks in the task list.\n\n"
-                           "## When to Use This Tool\n\n"
-                           f"- To see what tasks are available to work on (status: `{TASK_PENDING_LABEL}`, no owner, not blocked)\n"
-                           "- To check overall progress on the project\n"
-                           "- To find tasks that are blocked and need dependencies resolved\n"
-                           "- After completing a task, to check for newly unblocked work or claim the next available task\n"
-                           "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are available, "
-                           "as earlier tasks often set up context for later ones\n\n"
-                           "## Output\n\n"
-                           "Returns a summary of each task:\n"
-                           "- **task ID**: Task identifier (use with TaskGet, TaskUpdate)\n"
-                           "- **subject**: Brief description of the task\n"
-                           "- **owner ID**: Agent ID of this task owner\n"
-                           f"- **status**: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, `{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
-                           "- **blocked_by**: List of open task IDs that must be resolved first (tasks with blocked by cannot "
-                           "be claimed until dependencies resolve)\n\n"
-                           f"Use {TOOL_NAME_GET_TASK} with a specific task ID to view full details including description and comments.\n",
-            "parameters": {
-                "type": "object",
-                "properties": {},
                 "required": [],
                 "additionalProperties": False,
             },
@@ -602,22 +547,53 @@ def tool_list_task_def() -> dict[str, Any]:
     return tool_def
 
 
-def list_task(ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
-    """tool realization of listing tasks with AgentContext and Scoreboard"""
-    func_name = TOOL_NAME_LIST_TASK
+def query_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, progress: Progress) -> dict[str, Any]:
+    """tool realization of querying tasks with arguments, AgentContext and Scoreboard"""
+    func_name = TOOL_NAME_QUERY_TASK
     try:
-        """get task"""
-        tasks = board.list_tasks()
-        tasks_info = tasks_to_info(tasks, ctx.agent_id)
-        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List task success")
-        if not MUTE_TASK_OP_INFO:
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: List task success", style="bright_black")
-        return {"status": SUCCESS_LABEL, "info": tasks_info}
+        task_id = arguments.get("task_id")
+        if task_id is not None:
+            """get single task detail"""
+            if not isinstance(task_id, int):
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Task ID to query is not an integer")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Task ID to query is not an integer",
+                                       style="bold red")
+                return {"status": FAIL_LABEL, "info": "Task ID to query is not an integer"}
+            if_success, task, get_info = board.get_task(task_id)
+            if if_success and task is not None:
+                task_info = task_to_info(task, ctx.agent_id)
+                sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get task success")
+                if not MUTE_TASK_OP_INFO:
+                    progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get task success",
+                                           style="bright_black")
+                return {"status": SUCCESS_LABEL, "info": task_info}
+            elif not if_success:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}")
+                if not MUTE_TASK_OP_INFO:
+                    progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error, "
+                                           f"details: {get_info}", style="bold red")
+                return {"status": FAIL_LABEL, "info": f"Get task failed with error, details: {get_info}"}
+            else:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Get empty task with unknown error")
+                if not MUTE_TASK_OP_INFO:
+                    progress.console.print(f"{func_name} {FAIL_LABEL}: Get empty task with unknown error",
+                                           style="bold red")
+                return {"status": FAIL_LABEL, "info": "Get empty task with unknown error"}
+        else:
+            """list all tasks"""
+            tasks = board.list_tasks()
+            tasks_info = tasks_to_info(tasks, ctx.agent_id)
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List task success")
+            if not MUTE_TASK_OP_INFO:
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: List task success",
+                                       style="bright_black")
+            return {"status": SUCCESS_LABEL, "info": tasks_info}
     except Exception as e:
-        sys_log.error(f"{func_name} {FAIL_LABEL}: List task failed with error: {e}")
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Query task failed with error: {e}")
         if not MUTE_TASK_OP_INFO:
-            progress.console.print(f"{func_name} {FAIL_LABEL}: List task failed with error: {e}", style="bold red")
-        return {"status": FAIL_LABEL, "info": f"List task failed with error: {e}"}
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Query task failed with error: {e}",
+                                   style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Query task failed with error: {e}"}
 
 
 def tool_create_cron_def() -> dict[str, Any]:
@@ -922,7 +898,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         progress.console.print(f"{func_name}: {description} start", style="bright_black")
         _tmp_script_path = None
         try:
-            proc = subprocess.Popen(["bash", "-c", command],
+            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], "-c", command],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         except (UnicodeEncodeError, OSError):
@@ -935,7 +911,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
             tmp.write(command)
             tmp.close()
             _tmp_script_path = tmp.name
-            proc = subprocess.Popen(["bash", _tmp_script_path],
+            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_path],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         try:
@@ -1187,7 +1163,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
 
         """grep file"""
-        results, if_success, grep_info = grep_impl(arguments, ctx.agent_configs["GREP_FILE_TIMEOUT_S"])
+        results, if_success, grep_info = grep_impl(arguments, ctx.agent_configs["RIPGREP_PATH"], ctx.agent_configs["RIPGREP_TIMEOUT_S"])
         if if_success:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Grep file in path: {arguments.get("path", os.getcwd())} with pattern: "
                           f"{arguments.get("pattern")} successfully")
@@ -2137,18 +2113,29 @@ def tool_init_design_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_INIT_DESIGN,
-            "description": "Create and initialize a design in default value with given id. This tool will fail if the id "
-                           "of the design to be created already exists",
+            "description": f"Use this tool to create a brand-new `{SIM_DESIGN_NAME}` with default configuration from simulator's "
+                           "path. Each design gets a unique auto-assigned ID (`design_id`, starting from 1), with its first "
+                           "revision set to `design_rev` = 1\n"
+                           f"Each `{SIM_DESIGN_NAME}` is an independent panel project identified by its `design_id`. Use "
+                           f"this tool to start a new project from scratch.\n"
+                           # f"TODO: For iterative changes on the same design, use the modify tool `{TOOL}` which creates a new revision under the same `design_id`.\n"
+                           f"Each revision carries its own subject and description to document its purpose.\n"
+                           f"Parameters:\n"
+                           f" - `subject`: A short title describing this revision's purpose\n"
+                           f" - `description`: Detailed notes about this revision's goals or specifications\n",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "The id of the design to be created",
-                    }
+                    "subject": {
+                        "type": "string",
+                        "description": "A brief title for this design with first revision.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The detailed purpose or information for this design with first revision.",
+                    },
                 },
-                "required": ["id"],
+                "required": ["subject", "description"],
                 "additionalProperties": False,
             },
         }
@@ -2162,8 +2149,8 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     try:
         """request permission"""
         pause_for_permission(progress)
-        token, info = ask_permission_tui(ctx, func_name,
-                                         f"initialize a new design with id {arguments["id"]}", progress.console)
+        token, info = ask_permission_tui(ctx, func_name,f"initialize a new design. Subject: {arguments["subject"]}\n"
+                                                        f"Description: {arguments["description"]}", progress.console)
         resume_from_permission(progress)
         if not token:
             if info is None:
@@ -2171,96 +2158,12 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
         """initialize design"""
-        design_id = arguments["id"]
-        # path = "./session/" + ctx.session_uuid + f"/design{design_id}"
-        path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{design_id}")
-        if os.path.exists(path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Design with id: {design_id} already exists")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Design with id: {design_id} already exists", style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Design with id: {design_id} already exists"}
-        os.makedirs(path)
-        source_path = ctx.agent_configs["SIMULATOR_PATH"] + "/config"
-        shutil.copytree(src=source_path, dst=path, dirs_exist_ok=True)
-        ctx.design_created.append(design_id)
-        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Design with id: {design_id} initialized")
-        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Design with id: {design_id} initialized", style="bright_black")
-        return {"status": SUCCESS_LABEL, "info": f"Design with id: {design_id} initialized"}
+        if_success, label, info = init_design_impl(arguments, ctx.design_man, progress.console)
+        return {"status": label, "info": info}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Initialize design failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Initialize design failed with error: {e}", style="bold red")
         return {"status": FAIL_LABEL, "info": f"Initialize design failed with error: {e}"}
-
-
-def tool_copy_design_def() -> dict[str, Any]:
-    """tool definition of copying a design (TOOL_NAME_COPY_DESIGN)"""
-    tool_def = {
-        "type": "function",
-        "function": {
-            "name": TOOL_NAME_COPY_DESIGN,
-            "description": "Create a new design by copying an existing design with given id. This tool will fail if the target "
-                           "design already exists or source design nonexists",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "source_id": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "The id of the source design to be copied",
-                    },
-                    "target_id": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "The id of the target design to be created",
-                    }
-                },
-                "required": ["source_id", "target_id"],
-                "additionalProperties": False,
-            },
-        }
-    }
-    return tool_def
-
-
-def copy_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of copying a design with arguments and AgentContext"""
-    func_name = TOOL_NAME_COPY_DESIGN
-    try:
-        """request permission"""
-        pause_for_permission(progress)
-        token, info = ask_permission_tui(ctx, func_name,
-                                         f"copy design with id {arguments["source_id"]} to create a new design with "
-                                         f"id {arguments["target_id"]}", progress.console)
-        resume_from_permission(progress)
-        if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
-            else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
-        """copy design"""
-        source_id = arguments["source_id"]
-        target_id = arguments["target_id"]
-        # source_path = "./session/" + ctx.session_uuid + f"/design{source_id}"
-        source_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{source_id}")
-        # target_path = "./session/" + ctx.session_uuid + f"/design{target_id}"
-        target_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{target_id}")
-        if not os.path.exists(source_path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Source design with id: {source_id} doesn't exist")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Source design with id: {source_id} doesn't exist", style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Source design with id: {source_id} doesn't exist"}
-        if os.path.exists(target_path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Target design with id: {target_id} already exists")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Target design with id: {target_id} already exists", style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Target design with id: {target_id} already exists"}
-        os.makedirs(target_path)
-        shutil.copytree(src=source_path, dst=target_path, dirs_exist_ok=True)
-        ctx.design_created.append(target_id)
-        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Design with id: {target_id} created by design with id: {source_id}")
-        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Design with id: {target_id} created by design with id: {source_id}", style="bright_black")
-        return {"status": SUCCESS_LABEL, "info": f"Design with id: {target_id} created by design with id: {source_id}"}
-    except Exception as e:
-        sys_log.error(f"{func_name} {FAIL_LABEL}: Create design by copying failed with error: {e}")
-        progress.console.print(f"{func_name} {FAIL_LABEL}: Create design by copying failed with error: {e}", style="bold red")
-        return {"status": FAIL_LABEL, "info": f"Create design by copying failed with error: {e}"}
 
 
 def tool_query_design_def() -> dict[str, Any]:
@@ -2269,10 +2172,34 @@ def tool_query_design_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_QUERY_DESIGN,
-            "description": "Get the amount of the created designs and the list of ids",
+            "description": f"Use this tool to retrieve detailed information about `{SIM_DESIGN_NAME}` or list them briefly.\n"
+                           f"# Usage:\n"
+                           f"- Get a specific `{SIM_DESIGN_NAME}` revision (requires both `design_id` and `design_rev`) and "
+                           f"return:\n"
+                           f"  1. The subject and description of the specified revision\n"
+                           f"  2. The design ID and revision ID that this revision was copied from (if any)\n"
+                           f"- Get all revisions under a specific design ID (requires only `design_id`) and return:\n"
+                           f"  1. The subject of each revision belonging to this design\n"
+                           f"  2. The design ID and revision ID that each revision was copied from (if any)\n"
+                           f"- List all `{SIM_DESIGN_NAME}` designs (no parameters required):\n"
+                           f"  1. The subject of the latest revision for each design\n"
+                           f"  2. The design ID and revision ID that the latest revision was copied from (if any)\n",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "design_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The design ID to query. When provided without `design_rev`, lists all revisions "
+                                       "of this design.",
+                    },
+                    "design_rev": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The revision ID to query. Must be used together with `design_id` if you want to "
+                                       "get a specific revision.",
+                    },
+                },
                 "required": [],
                 "additionalProperties": False,
             },
@@ -2281,15 +2208,54 @@ def tool_query_design_def() -> dict[str, Any]:
     return tool_def
 
 
-def query_design(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+def query_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of querying the list of created designs with AgentContext"""
     func_name = TOOL_NAME_QUERY_DESIGN
-    sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Total num: {len(ctx.design_created)}, list: {ctx.design_created}")
-    progress.console.print(f"{func_name} {SUCCESS_LABEL}: Total num: {len(ctx.design_created)}, "
-                           f"list: {ctx.design_created}", style="bright_black")
-    return {"status": SUCCESS_LABEL,
-            "total_num": f"{len(ctx.design_created)}",
-            "list": f"{ctx.design_created}"}
+    try:
+        design_id = arguments.get("design_id")
+        design_rev = arguments.get("design_rev")
+        if design_id is None and design_rev is not None:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Query design failed with error: only `design_rev` is given")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Query design failed with error: only `design_rev` is given",
+                                   style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Query design failed with error: only `design_rev` is given"}
+        if (design_id is not None) and (design_rev is not None):
+            assert isinstance(design_id, int)
+            assert isinstance(design_rev, int)
+            if_success, design, get_info = ctx.design_man.get_design(design_id, design_rev)
+            if not if_success or design is None:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Query design failed with error, detail: {get_info}")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Query design failed with error, detail: {get_info}",
+                                       style="bold red")
+                return {"status": FAIL_LABEL, "info": f"Query design failed with error, detail: {get_info}"}
+            else:
+                design_info = design_to_info(design)
+                sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Query design succeed")
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Query design succeed", style="bright_black")
+                return {"status": SUCCESS_LABEL, "info": design_info}
+        elif design_id is not None:
+            assert isinstance(design_id, int)
+            if_success, designs, get_info = ctx.design_man.list_design_revision(design_id)
+            if not if_success:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Query design failed with error, detail: {get_info}")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Query design failed with error, detail: {get_info}",
+                                       style="bold red")
+                return {"status": FAIL_LABEL, "info": f"Query design failed with error, detail: {get_info}"}
+            else:
+                designs_info = designs_to_info(designs)
+                sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Query design succeed")
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Query design succeed", style="bright_black")
+                return {"status": SUCCESS_LABEL, "info": designs_info}
+        else:
+            designs = ctx.design_man.list_latest_revisions()
+            designs_info = designs_to_info(designs)
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Query design succeed")
+            progress.console.print(f"{func_name} {SUCCESS_LABEL}: Query design succeed", style="bright_black")
+            return {"status": SUCCESS_LABEL, "info": designs_info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Query design failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Query design failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Query design failed with error: {e}"}
 
 
 def tool_launch_sim_def() -> dict[str, Any]:
@@ -2298,23 +2264,37 @@ def tool_launch_sim_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_LAUNCH_SIM,
-            "description": "Launch the simulator with given id of existing design. This tool will fail if:\n"
-                           "- target design doesn't exist"
-                           "- target design is invalid"
-                           "- clean up before the simulation fails"
-                           "- simulator terminate with runtime error"
-                           "- simulator timeout"
-                           "- simulation cancelled by user",
+            "description": f"Run a thermo-electrical simulation through TECoSim on an existing display panel's `{SIM_DESIGN_NAME}`. "
+                           f"A new `{SIM_RUN_NAME}` entry is created and the simulator executes with the design's configuration. "
+                           f"After completion, simulation logs can BE read with `{TOOL_NAME_READ_LOG}`\n"
+                           # f" (TODO: other results reading tools are not implemented).\n"
+                           "This tool will fail if: the target design doesn't exist, the design path is invalid, simulator "
+                           "times out, simulator encounters runtime error, or the simulation is cancelled by the user\n"
+                           "Each run has its own `subject` and `description` to document its purpose.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {
+                    "design_id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "The id of the design for simulation",
-                    }
+                        "description": f"The ID of an existing `{SIM_DESIGN_NAME}` to simulate.",
+                    },
+                    "design_rev": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The revision of the `{SIM_DESIGN_NAME}` to simulate. Use with `design_id` to "
+                                       f"specify which version.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "A brief title for this run.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The detailed purpose or information for this run.",
+                    },
                 },
-                "required": ["id"],
+                "required": ["design_id", "design_rev", "subject", "description"],
                 "additionalProperties": False,
             },
         }
@@ -2329,7 +2309,9 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         """request permission"""
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
-                                         f"launch simulation run under design with id: {arguments["id"]}",
+                                         f"launch simulation run under design: {arguments["design_id"]} (rev "
+                                         f"{arguments["design_rev"]}). Subject: {arguments["subject"]}\n"
+                                         f"Description : {arguments["description"]}",
                                          progress.console)
         resume_from_permission(progress)
         if not token:
@@ -2337,168 +2319,9 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
-        """check the design"""
-        design_id = arguments["id"]
-        # design_path = "./session/" + ctx.session_uuid + f"/design{design_id}"
-        design_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_DESIGN_NAME}{design_id}")
-        if not os.path.exists(design_path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: "
-                          f"Design with id: {design_id} doesn't exist. Run is not created. Launch is not performed")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: "
-                                   f"Design with id: {design_id} doesn't exist. Run is not created. Launch is not performed", style="bold red")
-            return {"status": FAIL_LABEL,
-                    "info": f"Design with id: {design_id} doesn't exist. Run is not created. Launch is not performed"}
-        """clean up"""
-        results1 = subprocess.run([ctx.agent_configs["SIMULATOR_PATH"] + '/clean.bat', "1"],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if results1.returncode != 0 or results1.stdout is None:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: "
-                          "Clean up script exits with error. Run is not created. Launch is not performed")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: "
-                                   "Clean up script exits with error. Run is not created. Launch is not performed", style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Clean up script exits with error. Run is not created. Launch is not performed"}
-        sys_log.debug(f"{func_name}: clean up done")
-        progress.console.print(f"{func_name}: clean up done", style="bright_black")
-        """create run"""
-        ctx.simulation_launched += 1
-        # run_path = "./session/" + ctx.session_uuid + f"/run{ctx.simulation_launched}"
-        run_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_RUN_NAME}{ctx.simulation_launched}")
-        if os.path.exists(run_path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: "
-                          f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: "
-                                   f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed", style="bold red")
-            return {"status": FAIL_LABEL,
-                    "run_id": ctx.simulation_launched,
-                    "info": f"Simulation run with id: {ctx.simulation_launched} already exists. Launch is not performed"}
-        os.makedirs(run_path)
-        sys_log.debug(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} created")
-        progress.console.print(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} created", style="bright_black")
-        """launch simulation"""
-        sys_log.debug(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} start")
-        progress.console.print(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} start", style="bright_black")
-        configs = design_path + "/"
-        proc = subprocess.Popen([ctx.agent_configs["SIMULATOR_PATH"] + '/TECoSim.exe', configs],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            stdout, stderr = proc.communicate(timeout=ctx.agent_configs["SIMULATOR_TIMEOUT_S"])
-            results2 = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
-        except KeyboardInterrupt:
-            proc.terminate()
-            try:
-                proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-            sys_log.error(f"{func_name} {CANCELLED_LABEL}: "
-                          f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                          f"{design_id} is cancelled by user. Simulator interrupted")
-            progress.console.print(f"{func_name} {CANCELLED_LABEL}: "
-                                   f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                                   f"{design_id} is cancelled by user. Simulator interrupted", style="bold red")
-            return {"status": CANCELLED_LABEL,
-                    "run_id": ctx.simulation_launched,
-                    "design_id": design_id,
-                    "info": f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                            f"{design_id} is cancelled by user. Simulator interrupted"}
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                stdout, stderr = proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-            # stdout = stdout.decode('utf-8')
-            # with open(run_path + "/stdout.log", "w", encoding="utf-8", newline='') as f:
-            #     if stdout is not None:
-            #         f.write(stdout)
-            #     else:
-            #         f.write("(stdout is empty!)")
-            log_path = ctx.agent_configs["SIMULATOR_PATH"] + "/logs/"
-            log_files = [f for f in os.listdir(log_path) if f.endswith('.txt')]
-            log_files_sorted = sorted(log_files, key=lambda x: os.path.getmtime(os.path.join(log_path, x)), reverse=True)
-            log_file = log_path + log_files_sorted[0]
-            shutil.copy(log_file, run_path + "/stdout.log")
-            stderr = stderr.decode('utf-8')
-            with open(run_path + "/stderr.log", "w", encoding="utf-8", newline='') as f:
-                if stderr is not None:
-                    f.write(stderr)
-                else:
-                    f.write("(stderr is empty!)")
-            sys_log.debug(f"{func_name}: logs write/copy done")
-            sys_log.error(f"{func_name} {TIMEOUT_LABEL}: "
-                          f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                          f"{design_id} timeout > {ctx.agent_configs["SIMULATOR_TIMEOUT_S"]} s. Simulator interrupted. "
-                          f"Check logs for details if needed")
-            progress.console.print(f"{func_name} {TIMEOUT_LABEL}: "
-                                   f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                                   f"{design_id} timeout > {ctx.agent_configs["SIMULATOR_TIMEOUT_S"]} s. Simulator interrupted. "
-                                   f"Check logs for details if needed", style="bold red")
-            return {"status": TIMEOUT_LABEL,
-                    "run_id": ctx.simulation_launched,
-                    "design_id": design_id,
-                    "return code": proc.returncode,
-                    "info": f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                            f"{design_id} timeout > {ctx.agent_configs["SIMULATOR_TIMEOUT_S"]} s. Simulator interrupted. "
-                            f"Check logs for details if needed"}
-        except Exception as e:
-            proc.terminate()
-            try:
-                proc.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-            raise RuntimeError(e)
-        sys_log.debug(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} stop")
-        progress.console.print(f"{func_name}: simulation run with id: {ctx.simulation_launched} under design with id: {design_id} stop", style="bright_black")
-        """write/copy logs"""
-        # stdout = results2.stdout.decode('utf-8')
-        # with open(run_path + "/stdout.log", "w", encoding="utf-8", newline='') as f:
-        #     if stdout is not None:
-        #         f.write(stdout)
-        #     else:
-        #         f.write("(stdout is empty!)")
-        log_path = ctx.agent_configs["SIMULATOR_PATH"] + "/logs/"
-        log_files = [f for f in os.listdir(log_path) if f.endswith('.txt')]
-        log_files_sorted = sorted(log_files, key=lambda x: os.path.getmtime(os.path.join(log_path, x)), reverse=True)
-        log_file = log_path + log_files_sorted[0]
-        shutil.copy(log_file, run_path + "/stdout.log")
-        stderr = results2.stderr.decode('utf-8')
-        with open(run_path + "/stderr.log", "w", encoding="utf-8", newline='') as f:
-            if stderr is not None:
-                f.write(stderr)
-            else:
-                f.write("(stderr is empty!)")
-        sys_log.debug(f"{func_name}: logs write/copy done")
-        progress.console.print(f"{func_name}: logs write/copy done", style="bright_black")
-        """check status"""
-        if results2.returncode != 0:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: "
-                          f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                          f"{design_id} failed with error. Check logs for details if needed")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: "
-                                   f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                                   f"{design_id} failed with error. Check logs for details if needed", style="bold red")
-            return {"status": FAIL_LABEL,
-                    "run_id": ctx.simulation_launched,
-                    "design_id": design_id,
-                    "info": f"Launch is performed. Simulation run with id: {ctx.simulation_launched} under design with id: "
-                            f"{design_id} failed with error. Check logs for details if needed"}
-        """copy raw results, video and design"""
-        data_path = ctx.agent_configs["SIMULATOR_PATH"] + "/data"
-        shutil.copytree(src=data_path, dst=run_path + "/data")
-        video_path = ctx.agent_configs["SIMULATOR_PATH"] + "/video"
-        shutil.copytree(src=video_path, dst=run_path + "/video")
-        shutil.copytree(src=design_path, dst=run_path + "/design")
-        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: "
-                      f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without error. Results are ready")
-        progress.console.print(f"{func_name} {SUCCESS_LABEL}: "
-                               f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without error. Results are ready", style="bright_black")
-        return {"status": SUCCESS_LABEL,
-                "run_id": ctx.simulation_launched,
-                "design_id": design_id,
-                "info": f"Simulation run with id: {ctx.simulation_launched} under design with id: {design_id} exits without "
-                        f"error. Results are ready"}
+        """launch sim"""
+        if_success, label, info = launch_sim_impl(arguments, ctx.run_man, progress.console)
+        return {"status": label, "info": info}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Launch simulator failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Launch simulator failed with error: {e}", style="bold red")
@@ -2506,15 +2329,32 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
 
 
 def tool_query_run_def() -> dict[str, Any]:
-    """tool definition of querying the amount of launched run (TOOL_NAME_QUERY_RUN)"""
+    """tool definition of querying launched run (TOOL_NAME_QUERY_RUN)"""
     tool_def = {
         "type": "function",
         "function": {
             "name": TOOL_NAME_QUERY_RUN,
-            "description": "Get the amount of launched run. Each run is always start with index of 1 and increase by 1",
+            "description": f"Use this tool to retrieve a `{SIM_RUN_NAME}` by its run ID to get full details or list brief "
+                           f"information of all `{SIM_RUN_NAME}` without params.\n\n"
+                           f"# Usage:\n"
+                           f"- Get a `{SIM_RUN_NAME}` by its run ID (`run_id`), this tool will return:\n"
+                           f"  1. Its input design's ID and design's revision\n"
+                           f"  2. Its subject AND description\n"
+                           f"  3. Its status: `{RUN_CANCELLED_LABEL}`, `{RUN_TIMEOUT_LABEL}`, `{RUN_RUNTIME_ERROR_LABEL}`, "
+                           f"`{RUN_DONE_LABEL}`\n"
+                           f"- Get the full list without `run_id`, this tool will return:\n"
+                           f"  1. Each run's input design ID and design revision\n"
+                           f"  2. Each run's subject\n"
+                           f"  3. Each run's status\n",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "run_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The ID of the run to get. If this parameter is not given, return the list of all runs",
+                    },
+                },
                 "required": [],
                 "additionalProperties": False,
             },
@@ -2523,13 +2363,42 @@ def tool_query_run_def() -> dict[str, Any]:
     return tool_def
 
 
-def query_run(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of querying the amount of launched run with AgentContext"""
+def query_run(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of querying runs with AgentContext"""
     func_name = TOOL_NAME_QUERY_RUN
-    sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Total num: {ctx.simulation_launched}")
-    progress.console.print(f"{func_name} {SUCCESS_LABEL}: Total num: {ctx.simulation_launched}", style="bright_black")
-    return {"status": SUCCESS_LABEL,
-            "total_num": f"{ctx.simulation_launched}"}
+    try:
+        """get task"""
+        run_id = arguments.get("run_id")
+        if run_id is not None:
+            if not isinstance(run_id, int):
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Run ID to query is not an integer")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Run ID to query is not an integer", style="bold red")
+                return {"status": FAIL_LABEL, "info": "Run ID to query is not an integer"}
+            if_success, run, get_info = ctx.run_man.get_run(run_id)
+            if if_success and run is not None:
+                run_info = run_to_info(run)
+                sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get run success")
+                progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get run success", style="bright_black")
+                return {"status": SUCCESS_LABEL, "info": run_info}
+            elif not if_success:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Get run failed with error, details: {get_info}")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Get run failed with error, details: {get_info}",
+                                       style="bold red")
+                return {"status": FAIL_LABEL, "info": get_info}
+            else:
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Get empty run with unknown error")
+                progress.console.print(f"{func_name} {FAIL_LABEL}: Get empty run with unknown error", style="bold red")
+                return {"status": FAIL_LABEL, "info": "Get empty run with unknown error"}
+        else:
+            runs = ctx.run_man.list_runs()
+            runs_info = runs_to_info(runs)
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List run success")
+            progress.console.print(f"{func_name} {SUCCESS_LABEL}: List run success", style="bright_black")
+            return {"status": SUCCESS_LABEL, "info": runs_info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Query run failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Query run failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Query run failed with error: {e}"}
 
 
 def tool_read_log_def() -> dict[str, Any]:
@@ -2538,20 +2407,16 @@ def tool_read_log_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_READ_LOG,
-            "description": "Read the stdout or stderr log of the simulation run with given id, reading method and line num. "
-                           "Results are returned using cat -n format, with line numbers starting from 1. This tool will also "
-                           "return the total line count of the log (regardless of read method).\n"
-                           "- IMPORTANT: Never start by reading the entire log (`all`) unless the log is known to be very "
-                           "short or instructed to do so\n"
-                           "- For any unread log, first use `from_bottom` with a moderate number of lines (e.g., 50-100) "
-                           "to see the log's end and possible errors\n"
-                           "- Once you know the total line count, you can use `from_top` or `from_bottom` to read additional "
-                           "chunks, or `offset` to jump to a specific area as needed",
+            "description": f"Read the stdout or stderr log of a simulation `{SIM_RUN_NAME}`. Results are returned in cat -n "
+                           f"format with line numbers starting from 1. The total line count of the log will always be returned. "
+                           f"Use `from_bottom` (50-100 lines) to check for errors; use `offset` for targeted reads. Avoid "
+                           f"reading the entire log (`all`) unless it's known to be short",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {
+                    "run_id": {
                         "type": "integer",
+                        "minimum": 1,
                         "description": "The id of the simulation run",
                     },
                     "log_type": {
@@ -2563,10 +2428,9 @@ def tool_read_log_def() -> dict[str, Any]:
                         "type": "string",
                         "enum": ["from_top", "from_bottom", "offset", "all"],
                         "description": "How to read the log:\n"
-                                        "- `from_top`: Reads the first N lines. Best for seeing the beginning of the log, "
-                                       "such as initialization messages or early output\n"
+                                        "- `from_top`: Reads the first N lines\n"
                                         "- `from_bottom`: Reads the last N lines. The primary way to inspect logs; use this "
-                                       "to find error messages, stack traces, or final output\n"
+                                        "to find error messages, stack traces, or final output\n"
                                         "- `offset`: Reads N lines starting at a given line number (1-based). Precise for "
                                         "targeting known areas in the log\n"
                                         "- `all`: Reads the entire log. WARNING: Use only when you are certain the log "
@@ -2587,7 +2451,7 @@ def tool_read_log_def() -> dict[str, Any]:
                                        "`offset` method",
                     }
                 },
-                "required": ["id", "log_type", "method"],
+                "required": ["run_id", "log_type", "method"],
                 "additionalProperties": False,
             },
         }
@@ -2602,7 +2466,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
         """request permission"""
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
-                                         f"run id: {arguments["id"]}, "
+                                         f"run id: {arguments["run_id"]}, "
                                          f"type: {arguments["log_type"]}, "
                                          f"method: {arguments["method"]}, "
                                          f"read-in line: {arguments.get("line_num", "None")}, "
@@ -2613,136 +2477,17 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
-        """check the run"""
-        run_id = arguments["id"]
-        # run_path = "./session/" + ctx.session_uuid + f"/run{run_id}"
-        run_path = os.path.join(SESSION_PATH, ctx.session_uuid, f"{SIM_RUN_NAME}{run_id}")
-        if not os.path.exists(run_path):
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} doesn't exist")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} doesn't exist", style="bold red")
-            return {"status": FAIL_LABEL, "info": f"Run with id: {run_id} doesn't exist"}
-        """check the file size"""
-        log_type = str(arguments["log_type"]).lower()
-        log_path = run_path + "/" + log_type + ".log"
-        file_size = os.path.getsize(log_path)
-        if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: "
-                          f"Log with type: {log_type} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: "
-                                   f"Log with type: {log_type} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}", style="bold red")
-            return {"status": FAIL_LABEL,
-                    "info": f"Log with type: {log_type} IS larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user "
-                            f"should modify the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}"}
-        """read the log"""
-        with open(log_path, 'r', encoding=READ_LOG_ENCODING_DEFAULT) as f:
-            log_content = f.read()
-        if log_type == "stdout":
-            clean_line = clean_stdout_log(log_content)
-        elif log_type == "stderr":
-            clean_line = clean_stderr_log(log_content)
-        else:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid log type: {log_type}")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid log type: {log_type}", style="bold red")
-            raise RuntimeError(f"Invalid log type: {log_type}")
-        log_line: list[str] = []
-        for i, line in enumerate(clean_line, start=1):
-            log_line.append(f"{i}\t{line}")
-        total_line_num = len(log_line)
-        """prepare the content"""
-        read_line_num: int | None = arguments.get("line_num")
-        if read_line_num is not None and read_line_num > READ_LOG_MAX_LINE:
-            sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}", style="bold red")
-            raise RuntimeError(f"Invalid line num: {read_line_num} > {READ_LOG_MAX_LINE}")
-        offset_line_num = arguments.get("offset", 0)
-        method = str(arguments["method"]).lower()
-        byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
-        if method == "from_top":
-            if read_line_num is None:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Line num can't be empty", style="bold red")
-                raise RuntimeError(f"Line num can't be empty")
-            if read_line_num < 1:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if total_line_num <= read_line_num:
-                # log_str = "\n".join(log_line)
-                log_str, truncated, read_lines = read_line_with_limit(log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
+        if_success, label, info, lines, log = read_log_impl(arguments, ctx.run_man,
+                                                            ctx.agent_configs["READ_FILE_MB_LIMIT"],
+                                                            ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"],
+                                                            progress.console)
+        if if_success:
+            if info.strip():
+                return {"status": label, "info": info, "total_line": lines, "log_content": log}
             else:
-                # log_str = "\n".join(log_line[0:read_line_num])
-                log_str, truncated, read_lines = read_line_with_limit(log_line, 0, read_line_num - 1, byte_limit, 'utf-8')
-        elif method == "from_bottom":
-            if read_line_num is None:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Line num can't be empty", style="bold red")
-                raise RuntimeError(f"Line num can't be empty")
-            if read_line_num < 1:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if total_line_num <= read_line_num:
-                # log_str = "\n".join(log_line)
-                log_str, truncated, read_lines = read_line_with_limit(log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
-            else:
-                # log_str = "\n".join(log_line[-read_line_num:])
-                log_str, truncated, read_lines = read_line_with_limit(log_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, 'utf-8')
-        elif method == "offset":
-            if read_line_num is None:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Line num can't be empty", style="bold red")
-                raise RuntimeError(f"Line num can't be empty")
-            if read_line_num < 1:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if offset_line_num < 1:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} < 1")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} < 1", style="bold red")
-                raise RuntimeError(f"Invalid offset: {offset_line_num} < 1")
-            if offset_line_num > total_line_num:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} > total line num {total_line_num}")
-                progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
-                raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
-            if (offset_line_num - 1 + read_line_num) <= total_line_num:
-                # log_str = "\n".join(log_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
-                log_str, truncated, read_lines = read_line_with_limit(log_line, offset_line_num - 1, offset_line_num - 2 + read_line_num, byte_limit, 'utf-8')
-            else:
-                # log_str = "\n".join(log_line[offset_line_num - 1:])
-                log_str, truncated, read_lines = read_line_with_limit(log_line, offset_line_num - 1, total_line_num - 1, byte_limit, 'utf-8')
-        elif method == "all":
-            # log_str = "\n".join(log_line)
-            log_str, truncated, read_lines = read_line_with_limit(log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
+                return {"status": label, "total_line": lines, "log_content": log}
         else:
-            raise RuntimeError(f"Invalid method type: {method}")
-        if not truncated:
-            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Run id: {run_id} "
-                          f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                          f"offset: {offset_line_num}")
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: Run id: {run_id} "
-                                   f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                                   f"offset: {offset_line_num}", style="bright_black")
-            return {"status": SUCCESS_LABEL,
-                    "total_line": total_line_num,
-                    "log_content": log_str}
-        else:
-            sys_log.warning(f"{func_name} {TRUNCATED_LABEL}: Run id: {run_id} "
-                          f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                          f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is larger than "
-                          f"{ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` "
-                          f"in {AGENT_CONFIGS_PATH}")
-            progress.console.print(f"{func_name} {TRUNCATED_LABEL}: Run id: {run_id} "
-                                   f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
-                                   f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is "
-                                   f"larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, please "
-                                   f"modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}", style="bold yellow")
-            return {"status": TRUNCATED_LABEL,
-                    "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                            f"user should modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}",
-                    "total_line": read_lines,
-                    "log_content": log_str}
+            return {"status": label, "info": info}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}", style="bold red")

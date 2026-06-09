@@ -25,12 +25,14 @@ Revision:
 2026.6.3       Yu Huang      2.3      Add cron tasks support
 2026.6.6       Yu Huang      2.4      Basic support of agent tasks as Scoreboard with lock
 2026.6.7       Yu Huang      2.5      Support of task displays in scoreboard
+2026.6.9       Yu Huang      2.6      Add design and run support for simulator
 
 Details:
 ---------
 Tool execution dispatcher. `execute_tools()` routes LLM tool-call requests to the appropriate handler in `tool_def.py` via
 a name-based dispatch chain, collects results as tool-role messages, and handles skill content as user-addon messages.
-Wrapped with spinner UI and interrupt support.
+Integrates with Scoreboard for task management (create/update/query) during execution. Wrapped with spinner UI displaying
+task progress and interrupt support.
 """
 import json
 import random
@@ -132,7 +134,7 @@ def tool_calls_spinner_board(func: Callable, *args,
 def if_tool_mute(func_name: str) -> bool:
     """check if tool is muted"""
     if MUTE_TASK_OP_INFO:
-        if func_name in (TOOL_NAME_CREATE_TASK, TOOL_NAME_UPDATE_TASK, TOOL_NAME_GET_TASK, TOOL_NAME_LIST_TASK):
+        if func_name in (TOOL_NAME_CREATE_TASK, TOOL_NAME_UPDATE_TASK, TOOL_NAME_QUERY_TASK):
             return True
     return False
 
@@ -176,11 +178,8 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
         elif func_name == TOOL_NAME_UPDATE_TASK:
             results = tool_def.update_task(arguments, ctx, board, progress)
             user_addons = None
-        elif func_name == TOOL_NAME_GET_TASK:
-            results = tool_def.get_task(arguments, ctx, board, progress)
-            user_addons = None
-        elif func_name == TOOL_NAME_LIST_TASK:
-            results = tool_def.list_task(ctx, board, progress)
+        elif func_name == TOOL_NAME_QUERY_TASK:
+            results = tool_def.query_task(arguments, ctx, board, progress)
             user_addons = None
         elif func_name == TOOL_NAME_CREATE_CRON:
             results = tool_def.create_cron(arguments, ctx, progress)
@@ -223,17 +222,14 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
         elif func_name == TOOL_NAME_INIT_DESIGN:
             results = tool_def.init_design(arguments, ctx, progress)
             user_addons = None
-        elif func_name == TOOL_NAME_COPY_DESIGN:
-            results = tool_def.copy_design(arguments, ctx, progress)
-            user_addons = None
         elif func_name == TOOL_NAME_QUERY_DESIGN:
-            results = tool_def.query_design(ctx, progress)
+            results = tool_def.query_design(arguments, ctx, progress)
             user_addons = None
         elif func_name == TOOL_NAME_LAUNCH_SIM:
             results = tool_def.launch_sim(arguments, ctx, progress)
             user_addons = None
         elif func_name == TOOL_NAME_QUERY_RUN:
-            results = tool_def.query_run(ctx, progress)
+            results = tool_def.query_run(arguments, ctx, progress)
             user_addons = None
         elif func_name == TOOL_NAME_READ_LOG:
             results = tool_def.read_log(arguments, ctx, progress)

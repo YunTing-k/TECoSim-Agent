@@ -13,6 +13,8 @@ Revision:
 2026.5.22      Yu Huang      1.1      Summarize session title support
 2026.5.29      Yu Huang      1.2      Add agent's Markdown render style
 2026.6.5       Yu Huang      1.3      Render bash command as Markdown support
+2026.6.8       Yu Huang      1.4      Bash and ripgrep path configurable support
+2026.6.9       Yu Huang      1.5      Remove read_line_with_limit to basic_utils.py
 
 Details:
 ---------
@@ -99,6 +101,21 @@ def get_platform_info() -> list[str]:
     return [system, release, version]
 
 
+def is_git_available() -> bool:
+    """check if git is available"""
+    try:
+        result = subprocess.run(
+            ["git", "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception as e:
+        sys_log.error(f"Call git failed with error {e}. Check if git is available in you shell")
+        return False
+
+
 def is_git_repo(path: str = None) -> bool:
     """check if the given path is a git repository"""
     if path is None:
@@ -113,22 +130,37 @@ def is_git_repo(path: str = None) -> bool:
         )
         return result.returncode == 0
     except Exception as e:
-        sys_log.error(f"Call git failed with error {e}")
+        sys_log.error(f"Call git failed with error {e}. Check if git is available in you shell")
         return False
 
 
-def is_bash_available() -> bool:
+def is_bash_available(path: str) -> bool:
     """check if bash is available"""
     try:
         result = subprocess.run(
-            ["bash", "-c", "bash --version"],
+            [path, "-c", "bash --version"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=5
         )
         return result.returncode == 0
     except Exception as e:
-        sys_log.error(f"Call bash failed with error {e}")
+        sys_log.error(f"Call bash failed with error {e}. Check if bash is available in path: {path}")
+        return False
+
+
+def is_ripgrep_available(path: str) -> bool:
+    """check if ripgrep is available"""
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception as e:
+        sys_log.error(f"Call ripgrep failed with error {e}. Check if ripgrep is available in path: {path}")
         return False
 
 
@@ -228,3 +260,23 @@ def is_list_of_int(obj) -> bool:
     if not isinstance(obj, list):
         return False
     return all(isinstance(item, int) for item in obj)
+
+
+def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_limit: int, encoding: str) -> tuple[str, bool, int]:
+    """read string lines with line range start from 0 and byte limits"""
+    truncated = False
+    accumulated_bytes = 0
+    formatted_lines: list[str] = []
+    lines_count = 0
+
+    for i, line in enumerate(lines, start=0):
+        if line_start <= i <= line_end:
+            segment_bytes = len(line.encode(encoding))
+            if accumulated_bytes + segment_bytes > byte_limit:
+                truncated = True
+                break
+            formatted_lines.append(line)
+            accumulated_bytes += segment_bytes
+            lines_count += 1
+    output = "".join(formatted_lines)
+    return output, truncated, lines_count

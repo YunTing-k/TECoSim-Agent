@@ -10,6 +10,7 @@ Description: Task scoreboard for multi-agent coordination
 Revision:
 ---------
 2026.6.5-7       Yu Huang       1.0      First implementation
+2026.6.9         Yu Huang       1.1      Revise the highlight of the IO console print
 
 Details:
 ---------
@@ -99,7 +100,7 @@ class Scoreboard:
     """
 
     def __init__(self):
-        self.session_uuid = ""
+        self.session_uuid = ""  # don't dump
         self._lock = threading.Lock()
         self._tasks: dict[int, Task] = {}
         self._next_id: int = 1
@@ -511,7 +512,7 @@ class Scoreboard:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 if not mute:
                     sys_log.debug(f"Scoreboard of session {self.session_uuid} saved")
-                    console.print(f"Scoreboard of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
+                    console.print(f"[{MAJOR_COLOR2}]Scoreboard[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] saved")
             except Exception as e:
                 sys_log.error(f"Failed to save session {self.session_uuid}'s scoreboard with error: {e}")
                 console.print(f"Failed to save session {self.session_uuid}'s scoreboard with error: {e}", style="bold red")
@@ -535,7 +536,8 @@ class Scoreboard:
                 self._next_id = data["next_id"]
                 if not mute:
                     sys_log.debug(f"Scoreboard of session {self.session_uuid} loaded")
-                    console.print(f"Scoreboard of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")
+                    console.print(f"[{MAJOR_COLOR2}]Scoreboard[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
+                                  f"[/bright_black] loaded")
             except Exception as e:
                 sys_log.error(f"Failed to load session {self.session_uuid}'s scoreboard with error: {e}")
                 console.print(f"Failed to load session {self.session_uuid}'s scoreboard with error: {e}", style="bold red")
@@ -631,6 +633,8 @@ def tasks_to_info(tasks: list[Task], agent_id: str) -> str:
             info += f" - Blocked by: (None)\n"
         else:
             info += f" - Blocked by: {task["blocked_by"]}\n"
+    if len(tasks) == 0:
+        info = f"(Task list is empty)"
     return info
 
 
@@ -641,7 +645,6 @@ def get_tasks_render(tasks: list[Task], now_time: datetime, base_time: datetime,
         return Text(TASK_EMPTY_TITLE, style="bright_black")
 
     text = Text()
-    text.append("\n")
     for task in tasks:
         subject = task["subject"]
         status = task["status"]

@@ -12,12 +12,13 @@ Revision:
 2026.5.27      Yu Huang      1.0      First implementation
 2026.5.31      Yu Huang      1.1      Define default params of all tools in constants.py
 2026.6.1       Yu Huang      1.2      Define all used status labels in constants.py
+2026.6.8       Yu Huang      1.3      Bash and ripgrep path configurable support
 
 Details:
 ---------
 File search implementation: `glob_impl()` uses Python glob with recursive matching, sorted by modification time, with entry
-limit and truncation. `grep_impl()` wraps ripgrep (rg) with support for output modes (files_with_matches/content/count),
-glob/type filters, case-insensitivity, context lines, multiline, head limits, and timeout handling.
+limit and truncation. `grep_impl()` wraps ripgrep (rg) with configurable rg path, supporting output modes
+(files_with_matches/content/count), glob/type filters, case-insensitivity, context lines, multiline, head limits, and timeout handling.
 """
 import os
 import glob
@@ -64,7 +65,7 @@ def glob_impl(arguments: dict[str, Any]) -> tuple[str, bool, str]:
         return "", False, f"Recursive match with `pattern`: {pattern} failed with error: {e}"
 
 
-def grep_impl(arguments: dict[str, Any], timeout: int) -> tuple[str, bool, str]:
+def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[str, bool, str]:
     """grep implementation with ripgrep (rg)"""
     pattern = arguments.get("pattern")
     if not pattern:
@@ -81,7 +82,7 @@ def grep_impl(arguments: dict[str, Any], timeout: int) -> tuple[str, bool, str]:
     multiline = arguments.get("multiline", False)
 
     """build rg cmd"""
-    cmd = ["rg", "--color", "never"]
+    cmd = [rg_path, "--color", "never"]
 
     if output_mode == "files_with_matches":
         cmd.append("-l")

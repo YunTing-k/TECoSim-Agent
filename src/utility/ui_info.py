@@ -25,6 +25,8 @@ Revision:
                                       yes or no request TUI
 2026.6.7       Yu Huang      2.2      Support of task displays in scoreboard & Fix the bug of uncaught exception in spinner &
                                       Fix the bug of cut-off issued when resume from permission TUI
+2026.6.8       Yu Huang      2.3      Fix the bug of duplicate tail if TUI pause for permission
+2026.6.9       Yu Huang      2.4      Add design and run support for simulator
 
 Details:
 ---------
@@ -402,10 +404,14 @@ def loading_spinner_with_board(func: Callable, *args,
     progress._outer_live = None  # placeholder, set after Live is created
 
     def make_group() -> Group:
-        return Group(
-            progress,
-            get_tasks_render(board.list_tasks(), datetime.now(), base_time, color_list1, color_list2)
-        )
+        task_str = get_tasks_render(board.list_tasks(), datetime.now(), base_time, color_list1, color_list2)
+        if task_str.plain.strip():
+            tasks_render = Text("\n")
+            tasks_render.append(task_str)
+            tasks_render.append("\n")
+        else:
+            tasks_render = Text(TASK_EMPTY_TITLE, style="bright_black")
+        return Group(progress, tasks_render)
 
     if not is_main_thread:
         with Live(make_group(), refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
@@ -499,7 +505,14 @@ def pause_for_permission(progress):
     """
     outer_live = getattr(progress, '_outer_live', None)
     if outer_live is not None:
+        # Save original transient value. Only temporarily switch to True
+        # (clear on stop) if it's currently False (static text on stop),
+        # preventing stale frame remnants after resume_from_permission.
+        original_transient = outer_live.transient
+        if not original_transient:
+            outer_live.transient = True
         outer_live.stop()
+        outer_live.transient = original_transient
 
 
 def resume_from_permission(progress):
@@ -696,6 +709,8 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
         try:
             prompt.save_messages(ctx, console)
             ctx.save_context(console)
+            ctx.design_man.save_to_file(console)
+            ctx.run_man.save_to_file(console)
             board.save_to_file(console)
         except Exception as e:
             sys_log.error(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally")
@@ -714,6 +729,8 @@ def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Ex
     try:
         prompt.save_messages(ctx, console)
         ctx.save_context(console)
+        ctx.design_man.save_to_file(console)
+        ctx.run_man.save_to_file(console)
         board.save_to_file(console)
     except Exception as e:
         sys_log.error(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally")

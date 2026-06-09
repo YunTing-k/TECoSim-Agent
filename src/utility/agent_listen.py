@@ -100,7 +100,7 @@ def get_listen_task(tasks: list[Task], now_time: datetime, base_time: datetime, 
     task_str = Text(f"  {nonresolved_tasks}", style=f"bold {color}")
     task_str = task_str.append(f" tasks non-resolved out of ", style=f"bright_black")
     task_str = task_str.append(f"{len(tasks)}", style=f"bold {color}")
-    task_str = task_str.append(f" tasks", style=f"bright_black")
+    task_str = task_str.append(f" tasks\n", style=f"bright_black")
     task_render = get_tasks_render(tasks, now_time, base_time, task_color_list1, task_color_list2)
     task_str.append(task_render)
     task_str.append("\n\n")
@@ -112,15 +112,6 @@ def get_listen_tail():
     tail_str = Text(f"\n\n  Press any key", style=f"{MAJOR_COLOR2}")
     tail_str = tail_str.append(f" to quit listening mode and type your words", style=f"bright_black")
     return tail_str
-
-
-def get_cron_render(active_cron: int, base_time: datetime, color_list: list[str]):
-    panels = []
-    time_diff = (datetime.now() - base_time).total_seconds()
-    position_in_period = time_diff % CRON_LISTEN_COLOR_PERIOD
-    index = int((position_in_period / CRON_LISTEN_COLOR_PERIOD) * len(color_list)) % len(color_list)
-    color = color_list[index]
-    prefix_str = Text(f"{AGENT_CONSOLE_ICON} {active_cron} cron tasks listening ... \n", style=f"bold {color}")
 
 
 def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:

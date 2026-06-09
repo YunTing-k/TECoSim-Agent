@@ -21,6 +21,7 @@ Revision:
 2026.6.6       Yu Huang      1.9      Bugfix of submit action in all ask permission TUIs
 2026.6.7       Yu Huang      2.0      Revise the display style of edit permission TUI & Add newline and space padding for
                                       all ask permission TUIs
+2026.6.9       Yu Huang      2.1      Remove read_line_with_limit to basic_utils.py & Add design and run support for simulator
 
 Details:
 ---------
@@ -55,31 +56,12 @@ def save_sessions(ctx: AgentContext, board: Scoreboard, console: Console, mute: 
     try:
         prompt.save_messages(ctx, console, mute)
         ctx.save_context(console, mute)
+        ctx.design_man.save_to_file(console, mute)
+        ctx.run_man.save_to_file(console, mute)
         board.save_to_file(console, mute)
     except Exception as e:
         sys_log.error(f"Save messages and context failed with error {e}")
         console.print(f"Save messages and context failed with error {e}", style="bold red")
-
-
-def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_limit: int, encoding: str) -> tuple[str, bool, int]:
-    """read string lines with line range start from 0 and byte limits"""
-    truncated = False
-    accumulated_bytes = 0
-    formatted_lines: list[str] = []
-    lines_count = 0
-
-    for i, line in enumerate(lines, start=0):
-        if line_start <= i <= line_end:
-            segment_bytes = len(line.encode(encoding))
-            if accumulated_bytes + segment_bytes > byte_limit:
-                truncated = True
-                break
-            formatted_lines.append(line)
-            accumulated_bytes += segment_bytes
-            lines_count += 1
-    output = "".join(formatted_lines)
-    return output, truncated, lines_count
-
 
 
 def get_match_debug_info(content: str, target: str) -> str:

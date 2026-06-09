@@ -21,6 +21,7 @@ Revision:
 2026.5.31      Yu Huang      1.9      Define used file/dir. paths in constants.py
 2026.6.3       Yu Huang      2.0      Add cron tasks support
 2026.6.5       Yu Huang      2.1      Add --nosystem, --notools, --nocrons support
+2026.6.9       Yu Huang      2.2      Add design and run support for simulator & Revise the highlight of the IO console print
 
 Details:
 ---------
@@ -43,6 +44,7 @@ from prompt_toolkit import PromptSession
 from typing import Any, TypedDict
 from rich.console import Console
 from src.tool.mcps_support import MCPToolRouter
+from src.tool.simulator_support import DesignManager, RunManager
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -104,6 +106,8 @@ class AgentContext:
         self.cron_tasks: list[CronTask] = []
         self.cron_ids: list[str] = []  # (don't dump)
         self.active_cron: int = 0  # (don't dump)
+        self.design_man: DesignManager = DesignManager()
+        self.run_man: RunManager = RunManager()
         # params
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump)
@@ -123,8 +127,6 @@ class AgentContext:
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_tokens: int = 0
-        self.simulation_launched: int = 0
-        self.design_created: list[int] = []
         self.system_read_only_paths: list[Path] = []  # (don't dump)
         self.read_only_paths: list[Path] = []
         self.files_read: dict[str, int] = {}
@@ -161,7 +163,6 @@ class AgentContext:
             TOOL_NAME_WEB_SEARCH: False,
             # simulation tools
             TOOL_NAME_INIT_DESIGN: False,
-            TOOL_NAME_COPY_DESIGN: False,
             TOOL_NAME_LAUNCH_SIM: False,
             TOOL_NAME_READ_LOG: False,
         }
@@ -261,8 +262,6 @@ class AgentContext:
             "last_input_tokens": self.last_input_tokens,
             "last_output_tokens": self.last_output_tokens,
             "last_tokens": self.last_tokens,
-            "simulation_launched": self.simulation_launched,
-            "design_created": self.design_created,
             "read_only_paths": [str(p) for p in self.read_only_paths]
                                if len(self.read_only_paths) > 0 else [],
             "files_read": self.files_read,
@@ -271,7 +270,8 @@ class AgentContext:
         }
         if not mute:
             sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
-            console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted to dict")
+            console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] "
+                          f"converted to dict")
         return out_dict
 
 
@@ -292,8 +292,6 @@ class AgentContext:
             self.last_input_tokens = in_dict["last_input_tokens"]
             self.last_output_tokens = in_dict["last_output_tokens"]
             self.last_tokens = in_dict["last_tokens"]
-            self.simulation_launched = in_dict["simulation_launched"]
-            self.design_created = in_dict["design_created"]
             self.read_only_paths = [Path(s) for s in in_dict["read_only_paths"]] \
                                    if len(in_dict["read_only_paths"]) > 0 else []
             self.files_read = in_dict["files_read"]
@@ -301,7 +299,8 @@ class AgentContext:
             self.permissions = in_dict["permissions"]
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
-                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] converted from dict")
+                console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
+                              f"[/bright_black] converted from dict")
         except Exception as e:
             sys_log.error(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}")
             console.print(f"Failed to convert session {self.session_uuid}'s context from dict with error: {e}", style="bold red")
@@ -321,7 +320,7 @@ class AgentContext:
             self.save_cron_task()
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} saved")
-                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] saved")
+                console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] saved")
         except Exception as e:
             sys_log.error(f"Failed to save session {self.session_uuid}'s context with error: {e}")
             console.print(f"Failed to save session {self.session_uuid}'s context with error: {e}", style="bold red")
@@ -344,7 +343,7 @@ class AgentContext:
                     self.session_crons = json.load(f)  # durable cron task need manually load
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} loaded")
-                console.print(f"Context of session [{MAJOR_COLOR2}]{self.session_uuid}[/{MAJOR_COLOR2}] loaded")
+                console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] loaded")
             self.from_dict(in_dict, console, mute)
         except Exception as e:
             sys_log.error(f"Failed to load session {self.session_uuid}'s context with error: {e}")

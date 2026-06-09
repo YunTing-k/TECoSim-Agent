@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 0
+TECOSIM_AGENT_UPDATE_VERSION: int = 1
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -20,6 +20,8 @@ MESSAGES_NAME: str = "messages.json"
 CONTEXT_NAME: str = "context.json"
 CRON_NAME: str = "cron_configs.json"
 TASKS_NAME: str = "tasks.json"
+RUNS_NAME: str = "runs.json"
+DESIGNS_NAME: str = "designs.json"
 # others
 MAIN_AGENT_ID: str = "main"
 SIM_DESIGN_NAME: str = "design"
@@ -38,6 +40,11 @@ TASK_COMPLETED_LABEL: str = "completed"
 TASK_DELETED_LABEL: str = "deleted"
 TASK_DISPLAYS_BEFORE_ARCHIVED: int = 3
 MUTE_TASK_OP_INFO: bool = True
+RUN_PENDING_LABEL: str = "PENDING"
+RUN_CANCELLED_LABEL: str = "CANCELLED"
+RUN_TIMEOUT_LABEL: str = "TIMEOUT"
+RUN_RUNTIME_ERROR_LABEL: str = "RUNTIME_ERROR"
+RUN_DONE_LABEL: str = "DONE"
 """Tool names"""
 # basic tools
 TOOL_NAME_VERSION: str = "agent_version"
@@ -47,8 +54,7 @@ TOOL_NAME_QUERY_CRON: str = "query_cron"
 TOOL_NAME_REMOVE_CRON: str = "remove_cron"
 TOOL_NAME_CREATE_TASK: str = "create_task"
 TOOL_NAME_UPDATE_TASK: str = "update_task"
-TOOL_NAME_GET_TASK: str = "get_task"
-TOOL_NAME_LIST_TASK: str = "list_task"
+TOOL_NAME_QUERY_TASK: str = "query_task"
 TOOL_NAME_BASH: str = "bash"
 TOOL_NAME_GLOB_FILE: str = "glob_file"
 TOOL_NAME_GREP_FILE: str = "grep_file"
@@ -62,7 +68,6 @@ TOOL_NAME_CALL_MCP: str = "call_mcp"
 # simulation tools
 TOOL_NAME_CHECK_SIMULATOR: str = "check_simulator"
 TOOL_NAME_INIT_DESIGN: str = "init_design"
-TOOL_NAME_COPY_DESIGN: str = "copy_design"
 TOOL_NAME_QUERY_DESIGN: str = "query_design"
 TOOL_NAME_LAUNCH_SIM: str = "launch_sim"
 TOOL_NAME_QUERY_RUN: str = "query_run"

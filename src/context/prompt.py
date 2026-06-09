@@ -25,6 +25,8 @@ Revision:
 2026.6.2       Yu Huang      2.3      Add left padding with icon when printing LLM's messages & Revise the mark of skill content
 2026.6.3       Yu Huang      2.4      Add flag of if display skills and crons when resuming session
 2026.6.5       Yu Huang      2.5      Add --nosystem, --notools, --nocrons support & Bugfix of rendering msgs in non-Markdown format
+2026.6.8       Yu Huang      2.6      Bash and ripgrep path configurable support
+2026.6.9       Yu Huang      2.7      Revise the system prompts of task tools & Revise the highlight of the IO console print
 
 Details:
 ---------
@@ -49,7 +51,8 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
 from src.context.agent_context import AgentContext
-from src.utility.basic_utils import get_platform_info, is_git_repo, is_bash_available, ReasonMD, ContentMD
+from src.utility.basic_utils import (
+    get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD)
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -93,71 +96,71 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "# System\n"
                 " - All text you output outside of tool calls is displayed to the user. Output text to communicate with "
                 "the user. You can use Github-flavored markdown for formatting.\n"
-                " - Your are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), "
-                "which is a high-performance display panel simulator based on C/C++ and NVIDIA CUDA. TECoSim adopts "
-                "cross-level co-simulation methodology that combines bottom-up hierarchical abstraction with system-level "
-                "end-to-end simulation.\n"
-                " - TECoSim is efficient, system-level modeling oriented, and highly parameter-configurable, it "
-                "can be used to validate arbitrary parameter-defined display panel's visual quality, voltage drop, temperature "
-                "distribution under thermo-electrical coupling effect and IR drop effect with arbitrary parameter-defined "
-                "working scenario and target video.\n"
-                " - TECoSim carries out the system-level and panel-level simulation/analysis with multiple-hierarchy "
-                "modeling. TECoSim is efficient in thermo-electric multiphysics coupled simulation and nonlinear power "
-                "network quasi-static and dynamic analysis. With input target video, TECoSim is capable to give visualization "
-                "of the panel's display effect and is capable to export other raw data such as whole panel's temperature, "
-                "pixel current, PDN voltage drop and so on.\n"
-                " - TECoSim models the whole display panel in multiple hierarchies: 1) Pixel circuit compact model with "
-                "basic electrical characteristics, temperature sensitivity, hysteresis behavior and IR drop behavior. "
-                "2) Based on 1), a nonlinear power distribution network (PDN) with full-panel pixels. 3) Based on 1), a "
-                "thermo-electric coupling multiphysics model with full-panel pixels. 4) Based on 1), 2) and 3), a "
-                "complete end-to-end piepline with Target Video → Driving Signal → Display Panel → Display Response"
-                "Display Effect Visualization.\n"
-                " - With user-exposed parameters, TECoSim is highly configurable in pixel circuit compact models, PDN "
-                "layout/parasitic parameters, panel heat flux/contact parameters, panel specification (such as resolution, "
-                "physical size and material parameters and so on), and simulation parameters (such as solving threads num, "
-                "solving methods, data export configs, visualization configs and so on).\n"
-                "# Guidelines\n"
+                " - You are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), capable of display "
+                "panel visual quality, IR drop, and temperature distribution analysis under thermo-electrical coupling effects\n"
+                "# Workflow Guidelines\n"
+                f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your primary "
+                f"mechanism for planning and communicating with the user. When receiving any user request, follow this flow:\n"
+                f"  1. Call `{TOOL_NAME_QUERY_TASK}` (with no args) to see current state\n"
+                f"  2. IMPORTANT: If no relevant tasks exist, call `{TOOL_NAME_CREATE_TASK}` to break down the work into "
+                f"milestones (e.g. \"Collect data\"), not tool calls (e.g. \"Read file A\")\n"
+                f"  3. Then start executing, using `{TOOL_NAME_UPDATE_TASK}` to mark progress at each milestone\n"
+                # f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your primary "
+                # f"mechanism for planning and communicating with the user. When receiving any non-trivial user request, "
+                # f"call `{TOOL_NAME_CREATE_TASK}` before taking action. Use task tools to manage your workflow:\n"
+                # f"   - When the user's request involves 3+ distinct steps → `{TOOL_NAME_CREATE_TASK}` first to plan\n"
+                # f"   - When the user's request is ambiguous or open-ended → `{TOOL_NAME_CREATE_TASK}` to clarify scope, "
+                # f"then `{TOOL_NAME_ASK_QUESTION}` if needed\n"
+                # f"   - A good rule of thumb: each task should represent a meaningful milestone (e.g. \"Set up design\", "
+                # f"\"Run simulation\", \"Analyze results\"), not individual tool calls (e.g. \"Read file A\", \"Read file B\"). "
+                # f"Create a new task only when entering a new logical phase of work.\n"
+                # f"   - After completing a step → `{TOOL_NAME_UPDATE_TASK}` to mark progress and surface the next step\n"
+                # f"Use `{TOOL_NAME_CREATE_TASK}` and `{TOOL_NAME_UPDATE_TASK}` to communicate your plan and progress to the "
+                # f"user - viewing the task list is the best way for the user to understand what you're doing\n"
+                "# Simulation Guidelines\n"
                 " - Before the first simulation, you should check if the simulator is available. Only recheck when needed.\n"
-                " - A `design` is always needed before launching simulator for panel design or evaluation. Each design is "
-                "identified by a single integer id starts from 1, and you should managed the all designs' ids and don't "
-                "assume that user knows the ids. Design can be created with default value or copied from other existing "
-                "designs. You can modify the design, but can't delete any design nor override it with another design by copy.\n"
-                " - After each simulation, the following contents will be all outputted and managed with the unit of `run`: "
-                "1) simulator's stdout log, 2) simulator's stderr log, 3) raw simulation results, 4) visualization video, "
-                "5) copy of input design. Each launch of simulator will create a run and each run is identified by a single "
-                "integer id starts from 1. Each run is read-only and its id is automatically managed by simulator.\n"
-                f" - Please use tool `{TOOL_NAME_READ_LOG}` to read the simulator's stdout/stderr logs in units of lines. When reading "
-                "a stdout log, only read all lines of it when necessary, since the stdout log can be too long. For example, "
-                "if you want to check for error information when a simulation fails, you can read a few lines of stdout "
-                "log from the bottom (e.g., 50 lines) rather than reading all of the lines at once.\n"
-                "# Tasks\n"
+                f" - A `{SIM_DESIGN_NAME}` is always needed before launching simulator for panel design or evaluation. "
+                f"Each `{SIM_DESIGN_NAME}` is identified by a single integer id starts from 1, and you should managed the all "
+                f"designs' ids and don't assume that user knows the ids. Each design can have multiple revisions, each revision "
+                f"is a version of the design. New revisions are created when the design is modified. Each design is created "
+                f"from scratch with default configuration. Designs cannot be deleted after creation.\n"
+                # TODO: Support copy from existing designs and modify existing designs in future versions\n
+                f" - After each simulation, the following contents are available with the unit of "
+                f"`{SIM_RUN_NAME}`:\n"
+                "    - 1) simulator's stdout log (read via `read_log`)\n"
+                "    - 2) simulator's stderr log (read via `read_log`)\n"
+                # "    - 3) TODO: other content\n"
+                f"Each launch of simulator will create a `{SIM_RUN_NAME}` and each run is identified by a single integer "
+                f"id starts from 1. Each run is read-only and its id is automatically managed.\n"
+                "# User Requirements\n"
                 " - The user will primarily request you to perform display panel engineering tasks. These may include "
-                "designing a display panel from scratch with core target metis, validating specific panel's IR drop severity "
-                "or validating specific panel's temperature distribution under certain working scenarios, and more. When "
-                "given an unclear or generic instruction, consider it in the context of display panel engineering tasks, "
-                "capability of TECoSim and other available tools.\n"
+                "designing a display panel from scratch with core target metrics, validating specific panel's IR drop severity "
+                "or validating specific panel's temperature distribution under certain working scenarios, and more.\n"
+                " - When given an unclear or generic instruction, consider it in the context of display panel engineering "
+                f"tasks, capability of TECoSim and other available tools. Call `{TOOL_NAME_ASK_QUESTION}` to clarify the user's "
+                f"idea if needed\n"
                 " - You are highly capable and often allow users to complete ambitious tasks that would otherwise be too "
-                "complex or take too long. You should defer to user judgement about whether a task is too large to attempt."
+                "complex or take too long. You should defer to user judgement about whether a task is too large to attempt.\n"
                 " - Avoid giving time estimates or predictions for how long tasks will take, whether for your own work or "
                 "for users planning projects. Focus on what needs to be done, not how long it might take.\n"
                 "# Tone and style\n"
                 " - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\n"
                 " - Your responses should be short and concise.\n"
                 " - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text "
-                "like ""Let me read the file:"" followed by a read tool call should just be ""Let me read the file."" with a period.\n"
+                "like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.\n"
                 "# Output efficiency\n"
-                "IMPORTANT: Go straight to the point. Try the simplest approach first without going in circles. Do not "
-                "overdo it. Be extra concise. Keep your text output brief and direct. Lead with the answer or action, "
-                "not the reasoning. Skip filler words, preamble, and unnecessary transitions. Do not restate what the "
-                "user said — just do it. When explaining, include only what is necessary for the user to understand.\n"
+                "Keep text output brief and direct. Lead with the answer or action, not the reasoning. Skip filler words, "
+                "preamble, and unnecessary transitions. Do not restate what the user said - just do it. When explaining, "
+                "include only what is necessary for the user to understand.\n"
                 "Focus text output on:\n"
                 " - Decisions that need the user's input\n"
                 " - High-level status updates at natural milestones\n"
-                " - Errors or blockers that change the plan\n"
+                " - Errors or blockers that change the plan or task\n"
                 "If you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. "
                 "This does not apply to code or tool calls.\n"
                 "# Session-specific guidance\n"
-                f" - If you do not understand why the user has denied a tool call, use the `{TOOL_NAME_ASK_QUESTION}` to ask them\n"
+                " - If a user denies your tool call, they may provide a comment explaining why. If you don't understand, "
+                f"use {TOOL_NAME_ASK_QUESTION} to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"}]
                 # " - Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
@@ -171,14 +174,36 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
 def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's dynamic boundaries with AgentContext"""
     now = datetime.now()
+    git_available = is_git_available()
+    if git_available:
+        git_prompts = " - Is git available: True\n"
+    else:
+        git_prompts = f" - Is git available: False\n"
+    bash_available = is_bash_available(ctx.agent_configs["BASH_PATH"])
+    ripgrep_available = is_ripgrep_available(ctx.agent_configs["RIPGREP_PATH"])
+    if bash_available:
+        bash_prompts = " - Is bash available: True\n"
+    else:
+        bash_prompts = (f" - Is bash available: False. User should check if bash is available in path: {ctx.agent_configs["BASH_PATH"]} "
+                        f"defined in `BASH_PATH`\n")
+    if ripgrep_available:
+        grep_prompts = f" - Is `{TOOL_NAME_GREP_FILE}` available: True\n"
+    else:
+        grep_prompts = (f" - Is `{TOOL_NAME_GREP_FILE}` available: False. User should check if ripgrep is available in path: "
+                        f"{ctx.agent_configs["RIPGREP_PATH"]} defined in `RIPGREP_PATH`")
+    primary_dir_prompts = f" - Primary working directory: {os.getcwd()}"
+    if git_available:
+        primary_dir_prompts += f" (is git repository: {str(is_git_repo(os.getcwd()))})"
+    primary_dir_prompts += "\n"
     prompts = [{"role": "system", "content":
                 "# Environment\n"
                 f"Today is: {now.strftime("%Y-%m-%d")}\n"
                 "You have been invoked in the following environment: \n"
                 f" - Platform: {get_platform_info()[0]} {get_platform_info()[1]} version: {get_platform_info()[2]}\n"
-                f" - Primary working directory: {os.getcwd()}\n"
-                f"  - Is a git repository: {str(is_git_repo(os.getcwd()))}\n"
-                f" - Is bash available: {is_bash_available()}\n"
+                f"{bash_prompts}"
+                f"{git_prompts}"
+                f"{grep_prompts}"
+                f"{primary_dir_prompts}"
                 f" - Path of simulator: {ctx.agent_configs["SIMULATOR_PATH"]}\n"
                 f" - You are powered by the LLM: {ctx.api_configs["MAIN_MODEL_NAME"]}\n"}]
     return prompts
@@ -200,7 +225,7 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     else:
         prompts = [{"role": "system", "content":
                     f"The following skills are user-invocable with the `{TOOL_NAME_SKILL}` tool:\n"
-                    f"(No available skills)\n)"}]
+                    f"(No available skill)\n)"}]
     return prompts
 
 
@@ -229,7 +254,7 @@ def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             messages = json.load(f)
         sys_log.debug(f"Messages of session {session_uuid} loaded")
-        console.print(f"Messages of session [{MAJOR_COLOR2}]{session_uuid}[/{MAJOR_COLOR2}] loaded")
+        console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{session_uuid}[/bright_black] loaded")
         return messages
     except Exception as e:
         sys_log.error(f"Failed to load the messages of session {session_uuid} with error: {e}")
@@ -323,7 +348,7 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
                 serializable_messages.append(dict(msg))
         if not mute:
             sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
-            console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] converted")
+            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] converted")
 
         # path = "./session/" + ctx.session_uuid + "/messages.json"
         path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
@@ -331,7 +356,7 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
             json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
         if not mute:
             sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
-            console.print(f"Messages of session [{MAJOR_COLOR2}]{ctx.session_uuid}[/{MAJOR_COLOR2}] saved")
+            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] saved")
     except Exception as e:
         sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
         console.print(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}", style="bold red")

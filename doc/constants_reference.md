@@ -1,0 +1,263 @@
+# 常量参考 | Constants Reference
+
+本文档提供了 `src/constants.py` 中所有常量的完整参考。
+This document provides the full reference for all constants defined in `src/constants.py`.
+
+> **⚠️ 警告 | WARNING**
+> `constants.py` 中的参数直接影响 Agent 的运行行为与安全策略。**除非你完全理解每个参数的作用，请勿随意修改**。错误修改可能导致 Agent 行为异常、安全策略绕过或工具功能异常。如需调整行为，建议优先通过 `agent_configs.json` 或 `api_configs.json` 配置。
+
+> Parameters in `constants.py` directly affect the agent's runtime behavior and security policies. **Do not modify them unless you fully understand each parameter's purpose**. Incorrect modifications may lead to agent malfunction, security bypass, or tool malfunctions. Prefer adjusting behavior via `agent_configs.json` or `api_configs.json` instead.
+
+---
+
+## 状态标签 | Status Labels
+
+Agent 工具和内部操作通过标准化的状态标签返回结果，便于调用方统一处理。定义如下：
+Agent tools and internal operations return standardized status labels for unified handling:
+
+| 常量 Constant | 标签 Label | 含义 Meaning |
+|----------|-----------|-------------|
+| `FAIL_LABEL` | `FAIL` | 操作失败，附带错误信息 / Operation failed with error info |
+| `SUCCESS_LABEL` | `SUCCESS` | 操作成功 / Operation succeeded |
+| `DENIED_LABEL` | `DENIED` | 用户拒绝了权限请求 / User denied the permission request |
+| `DISABLED_LABEL` | `DISABLED` | 工具被禁用（如 `--notools` 模式）/ Tool is disabled (e.g. `--notools` mode) |
+| `TRUNCATED_LABEL` | `TRUNCATED` | 操作成功但结果被截断（如文件读取超过 `READ_FILE_LLM_KB_LIMIT`）/ Succeeded but result was truncated |
+| `TIMEOUT_LABEL` | `TIMEOUT` | 操作超时 / Operation timed out |
+| `CANCELLED_LABEL` | `CANCELLED` | 操作被用户取消（如仿真运行）/ Operation cancelled by user |
+| `DONE_LABEL` | `DONE` | 仿真运行正常完成 / Simulation run completed normally |
+| `TASK_PENDING_LABEL` | `pending` | Scoreboard 任务待处理 / Scoreboard task is pending |
+| `TASK_IN_PROGRESS_LABEL` | `in_progress` | Scoreboard 任务进行中 / Scoreboard task is in progress |
+| `TASK_COMPLETED_LABEL` | `completed` | Scoreboard 任务已完成 / Scoreboard task is completed |
+| `TASK_DELETED_LABEL` | `deleted` | Scoreboard 任务已删除 / Scoreboard task is deleted |
+| `RUN_PENDING_LABEL` | `PENDING` | 仿真运行等待中 / Simulation run is pending |
+| `RUN_CANCELLED_LABEL` | `CANCELLED` | 仿真运行被取消 / Simulation run was cancelled |
+| `RUN_TIMEOUT_LABEL` | `TIMEOUT` | 仿真运行超时 / Simulation run timed out |
+| `RUN_RUNTIME_ERROR_LABEL` | `RUNTIME_ERROR` | 仿真运行发生运行时错误 / Simulation run encountered a runtime error |
+| `RUN_DONE_LABEL` | `DONE` | 仿真运行成功完成 / Simulation run completed successfully |
+
+> **状态流转说明 | Status Flow**
+> - 工具操作状态：`FAIL` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` 互斥，一次调用返回一个
+> - Scoreboard 任务状态：`pending → in_progress → completed`（不可逆），任何状态均可标记为 `deleted`
+> - 仿真运行状态：`PENDING → DONE` / `CANCELLED` / `TIMEOUT` / `RUNTIME_ERROR`
+
+---
+
+## 工具名称列表 | Tool Names List
+
+`src/constants.py` 中集中定义了所有 Agent 工具的字符串名称（`TOOL_NAME_*` 常量）。如需修改某个工具的名称（例如避免与 MCP 工具重名），只需在此修改一处即可全局生效：
+All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/constants.py`. To rename a tool (e.g., to avoid conflicts with MCP tools), change it here — it takes effect everywhere:
+
+| 常量 Constant | 默认名称 Default Name | 用途 Purpose |
+|----------|--------------|---------|
+| `TOOL_NAME_VERSION` | `agent_version` | 获取 Agent 版本 / Get agent version |
+| `TOOL_NAME_ASK_QUESTION` | `ask_user_question` | 向用户提问 / Ask user structured questions |
+| `TOOL_NAME_CREATE_CRON` | `create_cron` | 创建定时任务 / Create a cron task |
+| `TOOL_NAME_QUERY_CRON` | `query_cron` | 查询定时任务列表 / Query cron task list |
+| `TOOL_NAME_REMOVE_CRON` | `remove_cron` | 删除定时任务 / Remove a cron task |
+| `TOOL_NAME_CREATE_TASK` | `create_task` | 创建任务 / Create a task |
+| `TOOL_NAME_UPDATE_TASK` | `update_task` | 更新任务 / Update a task |
+| `TOOL_NAME_GET_TASK` | `get_task` | 获取任务详情 / Get task details |
+| `TOOL_NAME_LIST_TASK` | `list_task` | 列出任务 / List tasks |
+| `TOOL_NAME_BASH` | `bash` | 执行 Shell 命令 / Execute shell commands |
+| `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns |
+| `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents |
+| `TOOL_NAME_READ_FILE` | `read_file` | 读取文件 / Read file |
+| `TOOL_NAME_WRITE_FILE` | `write_file` | 写入文件 / Write file |
+| `TOOL_NAME_EDIT_FILE` | `edit_file` | 编辑文件 / Edit file |
+| `TOOL_NAME_SKILL` | `skill` | 调用技能 / Invoke a skill |
+| `TOOL_NAME_WEB_FETCH` | `web_fetch` | 获取网页内容 / Fetch web content |
+| `TOOL_NAME_WEB_SEARCH` | `web_search` | 网络搜索 / Search the web |
+| `TOOL_NAME_CALL_MCP` | `call_mcp` | 调用 MCP 工具 / Call an MCP tool |
+| `TOOL_NAME_CHECK_SIMULATOR` | `check_simulator` | 检查仿真器可用性 / Check simulator availability |
+| `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design |
+| `TOOL_NAME_QUERY_DESIGN` | `query_design` | 查询设计列表 / Query design list |
+| `TOOL_NAME_LAUNCH_SIM` | `launch_sim` | 启动仿真 / Launch a simulation |
+| `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行次数 / Query run count |
+| `TOOL_NAME_READ_LOG` | `read_log` | 读取仿真日志 / Read simulation logs |
+
+---
+
+## Bash 风险等级 | Bash Risk Levels
+
+Agent 在执行 Bash 命令前会调用 `evaluate_bash_risk()` 进行风险检测，根据命令类型分配风险等级，并据此决定是否需要用户权限确认。等级数字越小风险越高：
+The agent calls `evaluate_bash_risk()` before executing any bash command, classifying risk by command type to determine whether user permission is required. Lower number = higher risk:
+
+| 常量 Constant | 风险等级 Risk | 说明 Description |
+|----------|------------|-------------|
+| `BASH_HIGH_RISK_LABEL` | 高 High (0) | sudo、dd、iptables、防火墙等 / sudo, dd, iptables, firewall, etc. |
+| `BASH_PACKAGE_LABEL` | 高 High (0) | 包管理器修改系统 / Package manager modifies system |
+| `BASH_NETWORK_LABEL` | 高 High (0) | 网络命令（curl、wget、ssh 等）/ Network commands (curl, wget, ssh, etc.) |
+| `BASH_REMOVAL_RF_LABEL` | 中 Med (1) | 递归强制删除 `rm -rf` / Recursive forced removal |
+| `BASH_REMOVAL_R_LABEL` | 中 Med (2) | 递归删除 `rm -r` / Recursive removal |
+| `BASH_REMOVAL_F_LABEL` | 中 Med (2) | 强制删除 `rm -f` / Forced removal |
+| `BASH_REMOVAL_LABEL` | 中 Med (3) | 普通删除 `rm` / Normal removal |
+| `BASH_CHMOD_LABEL` | 低 Low (4) | 修改文件权限 / Change file permissions |
+| `BASH_CHOWN_LABEL` | 低 Low (4) | 修改文件所有者 / Change file owner |
+| `BASH_FILE_LABEL` | 低 Low (4) | 文件操作（cp、mv、mkdir 等）/ File operations |
+| `BASH_INLINE_SCRIPT_LABEL` | 低 Low (4) | 内联脚本执行（python -c、node -e 等）/ Inline script execution |
+| `BASH_REPOSITORY_MODIFY_LABEL` | 中 Med (5) | Git 修改仓库历史 / Git modifies repo history |
+| `BASH_STAGE_CHANGE_LABEL` | 中 Med (6) | Git 暂存更改 / Git stages changes |
+| `BASH_UNKNOWN_LABEL` | 未知 Unknown (7) | 未分类命令 / Unclassified command |
+| `BASH_SAFE_LABEL` | 安全 Safe (8) | 安全命令（ls、cat、grep 等）/ Safe commands |
+| `BASH_EMPTY_LABEL` | 安全 Safe (9) | 空命令 / Empty command |
+
+---
+
+## UI 配置 | UI Configuration
+
+### 主题色 | Theme Colors
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `MAJOR_COLOR1` | `#FF9FF3`（亮粉 bright pink） | 强调色、内容图标、进度条终点 / Accent, content icon, progress bar end |
+| `MAJOR_COLOR2` | `#54A0FF`（蓝 blue） | 主色调、命令名称、进度条起点 / Primary color, command names, progress bar start |
+| `REASONING_COLOR` | `#54A0FF` | 推理文本颜色 / Reasoning text color |
+| `EDIT_VIEW_RMV_BG` | `#5F0000`（暗红 dark red） | 文件编辑 diff 删除行背景 / Removed line background in edit diff |
+| `EDIT_VIEW_ADD_BG` | `#005F00`（暗绿 dark green） | 文件编辑 diff 新增行背景 / Added line background in edit diff |
+
+### 图标与符号 | Icons & Symbols
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `AGENT_CONSOLE_ICON` | `✦` | 控制台输入提示符 / Console input prompt marker |
+| `REASON_ICON` | `⟡` | 推理内容标记 / Reasoning content marker |
+| `CONTENT_ICON` | `●` | 普通内容标记 / Regular content marker |
+| `PROGRESS_BAR_FULL` | `█` | 进度条填充字符 / Progress bar filled block |
+| `PROGRESS_BAR_EMPTY` | `░` | 进度条空白字符 / Progress bar empty block |
+| `OPTIONS_TO_SELECT_PREFIX` | `❯ ` | TUI 选项中当前聚焦项的前缀 / Focused option prefix in TUI |
+| `OPTIONS_UN_SELECT_PREFIX` | `  ` | TUI 选项中未聚焦项的前缀 / Unfocused option prefix in TUI |
+| `OPTIONS_SELECTED_PREFIX` | ` ✓` | TUI 选项中已选择项的标记 / Selected option suffix in TUI |
+| `SELECTED_QUESTION_OPTION_COLOR` | `#A6CEFF` | TUI 中已选择的选项颜色 / Color for selected option |
+| `TUI_USER_COMMENT_COLOR` | `#A6CEEF` | 用户注释文本颜色 / Color for user comment text |
+
+### 样式与格式 | Styles & Formatting
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `REASON_ICON_SYLTE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
+| `CONTENT_ICON_SYLTE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
+| `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
+| `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
+| `BASH_STYLE` | `none` | Bash 命令输出样式 / Bash output style |
+| `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
+
+### 任务看板 | Task Board (Scoreboard)
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `TASK_DISPLAYS_BEFORE_ARCHIVED` | `3` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
+| `MUTE_TASK_OP_INFO` | `true` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
+| `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
+| `TASK_VIEW_RIGHT_MARGIN` | `1` | 任务列表状态图标右侧缩进 / Right margin for task status icons |
+| `TASK_COLOR_GRADIENT` | `128` | 任务动画渐变阶数 / Gradient color steps for task animation |
+| `TASK_COLOR_PERIOD` | `2.0` | 任务动画周期（秒）/ Task animation period (seconds) |
+| `TASK_PENDING_WITHOUT_OWNER_ICON` | `○` | 无归属待处理任务图标 / Icon for pending task without owner |
+| `TASK_PENDING_WITH_OWNER_ICON` | `●` | 有归属待处理/进行中任务图标 / Icon for pending/in-progress task with owner |
+| `TASK_COMPLETED_ICON` | `✓` | 已完成任务图标 / Icon for completed task |
+| `TASK_DELETED_ICON` | `✗` | 已删除任务图标 / Icon for deleted task |
+| `TASK_PENDING_COLOR_START` | `#545454` | 待处理任务渐变起始色 / Gradient start for pending tasks |
+| `TASK_PENDING_COLOR_END` | `#DBDBDB` | 待处理任务渐变终止色 / Gradient end for pending tasks |
+| `TASK_IN_PROGRESS_COLOR_START` | `#FF9FF3`（亮粉） | 进行中任务渐变起始色 / Gradient start for in-progress tasks |
+| `TASK_IN_PROGRESS_COLOR_END` | `#54A0FF`（蓝） | 进行中任务渐变终止色 / Gradient end for in-progress tasks |
+| `TASK_COMPLETED_COLOR` | `#8CDCA0`（绿） | 已完成任务颜色 / Color for completed tasks |
+| `TASK_DELETED_COLOR` | `#767676`（灰） | 已删除任务颜色 / Color for deleted tasks |
+
+### 监听 TUI | Listen TUI
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `LISTEN_TUI_COLOR_START` | `#FF9FF3`（亮粉） | 监听 TUI 标题渐变起始色 / Listen TUI gradient start |
+| `LISTEN_TUI_COLOR_END` | `#54A0FF`（蓝） | 监听 TUI 标题渐变终止色 / Listen TUI gradient end |
+| `LISTEN_TUI_COLOR_GRADIENT` | `128` | 监听 TUI 渐变色阶数 / Listen TUI gradient steps |
+| `LISTEN_TUI_COLOR_PERIOD` | `2.0` | 监听 TUI 动画周期（秒）/ Listen TUI animation period (seconds) |
+| `CRON_LISTEN_COLOR_START` | `#FF9FF3`（亮粉） | Cron 监听渐变起始色 / Cron listen gradient start |
+| `CRON_LISTEN_COLOR_END` | `#54A0FF`（蓝） | Cron 监听渐变终止色 / Cron listen gradient end |
+| `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
+| `CRON_LISTEN_COLOR_PERIOD` | `2.0` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
+
+### 会话标题 | Session Titles
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `DEFAULT_SESSION_TITLE` | `(Empty session)` | 空会话的默认标题 / Default title for empty session |
+| `UNKNOWN_SESSION_TITLE` | `(Unknown session)` | 无法识别会话的标题 / Title for unrecognizable session |
+| `ERROR_SESSION_TITLE` | `(Summarize fail, try manually)` | 摘要失败时的回退标题 / Fallback title when summarization fails |
+
+### 进度与 Spinner | Progress & Spinners
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `LLM_REQUEST_DONE_TITLE` | `LLM response latency` | LLM 请求完成提示 / LLM request done prompt |
+| `LLM_REQUEST_INTRP_TITLE` | `LLM request interrupted` | LLM 请求中断提示 / LLM request interrupted prompt |
+| `LLM_REQUEST_FAIL_TITLE` | `LLM request failed` | LLM 请求失败提示 / LLM request failed prompt |
+| `LLM_REQUEST_SPINNER` | `dots2` | LLM 请求时的 spinner 样式 / Spinner style for LLM requests |
+| `TOOLS_EXECUTION_DONE_TITLE` | `Tools execution done` | 工具执行完成提示 / Tools execution done prompt |
+| `TOOLS_EXECUTION_INTRP_TITLE` | `Tools execution interrupted` | 工具执行中断提示 / Tools execution interrupted prompt |
+| `TOOLS_EXECUTION_FAIL_TITLE` | `Tools execution failed` | 工具执行失败提示 / Tools execution failed prompt |
+| `TOOLS_EXECUTION_SPINNER` | `bouncingBall` | 工具执行时的 spinner 样式 / Spinner style for tool execution |
+| `SPINNER_LIVE_CHECK_GAP_MS` | `200` | Spinner 子线程轮询间隔（毫秒）/ Polling gap for spinner thread (ms) |
+| `SPINNER_TERMINATE_WAIT_S` | `10` | 中断后等待子线程退出的最长时间（秒）/ Max wait for sub-thread exit after interrupt (s) |
+| `PROGRESS_DISPLAY_REFRESH_RATE` | `30` | 进度条 TUI 刷新率（次/秒）/ Progress TUI refresh rate (fps) |
+
+> **随机标题机制 | Random Title Mechanism**
+> 当 `agent_configs.json` 中的 `RANDOM_PROGRESS_TITLE` 设为 `true` 时，Agent 会在三个场景中随机循环显示趣味标题（定义于 `constants.py`）：
+> When `RANDOM_PROGRESS_TITLE` is `true` in `agent_configs.json`, the agent cycles through random fun titles in three scenarios:
+> 
+> **LLM 请求时**（`LLM_REQUEST_TITLE_LIST`，7+ 条）— 如 `"Brain (but not mine) using ..."`、`"Staring into the abyss. The abyss is typing ..."`
+> **During LLM requests** — e.g., `"Brain (but not mine) using ..."`
+>
+> **工具执行时**（`TOOLS_EXECUTION_TITLE_LIST`，23+ 条）— 如 `"Reaching into the toolbox ..."`、`"Finding the right screwdriver ..."`
+> **During tool execution** — e.g., `"Reaching into the toolbox ..."`
+> 
+> **用户输入前**（`USER_PROMPT_PREFIX_LIST`，7+ 条）— 如 `"Type, and behold the breath of silica"`、`"Whisper your command into the chips"`
+> **Before user input** — e.g., `"Type, and behold the breath of silica"`
+> 
+> 以上列表均可在 `constants.py` 中自由定制。设为 `false` 则使用固定的默认标题（见上表各 `*_TITLE` 常量）。
+> All lists can be customized in `constants.py`. When disabled, fixed default titles are used (see `*_TITLE` constants above).
+
+### 流式显示 | Streaming Display
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `STREAM_DISPLAY_REFRESH_RATE` | `20` | 流式响应 TUI 刷新率（次/秒）/ Stream response TUI refresh rate (fps) |
+| `STREAM_DISPLAY_MAX_REASON_LINE` | `10` | 推理内容显示截断行数 / Max reasoning lines before truncation |
+| `STREAM_DISPLAY_MAX_CONTENT_LINE` | `20` | 内容显示截断行数 / Max content lines before truncation |
+
+### 编辑视图 | Edit View (File Diff)
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `EDIT_VIEW_LINE_MARGIN_SINGLE` | `3` | 单次编辑预览上下文行数 / Context lines for single edit preview |
+| `EDIT_VIEW_LINE_MARGIN_MULTI` | `2` | 多次编辑预览上下文行数 / Context lines for multi edit preview |
+| `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
+| `EDIT_VIEW_LINE_SPACE_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+
+### Bash 视图 | Bash View (Command Output)
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `BASH_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
+| `BASH_VIEW_LINE_NUM_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+
+---
+
+## 其他关键常量 | Other Key Constants
+
+这些常量控制 Agent 的核心版本标识与基础行为参数：
+These constants control the agent's core identity and basic behavior:
+
+| 常量 Constant | 默认值 Default | 说明 Description |
+|----------|---------|-------------|
+| `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
+| `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `0` | Agent 更新版本号 / Agent update version |
+| `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID，用于 Scoreboard 任务认领识别 / Main agent identifier for Scoreboard task claiming |
+| `TASKS_NAME` | `"tasks.json"` | Scoreboard 任务持久化文件名（存于 session 目录）/ Scoreboard task persistence file name (under session dir) |
+| `LOG_PATH` | `"./log"` | 日志文件输出目录 / Log file output directory |
+| `SESSION_PATH` | `"./session"` | 会话持久化目录（每个会话一个子文件夹）/ Session persistence directory (one subfolder per session) |
+| `CRON_CONFIGS_PATH` | `"./cron/cron_configs.json"` | 持久化定时任务配置文件路径 / Durable cron config file path |
+| `BASH_TIMEOUT_MS_DEFAULT` | `120000` (2 min) | Bash 命令默认超时。Agent 的 `bash` 工具若不指定 timeout 参数则使用此值 / Default bash command timeout; used when no timeout argument is given |
+| `BASH_TIMEOUT_MS_MAX` | `600000` (10 min) | Bash 命令最大超时上限。Agent 拒绝任何超过此值的 timeout 参数，防止误设过长超时 / Max bash command timeout; the agent rejects any timeout exceeding this limit |
+| `READ_FILE_MAX_LINE` | `10000` | 单次读取文件最大行数。超过此行数后不再继续读取 / Max lines per file read; stops reading beyond this limit |
+| `READ_LOG_MAX_LINE` | `10000` | 单次读取日志最大行数。与 `READ_FILE_MAX_LINE` 不同，此值专门针对仿真日志读取 / Max lines per log read (separate from `READ_FILE_MAX_LINE`, specific to simulation logs) |
+| `PERMISSION_REQUEST_DSEC_CHAR_MAX` | `500` | 权限请求描述的最大字符数。用户在权限 TUI 中输入注释时超过此长度会被截断 / Max chars for permission request description; user comments exceeding this are truncated |

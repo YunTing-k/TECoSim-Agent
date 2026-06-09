@@ -33,6 +33,7 @@ Revision:
 2026.6.5       Yu Huang      3.1      Add --nosystem, --notools, --nocrons support
 2026.6.6       Yu Huang      3.2      Basic support of agent tasks as Scoreboard with lock
 2026.6.7       Yu Huang      3.3      Support of agent tasks display & Refactor agent listening
+2026.6.9       Yu Huang      3.4      Add design and run support for simulator
 
 Details:
 ---------
@@ -84,8 +85,8 @@ if __name__ == '__main__':
     ctx = AgentContext()
     ctx.args = arguments
     ctx.console = console
-    sys_log.debug("Context of TECoSim Agent created")
-    console.print(f"Context of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
+    sys_log.debug("TECoSim Agent context created")
+    console.print(f"TECoSim Agent [{MAJOR_COLOR2}]context[/{MAJOR_COLOR2}] created")
 
     """load API configs and config LLM client"""
     ctx.api_configs = load_configs(configs_path=API_CONFIGS_PATH, name="API", console=console)
@@ -132,12 +133,29 @@ if __name__ == '__main__':
     ctx.agent_session = agent_session
 
     """create/resume scoreboard"""
-    board = Scoreboard()
+    board = Scoreboard()  # independent with agent context, clearer semantics
     board.session_uuid = ctx.session_uuid
-    sys_log.debug("Scoreboard of TECoSim Agent created")
-    console.print(f"Scoreboard of [{MAJOR_COLOR2}]TECoSim Agent[/{MAJOR_COLOR2}] created")
+    sys_log.debug("Scoreboard of this TECoSim Agent session created")
+    console.print(f"[{MAJOR_COLOR2}]Scoreboard[/{MAJOR_COLOR2}] of this TECoSim Agent session created")
     if ctx.args.resume is not None:
         board.load_from_file(console=console, mute=False)
+
+    """create/resume design manager"""
+    ctx.design_man.session_uuid = ctx.session_uuid
+    ctx.design_man.simulator_path = ctx.agent_configs["SIMULATOR_PATH"]
+    sys_log.debug("Design manager of this TECoSim Agent session configured")
+    console.print(f"[{MAJOR_COLOR2}]Design manager[/{MAJOR_COLOR2}] of this TECoSim Agent session configured")
+    if ctx.args.resume is not None:
+        ctx.design_man.load_from_file(console=console, mute=False)
+
+    """create/resume run manager"""
+    ctx.run_man.session_uuid = ctx.session_uuid
+    ctx.run_man.simulator_path = ctx.agent_configs["SIMULATOR_PATH"]
+    ctx.run_man.time_out = ctx.agent_configs["SIMULATOR_TIMEOUT_S"]
+    sys_log.debug("Run manager of this TECoSim Agent session configured")
+    console.print(f"[{MAJOR_COLOR2}]Run manager[/{MAJOR_COLOR2}] of this TECoSim Agent session configured")
+    if ctx.args.resume is not None:
+        ctx.run_man.load_from_file(console=console, mute=False)
 
     """load durable cron tasks"""
     if not ctx.args.nocrons:
