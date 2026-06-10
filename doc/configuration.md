@@ -28,20 +28,23 @@ The `api_configs.json` file defines LLM connection parameters, including the dua
 | `MAIN_MODEL_CONTEXT` | 主模型上下文窗口大小，用于上下文阈值告警判断 / Primary model context window size, used for context threshold warnings |
 | `MAIN_MODEL_ENABLE_REASONING` | 主模型是否启用推理（如 DeepSeek R1 的 thinking 模式）/ Enable reasoning for primary model (e.g. DeepSeek R1 thinking mode) |
 | `MAIN_MODEL_REASONING_EFFORT` | 主模型推理强度（`low`/`medium`/`high`）/ Primary model reasoning effort |
+| `MAIN_MODEL_DEEPSEEK_SUPPORT` | 主模型是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support for primary model |
 | `FAST_MODEL_NAME` | 快速模型名称，用于处理简单/确定性任务 / Fast model name, used for simple/deterministic tasks |
 | `FAST_MODEL_TEMPERATURE` | 快速模型温度参数 / Fast model temperature |
 | `FAST_MODEL_MAX_TOKENS` | 快速模型最大输出 Token 数 / Fast model max output tokens |
 | `FAST_MODEL_ENABLE_REASONING` | 快速模型是否启用推理 / Enable reasoning for fast model |
 | `FAST_MODEL_REASONING_EFFORT` | 快速模型推理强度（`low`/`medium`/`high`）/ Fast model reasoning effort |
+| `FAST_MODEL_DEEPSEEK_SUPPORT` | 快速模型是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support for fast model |
+| `FAST_MODEL_CONTEXT` | 快速模型上下文窗口大小 / Fast model context window size |
 | `TIMEOUT_MS` | LLM 请求超时时间（毫秒）/ LLM request timeout (milliseconds) |
 
 > **上下文阈值机制 | Context Threshold Mechanism**
 > Agent 使用 `MAIN_MODEL_CONTEXT` 与 `agent_configs.json` 中的 `CONTEXT_THRESHOLD` 配合，当输入 Token 数达到 `CONTEXT × THRESHOLD` 时，向用户发出告警提示（黄色警告），帮助避免上下文溢出。
 > The agent uses `MAIN_MODEL_CONTEXT` together with `CONTEXT_THRESHOLD` from `agent_configs.json`: when input tokens reach `CONTEXT × THRESHOLD`, a yellow warning is shown to prevent context overflow.
->
+
 > **推理模式 | Reasoning Mode**
-> `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `agent_configs.json` 中的 `DEEPSEEK_SUPPORT` 使用。
-> These are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires `DEEPSEEK_SUPPORT` in `agent_configs.json`.
+> `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `api_configs.json` 中对应模型的 `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` 使用。
+> These are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires the corresponding `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` in `api_configs.json`.
 
 ---
 
@@ -65,11 +68,13 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `MERGE_SYSTEM_PROMPTS` | 是否将多条系统提示词合并为单条消息发送 / Whether to merge multiple system prompts into a single message |
 | `CONTEXT_THRESHOLD` | 上下文阈值比例（如 `0.8` 表示 80%），超过时发出告警 / Context threshold ratio (e.g. `0.8` = 80%), triggers warning when exceeded |
 | `AUTO_SUMMARY_TRIGGER` | 自动摘要触发次数——用户输入达到该次数后自动总结会话 / Auto summary trigger — auto-summarizes session after this many user prompts |
+| `REMIND_TASK_TOOL_GAP` | 工具调用轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Tool call rounds before reminding LLM to use task tools |
+| `REMIND_TASK_CHAT_GAP` | 对话轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Chat rounds before reminding LLM to use task tools |
 | `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization |
 | `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`) |
 | `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown |
 | `RENDER_BASH_AS_MD` | 是否以 Markdown 格式渲染 Bash 命令输出 / Render bash command output as Markdown |
-| `DEEPSEEK_SUPPORT` | 是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support (thinking/reasoning format handling) |
+| `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session |
 | `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected |
 | `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated |
 | `URL_TIMEOUT_S` | 网页获取超时（秒）/ Web fetch timeout (seconds) |
@@ -80,17 +85,29 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RIPGREP_TIMEOUT_S` | 文件搜索超时（秒）/ File search (ripgrep) timeout (seconds) |
 | `MCP_INIT_TIMEOUT_S` | MCP 初始化超时（秒）/ MCP init timeout (seconds) |
 | `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds) |
+| `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume |
+| `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit |
+| `WEB_FETCH_LLM_CAHR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM |
+| `WEB_SEARCH_API_MODE` | 网络搜索 API 模式（如 `deep`）/ Web search API mode |
+| `WEB_SEARCH_PROXY` | 网络搜索代理地址 / Web search proxy |
+| `WEB_SEARCH_INCLUDE_DOMAINS` | 网络搜索限定包含的域名 / Web search included domains |
+| `WEB_SEARCH_EXCLUDE_DOMAINS` | 网络搜索排除的域名 / Web search excluded domains |
+| `WEB_SEARCH_MAX_ENTRY` | 网络搜索最大返回条目数 / Web search max entries |
+| `WEB_SEARCH_RAW_CHAR_LIMIT` | 网络搜索原始结果字符限制 / Web search raw result char limit |
+| `WEB_SEARCH_LLM_CHAR_LIMIT` | 网络搜索结果传给 LLM 的最大字符数 / Web search result char limit for LLM |
+| `RESUME_DISPLAY_SKILLS` | 恢复会话时是否显示已加载的技能内容 / Whether to display loaded skills content when resuming session |
+| `RESUME_DISPLAY_CRONS` | 恢复会话时是否显示定时任务内容 / Whether to display cron tasks content when resuming session |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）
 >   Set to `""` to disable all simulation features. Point to the directory containing TECoSim.exe (not the exe itself)
-> - `BASH_PATH`：默认 `"bash"`（即从系统 PATH 中查找）。Windows 用户通常需要设置为 Git Bash 的完整路径（如 `"C:\\Program Files\\Git\\bin\\bash.exe"`）。Agent 通过 `bash -c "command"` 执行（`tool_def.py:901`），并使用 `evaluate_bash_risk()` 做命令风险分级
+> - `BASH_PATH`：默认 `"bash"`（即从系统 PATH 中查找）。Windows 用户通常需要设置为 Git Bash 的完整路径（如 `"C:\\Program Files\\Git\\bin\\bash.exe"`）。Agent 通过 `bash -c "command"` 执行，并使用 `evaluate_bash_risk()` 做命令风险分级
 >   Default is `"bash"` (lookup from system PATH). Windows users typically set the full path to Git Bash. The agent executes via `bash -c "command"` and classifies risk via `evaluate_bash_risk()`
 > - `RIPGREP_PATH`：默认 `"rg"`。如果 ripgrep 不在 PATH 中，需设置完整路径。用于 `grep_file` 工具的全文搜索
 >   Default is `"rg"`. Set full path if ripgrep is not in system PATH. Used by the `grep_file` tool
 
 > **上下文与摘要 | Context & Summary**
-> - `CONTEXT_THRESHOLD`（推荐 `0.8`）：与 `api_configs.json` 中的 `MAIN_MODEL_CONTEXT` 配合使用。当 `input_tokens >= CONTEXT × THRESHOLD` 时输出黄色告警（`prompt.py:490`）。设为 `1.0` 可关闭告警
+> - `CONTEXT_THRESHOLD`（推荐 `0.8`）：与 `api_configs.json` 中的 `MAIN_MODEL_CONTEXT` 配合使用。当 `input_tokens >= CONTEXT × THRESHOLD` 时输出黄色告警。设为 `1.0` 可关闭告警
 >   Used with `MAIN_MODEL_CONTEXT`. Warning triggers when `input_tokens >= CONTEXT × THRESHOLD`. Set to `1.0` to disable warnings
 > - `AUTO_SUMMARY_TRIGGER`（推荐 `5-10`）：用户输入达到该次数后，自动调用 LLM 总结当前会话并更新标题。设为 `0` 可关闭自动摘要
 >   After this many user prompts, the agent auto-summarizes the session and updates the title. Set to `0` to disable
@@ -106,8 +123,8 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 >   Both limits apply: `MB_LIMIT` checks total file size first, `LLM_KB_LIMIT` checks read content size second
 
 > **模型兼容性 | Model Compatibility**
-> - `DEEPSEEK_SUPPORT`：启用后 Agent 会在 DeepSeek 模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`
->   When enabled, the agent handles DeepSeek's `thinking` field in responses, converting it to `reasoning` format. Set to `false` for non-DeepSeek models
+> - `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT`（`api_configs.json`）：分别控制主模型和快速模型的 DeepSeek 格式支持。启用后 Agent 会在对应模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`
+>   Per-model DeepSeek format support in `api_configs.json`. When enabled, the agent handles the `thinking` field in responses, converting it to `reasoning` format. Set to `false` for non-DeepSeek models
 > - `RENDER_RESPONSE_AS_MD` / `RENDER_BASH_AS_MD`：控制 LLM 响应和 Bash 输出是否用 Rich 库的 Markdown 渲染。关闭后以纯文本显示
 >   Controls whether LLM responses and Bash output are rendered as Markdown via the Rich library. Disable for plain text display
 

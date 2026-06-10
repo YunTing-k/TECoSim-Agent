@@ -27,20 +27,24 @@ Revision:
 2026.6.5       Yu Huang      2.5      Add --nosystem, --notools, --nocrons support & Bugfix of rendering msgs in non-Markdown format
 2026.6.8       Yu Huang      2.6      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      2.7      Revise the system prompts of task tools & Revise the highlight of the IO console print
+2026.6.10      Yu Huang      2.8      Revise the system prompts of task tools & Main/Fast model can configure deepseek support dependently &
+                                      Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
+                                      Fix the bug of stream messages handling under direct connection API
 
 Details:
 ---------
 Prompt assembly and LLM response management. Assembles system prompts (agent role, guidelines, environment, skills). Manages
 message history (save/load JSON to session files with serialization). Handles both streaming and non-streaming LLM responses:
 token usage tracking, reasoning/content extraction, tool call collection, context limit checking. Provides DeepSeek reasoning
-format conversion.
+format conversion. Also provides task usage tracking (`update_task_usage`) and task reminder generation (`get_task_reminder`)
+for workflow management, with system reminder label display support.
 """
 import os
 import json
 import logging
 import rich.box
 
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime
 from openai import Stream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
@@ -50,6 +54,7 @@ from rich.console import Group, Console
 from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
+from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
     get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD)
@@ -99,12 +104,18 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 " - You are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), capable of display "
                 "panel visual quality, IR drop, and temperature distribution analysis under thermo-electrical coupling effects\n"
                 "# Workflow Guidelines\n"
-                f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your primary "
-                f"mechanism for planning and communicating with the user. When receiving any user request, follow this flow:\n"
-                f"  1. Call `{TOOL_NAME_QUERY_TASK}` (with no args) to see current state\n"
-                f"  2. IMPORTANT: If no relevant tasks exist, call `{TOOL_NAME_CREATE_TASK}` to break down the work into "
-                f"milestones (e.g. \"Collect data\"), not tool calls (e.g. \"Read file A\")\n"
-                f"  3. Then start executing, using `{TOOL_NAME_UPDATE_TASK}` to mark progress at each milestone\n"
+                f"IMPORTANT: Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are "
+                f"your primary mechanism for planning and communicating with the user. When receiving any user request, "
+                f"follow this flow:\n"
+                f"  1. Call `{TOOL_NAME_QUERY_TASK}` to check the progress of the current task. Call it with no arguments "
+                f"to get the task list in brief, or with a known task ID to see that specific task's current state in detail\n"
+                f"  2. If no relevant tasks exist, call `{TOOL_NAME_CREATE_TASK}` to break down the work into milestones "
+                f"(e.g. \"Collect data\"), not single tool calls (e.g. \"Read file A\"). Then start executing them, using "
+                f"`{TOOL_NAME_UPDATE_TASK}` to mark progress at each milestone\n"
+                f"  3. If relevant tasks exist and not resolved, keep on executing and use `{TOOL_NAME_UPDATE_TASK}` to mark "
+                f"progress at each milestone\n"
+                f"Make sure to use `{TOOL_NAME_CREATE_TASK}` and `{TOOL_NAME_UPDATE_TASK}` to communicate your plan and "
+                f"progress to the user - viewing the task list is always the best way for the user to understand what you're doing\n"
                 # f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your primary "
                 # f"mechanism for planning and communicating with the user. When receiving any non-trivial user request, "
                 # f"call `{TOOL_NAME_CREATE_TASK}` before taking action. Use task tools to manage your workflow:\n"
@@ -154,8 +165,8 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "include only what is necessary for the user to understand.\n"
                 "Focus text output on:\n"
                 " - Decisions that need the user's input\n"
-                " - High-level status updates at natural milestones\n"
-                " - Errors or blockers that change the plan or task\n"
+                " - High-level task status updates at natural milestones\n"
+                " - Errors or blockers that change the tasks or plans\n"
                 "If you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. "
                 "This does not apply to code or tool calls.\n"
                 "# Session-specific guidance\n"
@@ -163,7 +174,7 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 f"use {TOOL_NAME_ASK_QUESTION} to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"}]
-                # " - Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
+                # " TODO:- Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
                 # "Subagents are valuable for parallelizing independent queries or for protecting the main context window "
                 # "from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating "
                 # "work that subagents are already doing - if you delegate research to a subagent, do not also perform the "
@@ -229,6 +240,73 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     return prompts
 
 
+def update_task_usage(ctx: AgentContext, tool_calls: list[dict[str, Any]] | None, check_from: Literal["tool_call", "chat"]):
+    """track whether LLM uses task tools for workflow management"""
+    if check_from == "tool_call":
+        if tool_calls is not None:
+            if_use_task = False
+            for tool_call in tool_calls:
+                if tool_call["function"]["name"] in (TOOL_NAME_CREATE_TASK, TOOL_NAME_QUERY_TASK, TOOL_NAME_UPDATE_TASK):
+                    if_use_task = True
+                    break
+            if if_use_task:
+                ctx.task_tool_unuse = 0
+            else:
+                ctx.task_tool_unuse += 1
+    elif check_from == "chat":
+        ctx.task_tool_unuse += 1
+
+
+def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal["tool_call", "user_input"]) -> str | None:
+    """generate task reminder based on current task state and remind source
+    """
+    info = ""
+    if_remind = False
+    if remind_from == "tool_call":
+        """
+        When after a round of tool call, remind LLM about task when:
+        1). Never use task tool during recent `REMIND_TASK_TOOL_GAP` rounds of tool call
+        """
+        if ctx.task_tool_unuse > ctx.agent_configs["REMIND_TASK_TOOL_GAP"]:
+            if_remind = True
+            info += (f"You never use any task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) "
+                     f"to manage your workflow during latest {ctx.task_tool_unuse} rounds of tool call or chat.\n")
+            unresolved_tasks = board.list_unresolved_tasks(ctx.agent_id)
+            unclaimed_tasks = board.list_unclaimed_tasks()
+            if len(unresolved_tasks) == len(unclaimed_tasks) == 0:
+                info += (f"Make sure using `{TOOL_NAME_CREATE_TASK}` to break down the work into milestones and communicate "
+                         f"your plan and progress to the user with `{TOOL_NAME_UPDATE_TASK}`\n")
+            if len(unresolved_tasks) > 0:
+                info += (f"There are {len(unresolved_tasks)} tasks owned by you but not resolved (IDs: "
+                         f"{[task["task_id"] for task in unresolved_tasks]})\n")
+            if len(unclaimed_tasks) > 0:
+                info += (f"There are {len(unresolved_tasks)} tasks not claimed by any agent (IDs: "
+                         f"{[task["task_id"] for task in unclaimed_tasks]})\n")
+    if remind_from == "user_input":
+        """
+        When user_input, remind LLM about task when:
+        1). There are unresolved tasks owned by this agent
+        2). There are unclaimed tasks
+        3). Never use task tool during recent `REMIND_TASK_CHAT_GAP` rounds of chat
+        """
+        unresolved_tasks = board.list_unresolved_tasks(ctx.agent_id)
+        unclaimed_tasks = board.list_unclaimed_tasks()
+        tasks: list[Task] = unresolved_tasks + unclaimed_tasks
+        if len(tasks) > 0:
+            if_remind = True
+            tasks_info = tasks_to_info(tasks, ctx.agent_id)
+            info += (f"There are still {len(tasks)} tasks needs your consideration:\n"
+                     f"{tasks_info}\n"
+                     f"Use task tools to manage your workflow\n")
+        elif ctx.task_tool_unuse > ctx.agent_configs["REMIND_TASK_CHAT_GAP"]:
+            if_remind = True
+            info += (f"You haven't use any task tools to manage your workflow during latest {ctx.task_tool_unuse} rounds "
+                     f"of chat or tool call. Make sure using task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, "
+                     f"`{TOOL_NAME_QUERY_TASK}`) proactively.\n")
+
+    return info.strip() if if_remind else None
+
+
 def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console) -> list[dict[str, Any]]:
     """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
     if not ctx.args.nosystem:
@@ -266,6 +344,8 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
     """print the given messages (exclude system) with AgentContext"""
     try:
         as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
+        display_sys_reminder = ctx.agent_configs["RESUME_DISPLAY_SYS_REMINDER"]
+        sys_reminder_str = Text("<A system reminder is inserted, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         skill_str = Text("<A skill is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
         cron_str = Text("<Cron tasks are invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
@@ -274,11 +354,14 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
-                if (not display_skill and ("skill_directory" in msg["content"]) and ("<skill_content>" in msg["content"])
-                        and ("</skill_content>" in msg["content"])):
+                if (not display_sys_reminder) and (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
+                    console.print(Panel(sys_reminder_str, box=rich.box.SQUARE))
+                    continue
+                if (not display_skill and ("skill_directory" in msg["content"]) and (SKILL_START_LABEL in msg["content"])
+                        and (SKILL_END_LABEL in msg["content"])):
                     console.print(Panel(skill_str, box=rich.box.SQUARE))
                     continue
-                if not display_cron and ("<cron_tasks>" in msg["content"]) and ("</cron_tasks>" in msg["content"]):
+                if not display_cron and (CRON_START_LABEL in msg["content"]) and (CRON_END_LABEL in msg["content"]):
                     console.print(Panel(cron_str, box=rich.box.SQUARE))
                     continue
                 user_prefix_str = Text("History user input:\n", style=f"bright_black")
@@ -377,11 +460,14 @@ def get_reasoning(message: dict[str, Any]) -> str | None:
 def get_reasoning_stream(delta: ChoiceDelta) -> str:
     """get the reasoning contents in stream delta"""
     if hasattr(delta, 'reasoning'):
-        return delta.reasoning
+        if delta.reasoning is not None:
+            return delta.reasoning
     if hasattr(delta, 'reasoning_details'):
-        return delta.reasoning_details
+        if delta.reasoning_details is not None:
+            return delta.reasoning_details
     if hasattr(delta, 'reasoning_content'):
-        return delta.reasoning_content
+        if delta.reasoning_content is not None:
+            return delta.reasoning_content
     return ""
 
 
@@ -460,7 +546,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
 
     """message dump and conversion"""
     dumped_msg = response.choices[0].message.model_dump(mode="json")
-    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+    if ctx.api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
         dumped_msg = deepseek_support(dumped_msg)
     ctx.messages.append(dumped_msg)
     assistant_reasoning = get_reasoning(dumped_msg)
@@ -740,7 +826,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     }
 
     """apply deepseek support if needed"""
-    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+    if ctx.api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
         dumped_msg = deepseek_support(dumped_msg)
 
     """append to conversation history"""

@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.6.5-7       Yu Huang       1.0      First implementation
 2026.6.9         Yu Huang       1.1      Revise the highlight of the IO console print
+2026.6.10        Yu Huang       1.2      Add reminder for LLM to manage workflow proactively
 
 Details:
 ---------
@@ -446,7 +447,7 @@ class Scoreboard:
         with self._lock:
             """check if task exists"""
             if task_id not in self._tasks:
-                return False, None, f"Task with id {task_id} not found"
+                return False, None, f"Task with id: {task_id} not found"
             """get the task"""
             try:
                 task = self._tasks[task_id]
@@ -455,17 +456,39 @@ class Scoreboard:
                 return False, None, f"Get task failed with error: {e}"
 
 
-    def list_all_tasks(self) -> list[Task]:
-        """list all tasks in the scoreboard"""
+    def list_all_tasks(self, agent_id: str | None = None) -> list[Task]:
+        """list all or agent's tasks (exclude unclaimed) in the scoreboard"""
         with self._lock:
-            return [task for task in self._tasks.values()]
+            if agent_id is None:
+                return [task for task in self._tasks.values()]
+            else:
+                return [task for task in self._tasks.values() if task["owner"] == agent_id]
 
 
-    def list_tasks(self) -> list[Task]:
-        """list all non-archived tasks in the scoreboard"""
+    def list_tasks(self, agent_id: str | None = None) -> list[Task]:
+        """list all non-archived or agent's non-archived tasks (exclude unclaimed) in the scoreboard"""
         with self._lock:
-            return [task for task in self._tasks.values()
-                    if not task["if_archived"]]
+            if agent_id is None:
+                return [task for task in self._tasks.values() if not task["if_archived"]]
+            else:
+                return [task for task in self._tasks.values() if (not task["if_archived"]) and (task["owner"] == agent_id)]
+
+
+    def list_unresolved_tasks(self, agent_id: str | None = None) -> list[Task]:
+        """list all unresolved or agent's unresolved tasks (exclude unclaimed) in the scoreboard, """
+        with self._lock:
+            if agent_id is None:
+                return [task for task in self._tasks.values() if task["status"]
+                        not in (TaskStatus.COMPLETED, TaskStatus.DELETED)]
+            else:
+                return [task for task in self._tasks.values() if
+                        (task["status"] not in (TaskStatus.COMPLETED, TaskStatus.DELETED)) and (task["owner"] == agent_id)]
+
+
+    def list_unclaimed_tasks(self) -> list[Task]:
+        """list all unclaimed tasks in the scoreboard"""
+        with self._lock:
+            return [task for task in self._tasks.values() if task["owner"] is None]
 
 
     def archive_tasks(self):

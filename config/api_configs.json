@@ -4,6 +4,7 @@
     "TIMEOUT_MS": 1000000,
 
     "MAIN_MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "MAIN_MODEL_DEEPSEEK_SUPPORT": true,
     "MAIN_MODEL_STREAM": true,
     "MAIN_MODEL_CONTEXT": 1000000,
     "MAIN_MODEL_TEMPERATURE": 0.3,
@@ -12,6 +13,7 @@
     "MAIN_MODEL_MAX_TOKENS": 8192,
 
     "FAST_MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "FAST_MODEL_DEEPSEEK_SUPPORT": true,
     "FAST_MODEL_CONTEXT": 1000000,
     "FAST_MODEL_TEMPERATURE": 0.3,
     "FAST_MODEL_ENABLE_REASONING": false,

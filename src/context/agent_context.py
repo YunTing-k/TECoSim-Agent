@@ -22,6 +22,7 @@ Revision:
 2026.6.3       Yu Huang      2.0      Add cron tasks support
 2026.6.5       Yu Huang      2.1      Add --nosystem, --notools, --nocrons support
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator & Revise the highlight of the IO console print
+2026.6.10      Yu Huang      2.3      Add reminder for LLM to manage workflow proactively
 
 Details:
 ---------
@@ -128,6 +129,7 @@ class AgentContext:
         self.last_output_tokens: int = 0
         self.last_tokens: int = 0
         self.system_read_only_paths: list[Path] = []  # (don't dump)
+        self.task_tool_unuse: int = 0
         self.read_only_paths: list[Path] = []
         self.files_read: dict[str, int] = {}
         self.loaded_skills: list[dict[str, str]] = []
@@ -262,6 +264,7 @@ class AgentContext:
             "last_input_tokens": self.last_input_tokens,
             "last_output_tokens": self.last_output_tokens,
             "last_tokens": self.last_tokens,
+            "task_tool_unuse": self.task_tool_unuse,
             "read_only_paths": [str(p) for p in self.read_only_paths]
                                if len(self.read_only_paths) > 0 else [],
             "files_read": self.files_read,
@@ -292,6 +295,7 @@ class AgentContext:
             self.last_input_tokens = in_dict["last_input_tokens"]
             self.last_output_tokens = in_dict["last_output_tokens"]
             self.last_tokens = in_dict["last_tokens"]
+            self.task_tool_unuse = in_dict["task_tool_unuse"]
             self.read_only_paths = [Path(s) for s in in_dict["read_only_paths"]] \
                                    if len(in_dict["read_only_paths"]) > 0 else []
             self.files_read = in_dict["files_read"]

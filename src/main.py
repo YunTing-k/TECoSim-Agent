@@ -34,12 +34,15 @@ Revision:
 2026.6.6       Yu Huang      3.2      Basic support of agent tasks as Scoreboard with lock
 2026.6.7       Yu Huang      3.3      Support of agent tasks display & Refactor agent listening
 2026.6.9       Yu Huang      3.4      Add design and run support for simulator
+2026.6.10      Yu Huang      3.5      Add reminder for LLM to manage workflow proactively & Revise the live TUI with the
+                                      same console instance
 
 Details:
 ---------
 Main entry point and core agent loop. Initializes all subsystems (logger, CLI args, LLM client, agent context, skills,
-MCPs, cron, sessions, builtin commands), then runs the interactive loop: user input → LLM request → tool execution → response.
-Handles API timeout, cancellation, keyboard interrupt, and unexpected errors.
+MCPs, cron, sessions, builtin commands, scoreboard, design/run managers), then runs the interactive loop:
+user input (with task reminder injection) → LLM request → tool execution (with task usage tracking and reminder injection)
+→ response. Handles API timeout, cancellation, keyboard interrupt, and unexpected errors.
 """
 import os
 import openai
@@ -209,7 +212,14 @@ if __name__ == '__main__':
                         if not request_llm:
                             continue
                     else:  # plain text input
-                        ctx.messages.append({"role": "user", "content": user_input})
+                        task_reminder = prompt.get_task_reminder(ctx, board, "user_input")
+                        if task_reminder is not None:
+                            ctx.messages.append({"role": "user", "content": f"{user_input}\n"
+                                                                            f"{SYS_REMINDER_START_LABEL}\n"
+                                                                            f"{task_reminder}\n"
+                                                                            f"{SYS_REMINDER_END_LABEL}"})
+                        else:
+                            ctx.messages.append({"role": "user", "content": user_input})
                         ctx.user_prompts += 1
                         if ctx.user_prompts == ctx.agent_configs["AUTO_SUMMARY_TRIGGER"]:  # summarize according to history
                             title = summarize_support.summarize_session(ctx=ctx, console=console)
@@ -219,13 +229,13 @@ if __name__ == '__main__':
                     """pass cron prompts to LLM"""
                     pass
             else:
-                """second response with previous loop's tool results"""
+                """second response with previous loop's tool results or reminder"""
                 pass
 
             """send LLM request"""
             sys_log.debug("LLM request start")
             response = client.llm_request_spinner(client.request_loop_main, ctx.llm_client, ctx,
-                                                  if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
+                                                  console=console, if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
             sys_log.debug("LLM request end")
 
             """manage the LLM response"""
@@ -239,12 +249,23 @@ if __name__ == '__main__':
                 tools_response = tool_execute.tool_calls_spinner_board(
                     tool_execute.execute_tools,
                     assistant_tool_calls, ctx, board,
-                    board=board,
+                    board=board, console=console,
                     if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
                 ctx.messages.extend(tools_response)
                 ctx.tool_results_prompts += len(tools_response)
+                """check task"""
+                prompt.update_task_usage(ctx, assistant_tool_calls, "tool_call")
+                task_reminder = prompt.get_task_reminder(ctx, board, "tool_call")
+                if task_reminder is not None:
+                    ctx.messages.append({"role": "user", "content": f"{SYS_REMINDER_START_LABEL}\n"
+                                                                    f"{task_reminder}\n"
+                                                                    f"{SYS_REMINDER_END_LABEL}"})
             else:
                 ctx.task_end = True
+                """check task"""
+                # remind from chat is equivalent to remind from user input, so only update usage
+                prompt.update_task_usage(ctx, None, "chat")
+
         except openai.APITimeoutError:
             """API timeout"""
             if ctx.task_end:  # no tool calls, only user prompt, so pop it

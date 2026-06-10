@@ -41,6 +41,7 @@ Revision:
 2026.6.8       Yu Huang      3.7      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      3.8      Add design and run support for simulator & Merge task get/list into task query & Revise the prompts
                                       of task tools & Revise the prompts simulation tools
+2026.6.10      Yu Huang      3.9      Main/Fast model can configure deepseek support dependently & Add fallback of query tasks if id is not valid
 
 Details:
 ---------
@@ -299,7 +300,9 @@ def tool_create_task_def() -> dict[str, Any]:
                            f"All tasks are created with status `{TASK_PENDING_LABEL}` and a unique integer task id.\n\n"
                            "## Usage\n\n"
                            "- After receiving new instructions, immediately capture user requirements as tasks\n"
-                           f"- Use `{TOOL_NAME_QUERY_TASK}` first to avoid creating duplicate tasks\n"
+                           f"- Use `{TOOL_NAME_QUERY_TASK}` (with no args) to get task list first to avoid creating duplicate "
+                           f"tasks\n"
+                           f"- You can also query a specific task's detail by `{TOOL_NAME_QUERY_TASK}` with its task id\n"
                            "- Create tasks with clear, specific subjects that describe the outcome\n"
                            f"- After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set up dependencies (`add_blocks` / "
                            f"`add_blocked_by`) if needed\n"
@@ -379,7 +382,8 @@ def tool_update_task_def() -> dict[str, Any]:
                            "- You have completed the work described in a task\n"
                            "- A task is no longer needed or has been superseded\n"
                            "- IMPORTANT: Always mark your assigned & claimed tasks as resolved when you finish them\n"
-                           f"- After resolving, call `{TOOL_NAME_QUERY_TASK}` to find your next task\n\n"
+                           f"- After resolving, call `{TOOL_NAME_QUERY_TASK}` (with no args) to get the task list and find "
+                           f"your next task\n\n"
                            f"- ONLY mark a task as `{TASK_COMPLETED_LABEL}` when you have FULLY accomplished it\n"
                            f"- If you encounter errors, blockers, or cannot finish, keep the task as `{TASK_IN_PROGRESS_LABEL}`\n"
                            "- When blocked, create a new task describing what needs to be resolved\n"
@@ -406,7 +410,10 @@ def tool_update_task_def() -> dict[str, Any]:
                            f"(can not roll back status)\n\n"
                            f"Use `{TASK_DELETED_LABEL}` to permanently remove a task.\n\n"
                            "## Staleness\n\n"
-                           f"Make sure to read a task's latest state using `{TOOL_NAME_QUERY_TASK}` before updating it.\n\n"
+                           f"Make sure to read a known task's latest state using `{TOOL_NAME_QUERY_TASK}` with its id before "
+                           f"updating it."
+                           f"If you are uncertain about the status of task list, using `{TOOL_NAME_QUERY_TASK}` without "
+                           f"args to get the full list of tasks in brief.\n\n"
                            "## Examples\n\n"
                            "Mark task as in progress when starting work:\n"
                            f"`task_id`: 1, `status`: {TASK_IN_PROGRESS_LABEL}\n"
@@ -507,10 +514,16 @@ def tool_query_task_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_QUERY_TASK,
-            "description": "Use this tool to retrieve a task by its task ID to get full details or list brief "
-                           "information of all tasks without params.\n\n"
+            "description": "List all tasks in brief (no `task_id`), or get full details of one task (with `task_id`).\n\n"
                            "## Usage\n\n"
-                           "- Get a task by its task ID (`task_id`), this tool will return:\n"
+                           "Get the full list without `task_id`, this tool will return a summary of each task:\n"
+                           "  - task ID: Task identifier\n"
+                           "  - subject: Brief description of the task\n"
+                           "  - owner ID: Agent ID of this task owner\n"
+                           f"  - status: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, "
+                           f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
+                           "  - blocked_by: List of open task IDs that must be resolved first\n\n"
+                           "Get a task by its task ID (`task_id`), this tool will return:\n"
                            "  - subject: Task title\n"
                            "  - description: Detailed requirements and context\n"
                            "  - owner id: Agent ID of this task owner\n"
@@ -518,25 +531,18 @@ def tool_query_task_def() -> dict[str, Any]:
                            f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
                            "  - blocks: Tasks waiting on this one to complete\n"
                            "  - blocked_by: Tasks that must complete before this one can start\n"
-                           "- Get the full list without `task_id`, this tool will return a summary of each task:\n"
-                           "  - task ID: Task identifier\n"
-                           "  - subject: Brief description of the task\n"
-                           "  - owner ID: Agent ID of this task owner\n"
-                           f"  - status: `{TASK_PENDING_LABEL}`, `{TASK_IN_PROGRESS_LABEL}`, "
-                           f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
-                           "  - blocked_by: List of open task IDs that must be resolved first\n\n"
                            "## Tips\n\n"
                            "- After fetching a task, verify its `blocked_by` list is empty before beginning work.\n"
                            "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are "
-                           "available, as earlier tasks often set up context for later ones\n",
+                           "available, as earlier tasks often set up context for later ones\n"
+                           "- If you are uncertain about the task list's status, call this tool with no args",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task_id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "The ID of the task to get. If this parameter is not given, return "
-                                       "the list of all tasks.",
+                        "description": "Optional. The ID of the task to get details for. Omit to list all tasks in brief.",
                     },
                 },
                 "required": [],
@@ -568,11 +574,20 @@ def query_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, 
                                            style="bright_black")
                 return {"status": SUCCESS_LABEL, "info": task_info}
             elif not if_success:
-                sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}")
+                """fall back to list all tasks"""
+                sys_log.error(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: {get_info}. Fallback to "
+                              f"list all tasks")
                 if not MUTE_TASK_OP_INFO:
-                    progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error, "
-                                           f"details: {get_info}", style="bold red")
-                return {"status": FAIL_LABEL, "info": f"Get task failed with error, details: {get_info}"}
+                    progress.console.print(f"{func_name} {FAIL_LABEL}: Get task failed with error, details: "
+                                           f"{get_info}. Fallback to list all tasks", style="bold red")
+                tasks = board.list_tasks()
+                tasks_info = tasks_to_info(tasks, ctx.agent_id)
+                sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List task success")
+                if not MUTE_TASK_OP_INFO:
+                    progress.console.print(f"{func_name} {SUCCESS_LABEL}: List task success",
+                                           style="bright_black")
+                return {"status": FALLBACK_LABEL, "info": f"Get task failed with error, details: {get_info}. Fallback to "
+                                                          f"list all tasks:\n{tasks_info}"}
             else:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Get empty task with unknown error")
                 if not MUTE_TASK_OP_INFO:
@@ -1886,7 +1901,7 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
             web_single_fetch, url, ctx, progress.console,
             waiting_desc="Web fetching ...", done_desc="Web fetch time cost",
             intrp_desc="Web fetch interrupted", fail_desc="Web fetch failed",
-            spinner="arrow3", out_except=WebFetchCancelled("Web fetch is cancelled by user"))
+            spinner="arrow3", out_except=WebFetchCancelled("Web fetch is cancelled by user"), console=progress.console)
         # content, content_info, if_redirect, final_url = web_single_fetch(url, ctx, progress.console)
         if content is None:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Failed to fetch content from URL: {url}. If redirect: {if_redirect}, final URL: "
@@ -1992,7 +2007,7 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
             web_search_top, query, ctx, progress.console,
             waiting_desc="Web searching ...", done_desc="Web search time cost",
             intrp_desc="Web search interrupted", fail_desc="Web search failed",
-            spinner="arrow3", out_except=WebSearchCancelled("Web search is cancelled by user"))
+            spinner="arrow3", out_except=WebSearchCancelled("Web search is cancelled by user"), console=progress.console)
         # content, content_info = web_search_top(query, ctx, progress.console)
         if content is None:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Failed to search on web with query: {query}. Error detail: {content_info}")

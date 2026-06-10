@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.5.14      Yu Huang      1.0      First implementation
 2026.6.2       Yu Huang      1.1      Revise the mark of skill content & Add CLI command support of skill list
+2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
 
 Details:
 ---------
@@ -95,11 +96,15 @@ def load_skill_content(skills_root: str, skill_name: str, console: Console, manu
     console.print(f"Loaded skill content for [{MAJOR_COLOR2}]{skill_name}[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(body)}[/{MAJOR_COLOR2}] chars")
     if not manual:
         return {"skill_directory": skill_folder,
-                "content": "<skill_content>\n" + body + "\n</skill_content>"}
+                "content": f"{SKILL_START_LABEL}\n"
+                           f"{body}\n"
+                           f"{SKILL_END_LABEL}"}
     else:
         return {"status": f"skill manually loaded by user with /{skill_name}",
                 "skill_directory": skill_folder,
-                "content": "<skill_content>\n" + body + "\n</skill_content>"}
+                "content": f"{SKILL_START_LABEL}\n"
+                           f"{body}\n"
+                           f"{SKILL_END_LABEL}"}
 
 
 def skill_entry_cli(args: Namespace, console: Console):

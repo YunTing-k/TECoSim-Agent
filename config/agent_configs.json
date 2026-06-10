@@ -1,8 +1,10 @@
 {
     "MERGE_SYSTEM_PROMPTS": true,
     "CONTEXT_THRESHOLD": 0.9,
-    "DEEPSEEK_SUPPORT": true,
     "AUTO_SUMMARY_TRIGGER": 1,
+    "REMIND_UNRESOLVED_TASK": true,
+    "REMIND_TASK_TOOL_GAP": 1,
+    "REMIND_TASK_CHAT_GAP": 3,
     "FLATTEN_BEFORE_SUMMARY": true,
 
     "BASH_PATH": "bash",
@@ -36,6 +38,7 @@
 
     "RENDER_RESPONSE_AS_MD": true,
     "RENDER_BASH_AS_MD": true,
+    "RESUME_DISPLAY_SYS_REMINDER": false,
     "RESUME_DISPLAY_SKILLS": false,
     "RESUME_DISPLAY_CRONS": false,
     "RANDOM_PROGRESS_TITLE": true

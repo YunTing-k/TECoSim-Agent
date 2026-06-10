@@ -18,6 +18,7 @@ Agent tools and internal operations return standardized status labels for unifie
 | 常量 Constant | 标签 Label | 含义 Meaning |
 |----------|-----------|-------------|
 | `FAIL_LABEL` | `FAIL` | 操作失败，附带错误信息 / Operation failed with error info |
+| `FALLBACK_LABEL` | `FALLBACK` | 操作降级回退，如 query_task ID 无效时回退到列出所有任务 / Operation fell back to alternative behavior (e.g., query_task falls back to list all tasks when ID is invalid) |
 | `SUCCESS_LABEL` | `SUCCESS` | 操作成功 / Operation succeeded |
 | `DENIED_LABEL` | `DENIED` | 用户拒绝了权限请求 / User denied the permission request |
 | `DISABLED_LABEL` | `DISABLED` | 工具被禁用（如 `--notools` 模式）/ Tool is disabled (e.g. `--notools` mode) |
@@ -36,9 +37,29 @@ Agent tools and internal operations return standardized status labels for unifie
 | `RUN_DONE_LABEL` | `DONE` | 仿真运行成功完成 / Simulation run completed successfully |
 
 > **状态流转说明 | Status Flow**
-> - 工具操作状态：`FAIL` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` 互斥，一次调用返回一个
+> - 工具操作状态：`FAIL` / `FALLBACK` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` 互斥，一次调用返回一个
 > - Scoreboard 任务状态：`pending → in_progress → completed`（不可逆），任何状态均可标记为 `deleted`
 > - 仿真运行状态：`PENDING → DONE` / `CANCELLED` / `TIMEOUT` / `RUNTIME_ERROR`
+
+---
+
+## 消息标签 | Message Labels
+
+Agent 在向 LLM 消息中插入特殊内容时使用标准化的标签进行标记，便于在恢复会话时识别和选择性显示。定义如下：
+The agent wraps special content inserted into LLM messages with standardized label constants for identification and selective display when resuming sessions:
+
+| 常量 Constant | 标签 Label | 用途 Purpose |
+|----------|-----------|-------------|
+| `SYS_REMINDER_START_LABEL` | `<system_reminder>` | 系统提醒内容起始标记（任务管理提醒等）/ Marks the start of system reminder content (task management reminders, etc.) |
+| `SYS_REMINDER_END_LABEL` | `</system_reminder>` | 系统提醒内容结束标记 / Marks the end of system reminder content |
+| `SKILL_START_LABEL` | `<skill_content>` | 技能内容起始标记 / Marks the start of skill content |
+| `SKILL_END_LABEL` | `</skill_content>` | 技能内容结束标记 / Marks the end of skill content |
+| `CRON_START_LABEL` | `<cron_tasks>` | 定时任务内容起始标记 / Marks the start of cron task content |
+| `CRON_END_LABEL` | `</cron_tasks>` | 定时任务内容结束标记 / Marks the end of cron task content |
+
+> **显示控制 | Display Control**
+> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS` 分别控制是否显示这些标签包裹的内容。
+> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, and `RESUME_DISPLAY_CRONS` in `agent_configs.json`.
 
 ---
 
@@ -56,8 +77,7 @@ All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/co
 | `TOOL_NAME_REMOVE_CRON` | `remove_cron` | 删除定时任务 / Remove a cron task |
 | `TOOL_NAME_CREATE_TASK` | `create_task` | 创建任务 / Create a task |
 | `TOOL_NAME_UPDATE_TASK` | `update_task` | 更新任务 / Update a task |
-| `TOOL_NAME_GET_TASK` | `get_task` | 获取任务详情 / Get task details |
-| `TOOL_NAME_LIST_TASK` | `list_task` | 列出任务 / List tasks |
+| `TOOL_NAME_QUERY_TASK` | `query_task` | 查询任务（获取详情或列表）/ Query task (get detail or list) |
 | `TOOL_NAME_BASH` | `bash` | 执行 Shell 命令 / Execute shell commands |
 | `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns |
 | `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents |
@@ -72,7 +92,7 @@ All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/co
 | `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design |
 | `TOOL_NAME_QUERY_DESIGN` | `query_design` | 查询设计列表 / Query design list |
 | `TOOL_NAME_LAUNCH_SIM` | `launch_sim` | 启动仿真 / Launch a simulation |
-| `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行次数 / Query run count |
+| `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行记录 / Query simulation run records |
 | `TOOL_NAME_READ_LOG` | `read_log` | 读取仿真日志 / Read simulation logs |
 
 ---
@@ -127,6 +147,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `OPTIONS_TO_SELECT_PREFIX` | `❯ ` | TUI 选项中当前聚焦项的前缀 / Focused option prefix in TUI |
 | `OPTIONS_UN_SELECT_PREFIX` | `  ` | TUI 选项中未聚焦项的前缀 / Unfocused option prefix in TUI |
 | `OPTIONS_SELECTED_PREFIX` | ` ✓` | TUI 选项中已选择项的标记 / Selected option suffix in TUI |
+| `OPTIONS_UNSELECTED_PREFIX` | `` | TUI 选项中未选择项的前缀 / Unselected option prefix in TUI |
 | `SELECTED_QUESTION_OPTION_COLOR` | `#A6CEFF` | TUI 中已选择的选项颜色 / Color for selected option |
 | `TUI_USER_COMMENT_COLOR` | `#A6CEEF` | 用户注释文本颜色 / Color for user comment text |
 
@@ -140,6 +161,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
 | `BASH_STYLE` | `none` | Bash 命令输出样式 / Bash output style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
+| `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Enter: Submit)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
 
 ### 任务看板 | Task Board (Scoreboard)
 
@@ -147,11 +169,14 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 |----------|---------|---------|
 | `TASK_DISPLAYS_BEFORE_ARCHIVED` | `3` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
 | `MUTE_TASK_OP_INFO` | `true` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
+| `TASK_EMPTY_TITLE` | `` | 空任务的占位标题 / Placeholder title for empty task |
 | `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
 | `TASK_VIEW_RIGHT_MARGIN` | `1` | 任务列表状态图标右侧缩进 / Right margin for task status icons |
 | `TASK_COLOR_GRADIENT` | `128` | 任务动画渐变阶数 / Gradient color steps for task animation |
 | `TASK_COLOR_PERIOD` | `2.0` | 任务动画周期（秒）/ Task animation period (seconds) |
 | `TASK_PENDING_WITHOUT_OWNER_ICON` | `○` | 无归属待处理任务图标 / Icon for pending task without owner |
+| `TASK_PENDING_WITHOUT_OWNER_ICON_STYLE` | `bright_black` | 无归属待处理任务图标样式 / Style for pending task without owner icon |
+| `TASK_PENDING_WITHOUT_OWNER_STYLE` | `bright_black` | 无归属待处理任务文本样式 / Style for pending task without owner text |
 | `TASK_PENDING_WITH_OWNER_ICON` | `●` | 有归属待处理/进行中任务图标 / Icon for pending/in-progress task with owner |
 | `TASK_COMPLETED_ICON` | `✓` | 已完成任务图标 / Icon for completed task |
 | `TASK_DELETED_ICON` | `✗` | 已删除任务图标 / Icon for deleted task |
@@ -174,6 +199,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `CRON_LISTEN_COLOR_END` | `#54A0FF`（蓝） | Cron 监听渐变终止色 / Cron listen gradient end |
 | `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
 | `CRON_LISTEN_COLOR_PERIOD` | `2.0` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
+| `KEY_LISTEN_SLEEP_TIME_MS` | `100` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
 
 ### 会话标题 | Session Titles
 
@@ -239,6 +265,19 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `BASH_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `BASH_VIEW_LINE_NUM_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
 
+### URL 缓存 | URL Cache
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `URL_CACHE_VIEW_MAX` | `8` | URL 缓存列表最大显示数 / Max displayed entries in URL cache view |
+| `URL_CACHE_CONTENT_CHAR_MAX` | `100` | URL 缓存内容预览最大字符数 / Max chars for URL cached content preview |
+
+### MCP 参数 | MCP Params
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `MCP_TOOL_DESC_CHAR_LIMIT` | `250` | MCP 工具描述最大字符数 / MCP tool description char limit |
+
 ---
 
 ## 其他关键常量 | Other Key Constants
@@ -250,12 +289,38 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `0` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `2` | Agent 更新版本号 / Agent update version |
 | `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID，用于 Scoreboard 任务认领识别 / Main agent identifier for Scoreboard task claiming |
-| `TASKS_NAME` | `"tasks.json"` | Scoreboard 任务持久化文件名（存于 session 目录）/ Scoreboard task persistence file name (under session dir) |
+| `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
+| `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
+| `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
+| `MCPS_PATH` | `"./mcps"` | MCP 根目录 / MCP root directory |
+| `SKILLS_PATH` | `"./skills"` | Skills 根目录 / Skills root directory |
+| `MCPS_CONFIGS_PATH` | `"./mcps/mcps_configs.json"` | MCP 配置文件路径 / MCP config file path |
 | `LOG_PATH` | `"./log"` | 日志文件输出目录 / Log file output directory |
 | `SESSION_PATH` | `"./session"` | 会话持久化目录（每个会话一个子文件夹）/ Session persistence directory (one subfolder per session) |
 | `CRON_CONFIGS_PATH` | `"./cron/cron_configs.json"` | 持久化定时任务配置文件路径 / Durable cron config file path |
+| `USER_HISTORY_NAME` | `"user_history"` | 用户历史文件名（会话目录下）/ User history file name (under session dir) |
+| `MESSAGES_NAME` | `"messages.json"` | 消息记录文件名（会话目录下）/ Messages file name (under session dir) |
+| `CONTEXT_NAME` | `"context.json"` | 上下文文件名（会话目录下）/ Context file name (under session dir) |
+| `CRON_NAME` | `"cron_configs.json"` | 会话级定时任务文件名（会话目录下）/ Session cron configs file name (under session dir) |
+| `TASKS_NAME` | `"tasks.json"` | Scoreboard 任务持久化文件名（存于 session 目录）/ Scoreboard task persistence file name (under session dir) |
+| `RUNS_NAME` | `"runs.json"` | 仿真运行记录持久化文件名 / Simulation run records persistence file name |
+| `DESIGNS_NAME` | `"designs.json"` | 面板设计持久化文件名 / Panel design persistence file name |
+| `SIM_DESIGN_NAME` | `"design"` | 仿真设计目录名 / Simulation design directory name |
+| `SIM_RUN_NAME` | `"run"` | 仿真运行目录名 / Simulation run directory name |
+| `ASK_USER_QUESTION_MAX_QUESTION` | `4` | 单次提问最多问题数 / Max questions per ask_user_question call |
+| `ASK_USER_QUESTION_MIN_QUESTION` | `1` | 单次提问最少问题数 / Min questions per ask_user_question call |
+| `ASK_USER_QUESTION_MAX_OPTION` | `4` | 每个问题最多选项数 / Max options per question |
+| `ASK_USER_QUESTION_MIN_OPTION` | `2` | 每个问题最少选项数 / Min options per question |
+| `GLOB_FILE_ENTRIES_DEFAULT` | `250` | `glob_file` 默认返回条目数 / Default entries for glob_file |
+| `GREP_FILE_HEAD_LIMIT_DEFAULT` | `250` | `grep_file` 默认结果数上限 / Default head limit for grep_file |
+| `READ_FILE_ENCODING_DEFAULT` | `utf-8` | `read_file` 默认编码 / Default encoding for read_file |
+| `READ_LOG_ENCODING_DEFAULT` | `utf-8` | `read_log` 默认编码 / Default encoding for read_log |
+| `WRITE_FILE_MODE_DEFAULT` | `write` | `write_file` 默认写入模式 / Default write mode for write_file |
+| `WRITE_FILE_ENCODING_DEFAULT` | `utf-8` | `write_file` 默认编码 / Default encoding for write_file |
+| `EDIT_FILE_ENCODING_DEFAULT` | `utf-8` | `edit_file` 默认编码 / Default encoding for edit_file |
+| `WEB_SEARCH_QUERY_MIN` | `2` | 网络搜索最小查询字符数 / Min query chars for web search |
 | `BASH_TIMEOUT_MS_DEFAULT` | `120000` (2 min) | Bash 命令默认超时。Agent 的 `bash` 工具若不指定 timeout 参数则使用此值 / Default bash command timeout; used when no timeout argument is given |
 | `BASH_TIMEOUT_MS_MAX` | `600000` (10 min) | Bash 命令最大超时上限。Agent 拒绝任何超过此值的 timeout 参数，防止误设过长超时 / Max bash command timeout; the agent rejects any timeout exceeding this limit |
 | `READ_FILE_MAX_LINE` | `10000` | 单次读取文件最大行数。超过此行数后不再继续读取 / Max lines per file read; stops reading beyond this limit |

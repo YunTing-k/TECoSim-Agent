@@ -26,6 +26,7 @@ Revision:
 2026.6.6       Yu Huang      2.4      Basic support of agent tasks as Scoreboard with lock
 2026.6.7       Yu Huang      2.5      Support of task displays in scoreboard
 2026.6.9       Yu Huang      2.6      Add design and run support for simulator
+2026.6.10      Yu Huang      2.7      Revise the live TUI with the same console instance
 
 Details:
 ---------
@@ -40,6 +41,7 @@ import logging
 
 from typing import Callable, Any
 from rich.progress import Progress
+from rich.console import Console
 from src.tool import tool_def
 from src.utility.ui_info import loading_spinner, loading_spinner_with_board
 from src.context.agent_context import AgentContext
@@ -53,7 +55,7 @@ class ToolCallsCancelled(Exception):
     """Raised when user cancels tool calls (but this should never happen, because each tool should handle Ctrl+C int)"""
 
 
-def tool_calls_spinner(func: Callable, *args,
+def tool_calls_spinner(func: Callable, *args, console: Console,
                        waiting_desc: str | None = None, done_desc: str | None = None,
                        intrp_desc: str | None = None, fail_desc: str | None = None,
                        spinner: str | None = None, if_random: bool, **kwargs) -> Any:
@@ -86,13 +88,13 @@ def tool_calls_spinner(func: Callable, *args,
                              intrp_desc=intrp_title, fail_desc=fail_title,
                              spinner=spinner_choice,
                              out_except=ToolCallsCancelled("Tool call is cancelled by user"),
-                             with_progress=True,  # add progress to target function
+                             console=console, with_progress=True,  # add progress to target function
                              **kwargs)
     return result
 
 
 def tool_calls_spinner_board(func: Callable, *args,
-                             board: Scoreboard,
+                             board: Scoreboard, console: Console,
                              waiting_desc: str | None = None, done_desc: str | None = None,
                              intrp_desc: str | None = None, fail_desc: str | None = None,
                              spinner: str | None = None, if_random: bool, **kwargs) -> Any:
@@ -126,7 +128,7 @@ def tool_calls_spinner_board(func: Callable, *args,
                                         intrp_desc=intrp_title, fail_desc=fail_title,
                                         spinner=spinner_choice,
                                         out_except=ToolCallsCancelled("Tool call is cancelled by user"),
-                                        with_progress=True,  # add progress to target function
+                                        console=console, with_progress=True,  # add progress to target function
                                         **kwargs)
     return result
 

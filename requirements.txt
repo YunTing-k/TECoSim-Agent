@@ -77,8 +77,8 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-multipart==0.0.29
 pytz==2026.2
-pywin32==311
-pywin32-ctypes==0.2.3
+pywin32==311; platform_system == "Windows"
+pywin32-ctypes==0.2.3; platform_system == "Windows"
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.5.9

@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 1
+TECOSIM_AGENT_UPDATE_VERSION: int = 2
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -24,9 +24,16 @@ RUNS_NAME: str = "runs.json"
 DESIGNS_NAME: str = "designs.json"
 # others
 MAIN_AGENT_ID: str = "main"
+SYS_REMINDER_START_LABEL: str = "<system_reminder>"
+SYS_REMINDER_END_LABEL: str = "</system_reminder>"
+SKILL_START_LABEL: str = "<skill_content>"
+SKILL_END_LABEL: str = "</skill_content>"
+CRON_START_LABEL: str = "<cron_tasks>"
+CRON_END_LABEL: str = "</cron_tasks>"
 SIM_DESIGN_NAME: str = "design"
 SIM_RUN_NAME: str = "run"
 FAIL_LABEL: str = "FAIL"
+FALLBACK_LABEL: str = "FALLBACK"
 SUCCESS_LABEL: str = "SUCCESS"
 DONE_LABEL: str = "DONE"
 TIMEOUT_LABEL: str = "TIMEOUT"

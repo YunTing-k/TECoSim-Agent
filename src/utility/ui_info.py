@@ -27,6 +27,8 @@ Revision:
                                       Fix the bug of cut-off issued when resume from permission TUI
 2026.6.8       Yu Huang      2.3      Fix the bug of duplicate tail if TUI pause for permission
 2026.6.9       Yu Huang      2.4      Add design and run support for simulator
+2026.6.10      Yu Huang      2.5      Revise the live TUI with the same console instance &  Revise the display cut off issue if
+                                      there are multiple tool calls
 
 Details:
 ---------
@@ -263,7 +265,7 @@ class GradientTextColumn(ProgressColumn):
 
 def loading_spinner(func: Callable, *args,
                     waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
-                    with_progress: bool = False,
+                    console: Console, with_progress: bool = False,
                     **kwargs) -> Any:
     """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt
 
@@ -281,10 +283,11 @@ def loading_spinner(func: Callable, *args,
         # this thread via PyThreadState_SetAsyncExc, so Ctrl+C still works.
         # Just run the function synchronously with a Progress display (no signal ops).
         with Progress(
-                GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
-                SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
-                TimeElapsedColumn(),
-                transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+            GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
+            SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
         ) as progress:
             task = progress.add_task(waiting_desc, total=None)
             try:
@@ -323,10 +326,11 @@ def loading_spinner(func: Callable, *args,
     original_handler = signal.signal(signal.SIGINT, sigint_handler)
     try:
         with Progress(
-                GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
-                SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
-                TimeElapsedColumn(),
-                transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+            GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
+            SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
         ) as progress:
             task = progress.add_task(waiting_desc, total=None)
             if not with_progress:
@@ -375,7 +379,7 @@ def loading_spinner_with_board(func: Callable, *args,
                                board: Scoreboard,
                                waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str,
                                spinner: str, out_except: Exception,
-                               with_progress: bool = False,
+                               console: Console, with_progress: bool = False,
                                **kwargs) -> Any:
     """Spinner with a live scoreboard text below, for any time-consuming operation.
 
@@ -396,6 +400,7 @@ def loading_spinner_with_board(func: Callable, *args,
         GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
         SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
         TimeElapsedColumn(),
+        console=console,
         transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
     )
 
@@ -414,7 +419,7 @@ def loading_spinner_with_board(func: Callable, *args,
         return Group(progress, tasks_render)
 
     if not is_main_thread:
-        with Live(make_group(), refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
             progress._outer_live = live
             task_id = progress.add_task(waiting_desc, total=None)
             try:
@@ -464,7 +469,7 @@ def loading_spinner_with_board(func: Callable, *args,
         t = threading.Thread(target=target, daemon=True)
         worker_thread[0] = t
 
-        with Live(make_group(), refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
             progress._outer_live = live
             task_id = progress.add_task(waiting_desc, total=None)
             t.start()
@@ -521,12 +526,16 @@ def resume_from_permission(progress):
     Restarts the outer Live (hide cursor, register render hook, start
     auto-refresh) so normal spinner + scoreboard display resumes.
 
-    Prints a newline before restarting to ensure the Live starts on a
-    fresh line, preventing overlap with content printed while paused.
+    Prints enough newlines (last_render_height + 1) before restarting
+    so that the Live's `position_cursor()` on next auto-refresh only
+    erases empty lines and does not overwrite content printed in a
+    previous tool cycle (e.g. bash previews, SUCCESS messages).
     """
     outer_live = getattr(progress, '_outer_live', None)
     if outer_live is not None:
-        progress.console.print()
+        last_height = getattr(outer_live._live_render, 'last_render_height', 0)
+        for _ in range(last_height):
+            progress.console.print()
         outer_live.start()
 
 

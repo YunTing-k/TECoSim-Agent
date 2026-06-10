@@ -14,6 +14,8 @@ Revision:
 2026.5.24      Yu Huang      1.2      Revise the prompt of session's title summarize
 2026.5.30      Yu Huang      1.3      Revise spinner logic with SIGINT pass through
 2026.6.2       Yu Huang      1.4      Refactor LLM title summarize with tool call but not chat response
+2026.6.10      Yu Huang      1.5      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
+                                      the same console instance
 
 Details:
 ---------
@@ -152,7 +154,7 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
 
     """tool def"""
     tools = tool_summarize_title_def()
-    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+    if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
         tool_choice = None
     else:
         tool_choice = {
@@ -165,10 +167,10 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
     """get title"""
     try:
         response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
-                                                              ctx.llm_client, messages, tools, ctx.api_configs, ctx.agent_configs, tool_choice,
-                                                              waiting_desc="Session summarizing ...", done_desc="LLM summary latency",
-                                                              intrp_desc="Session summary interrupted", fail_desc="Session summary failed",
-                                                              spinner="arrow3", if_random=False)
+                                                              ctx.llm_client, messages, tools, ctx.api_configs, tool_choice,
+                                                              console=console, waiting_desc="Session summarizing ...",
+                                                              done_desc="LLM summary latency", intrp_desc="Session summary interrupted",
+                                                              fail_desc="Session summary failed", spinner="arrow3", if_random=False)
         ctx.total_llm_requests += 1  # main loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -181,7 +183,7 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
             dumped_msg = deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
 

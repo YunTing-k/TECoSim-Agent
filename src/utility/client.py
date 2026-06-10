@@ -21,12 +21,15 @@ Revision:
 2026.5.30      Yu Huang      1.9      Random spinner title support & Revise spinner logic with SIGINT pass through
 2026.6.3       Yu Huang      2.0      Add tool choice in branch LLM request
 2026.6.3       Yu Huang      2.1      Support of task displays in scoreboard
+2026.6.10      Yu Huang      2.2      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
+                                      the same console instance
 
 Details:
 ---------
 LLM client management: configures OpenAI client from API configs, provides `request_loop_main` (main model with streaming,
-reasoning, DeepSeek support, tool calls) and `request_branch_fast` (fast model for non-loop tasks). Wraps requests with a
-spinner UI via `llm_request_with_spinner`.
+reasoning, DeepSeek support, tool calls) and `request_branch_fast` (fast model for non-loop tasks with configurable DeepSeek
+support in api_configs, no longer depends on agent_configs). Main/fast model DeepSeek support can be configured dependently.
+Wraps requests with a spinner UI via `llm_request_with_spinner`.
 """
 import random
 import logging
@@ -60,7 +63,7 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
         raise RuntimeError(e)
 
 
-def llm_request_spinner(func: Callable, *args,
+def llm_request_spinner(func: Callable, *args, console: Console,
                         waiting_desc: str | None = None, done_desc: str | None = None,
                         intrp_desc: str | None = None, fail_desc: str | None = None,
                         spinner: str | None = None, if_random: bool, **kwargs) -> Any:
@@ -92,12 +95,13 @@ def llm_request_spinner(func: Callable, *args,
                              waiting_desc=waiting_title, done_desc=done_title,
                              intrp_desc=intrp_title, fail_desc=fail_title,
                              spinner=spinner_choice,
-                             out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
+                             out_except=RequestLLMCancelled("LLM request is cancelled by user"),
+                             console=console, **kwargs)
     return result
 
 
 def llm_request_spinner_board(func: Callable, *args,
-                              board: Scoreboard,
+                              board: Scoreboard, console: Console,
                               waiting_desc: str | None = None, done_desc: str | None = None,
                               intrp_desc: str | None = None, fail_desc: str | None = None,
                               spinner: str | None = None, if_random: bool, **kwargs) -> Any:
@@ -130,7 +134,9 @@ def llm_request_spinner_board(func: Callable, *args,
                                         waiting_desc=waiting_title, done_desc=done_title,
                                         intrp_desc=intrp_title, fail_desc=fail_title,
                                         spinner=spinner_choice,
-                                        out_except=RequestLLMCancelled("LLM request is cancelled by user"), **kwargs)
+                                        out_except=RequestLLMCancelled("LLM request is cancelled by user"),
+                                        console=console,
+                                        **kwargs)
     return result
 
 
@@ -151,7 +157,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
     else:
         params["reasoning_effort"] = None
     """deepseek support"""
-    if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+    if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
         if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}
         else:
@@ -162,7 +168,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
 
 
 def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
-                        api_configs: dict[str, Any], agent_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
+                        api_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
     """Create fast LLM model request with LLM client, messages, tools, configs for non-loop of agent"""
     params: dict[str, Any] = {
         "model": api_configs["FAST_MODEL_NAME"],
@@ -183,7 +189,7 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
     else:
         params["reasoning_effort"] = None
     """deepseek support"""
-    if agent_configs["DEEPSEEK_SUPPORT"]:
+    if api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
         if api_configs["FAST_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}
         else:

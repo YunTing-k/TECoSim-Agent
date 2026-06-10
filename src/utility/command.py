@@ -22,6 +22,7 @@ Revision:
 2026.6.3       Yu Huang      2.0      Add cron tasks support & Add configurable title in yes or no request TUI
 2026.6.7       Yu Huang      2.1      Support of tasks query in Scoreboard
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator
+2026.6.10      Yu Huang      2.3      Manually set title support with builtin command & Add empty builtin args detection
 
 Details:
 ---------
@@ -398,7 +399,7 @@ def cmd_permission_list(args: list[str], ctx: AgentContext, board: Scoreboard, c
     console.print("\n")
 
 
-def cmd_permission_toggle(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+def cmd_permission_toggle(in_args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """toggle the permission token of the tool calls permission with given name"""
     cmd_str = Text()
     if ctx.args.dangerously_allow_all:
@@ -410,7 +411,11 @@ def cmd_permission_toggle(args: list[str], ctx: AgentContext, board: Scoreboard,
         return
 
     try:
-        arg_name = args[0]
+        if not in_args:
+            sys_log.warning(f"Unable to toggle the permission, target name is empty")
+            console.print(f"Unable to toggle the permission, target name is empty", style=f"bold yellow")
+            return
+        arg_name = in_args[0]
     except Exception as e:
         sys_log.warning(f"Unable to toggle the permission, target name is invalid with error {e}")
         console.print(f"Unable to toggle the permission, target name is invalid with error {e}", style=f"bold yellow")
@@ -590,6 +595,23 @@ def cmd_update_title(args: list[str], ctx: AgentContext, board: Scoreboard, cons
     console.print("Session title updated", style="bright_black")
 
 
+def cmd_set_title(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """set title of this session by user"""
+    if not args:
+        sys_log.warning(f"Unable to set the title, target title is empty")
+        console.print(f"Unable to set the title, target title is empty", style=f"bold yellow")
+        return
+    title: str = args[0]
+    if title.strip():
+        ctx.session_title = title
+        ui_info.set_terminal_title(ctx.session_title)
+        sys_log.debug(f"Session title updated to {title}")
+        console.print(f"Session title updated to [{MAJOR_COLOR2}]{title}[/{MAJOR_COLOR2}]", style="bright_black")
+    else:
+        sys_log.warning(f"Unable to set the title, target title is empty")
+        console.print(f"Unable to set the title, target title is empty", style=f"bold yellow")
+
+
 def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all sessions"""
     session_dir = SESSION_PATH
@@ -658,6 +680,10 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, board: Scoreboard, co
 
     try:
         """validate UUID"""
+        if not args:
+            sys_log.warning(f"Unable to remove session, target UUID is empty")
+            console.print(f"Unable to remove session, target UUID is empty", style=f"bold yellow")
+            return
         uuid_str: str = args[0]
         if not basic_utils.is_valid_uuid(uuid_str):
             sys_log.error(f"Session UUID: {uuid_str} is not valid")
@@ -741,6 +767,10 @@ def cmd_cron_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
 def cmd_cron_remove(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """remove a cron task with ID"""
     try:
+        if not args:
+            sys_log.warning(f"Unable to remove cron task, target ID is empty")
+            console.print(f"Unable to remove cron task, target ID is empty", style=f"bold yellow")
+            return
         id_str: str = args[0]
         token = ui_info.request_tui(console=console, title="Remove Cron Task", request_desc=f"remove the cron: {id_str}",
                                     request_detail=f"This cron task will be deleted forever",
@@ -903,7 +933,8 @@ class BuiltinCommands:
             "url_caches": (cmd_url_caches, "query all cached URLs",
                                                "query all the cached URLs with timestamp and truncated content"),
             "mcp_list": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
-            "update_title": (cmd_update_title, "update session title", "update title of this session with history immediately"),
+            "update_title": (cmd_update_title, "update session title with LLM", "update title of this session with history immediately by LLM"),
+            "set_title": (cmd_set_title, "set session title manually", "manually set title of this session by user"),
             "session_list": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
             "session_remove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
             "cron_list": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
@@ -961,12 +992,12 @@ class BuiltinCommands:
 
     def cmd_help(self, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
         """print all available commands"""
-        title = "Available Commands"
+        title = f"Available Commands ({len(self._commands)})"
         cmd_str = Text()
         for cmd, (func, label, desc) in self._commands.items():
             cmd_str.append(f"/{cmd}", style=f"bold {MAJOR_COLOR1}")
             cmd_str.append(f": ", style=f"white")
-            cmd_str.append(f"{label}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f"{label}", style=f"{MAJOR_COLOR2}")
             cmd_str.append(f", {desc}\n", style=f"white")
         if cmd_str.plain.endswith("\n"):
             cmd_str.rstrip()

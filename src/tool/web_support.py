@@ -15,6 +15,8 @@ Revision:
 2026.5.23      Yu Huang      1.3      Bugfix of possible none usage update
 2026.5.30      Yu Huang      1.4      Revise spinner logic with SIGINT pass through
 2026.6.1       Yu Huang      1.5      Define all used status labels in constants.py
+2026.6.10      Yu Huang      1.6      Main/Fast model can configure deepseek support dependently & Define all inserted message
+                                      labels in constans.py & Revise the live TUI with the same console instance
 
 Details:
 ---------
@@ -192,10 +194,10 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
     messages = create_web_fetch_prompts(in_prompt, content)
     try:
         response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
-                                                              ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                              waiting_desc = "Web fetch summarizing ...", done_desc = "LLM summary latency",
-                                                              intrp_desc = "Web fetch interrupted", fail_desc = "Web fetch failed",
-                                                              spinner = "arrow3", if_random = False)
+                                                              ctx.llm_client, messages, None, ctx.api_configs,
+                                                              console=console, waiting_desc = "Web fetch summarizing ...",
+                                                              done_desc = "LLM summary latency", intrp_desc = "Web fetch interrupted",
+                                                              fail_desc = "Web fetch failed", spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -208,7 +210,7 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
             dumped_msg = prompt.deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
         limit = ctx.agent_configs["WEB_FETCH_LLM_CAHR_LIMIT"]
@@ -456,10 +458,10 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
     messages = create_web_search_prompts(query, content)
     try:
         response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
-                                                              ctx.llm_client, messages, None, ctx.api_configs, ctx.agent_configs,
-                                                              waiting_desc = "Web search summarizing ...", done_desc = "LLM summary latency",
-                                                              intrp_desc="Web search interrupted", fail_desc="Web search failed",
-                                                              spinner = "arrow3", if_random = False)
+                                                              ctx.llm_client, messages, None, ctx.api_configs,
+                                                              console=console, waiting_desc = "Web search summarizing ...",
+                                                              done_desc = "LLM summary latency", intrp_desc="Web search interrupted",
+                                                              fail_desc="Web search failed", spinner = "arrow3", if_random = False)
         ctx.total_llm_requests += 1  # mail loop counter is in request function, branch request need to manually count
         usage = response.usage
         if usage is not None:
@@ -472,16 +474,16 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.agent_configs["DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
             dumped_msg = prompt.deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
         limit = ctx.agent_configs["WEB_SEARCH_LLM_CHAR_LIMIT"]
         if len(assistant_chat) > limit:
             assistant_chat = assistant_chat[:limit] + f"...(content is longer than {limit} chars, truncated)"
-        assistant_chat += ("\n\n<system_reminder>\n"
+        assistant_chat += (f"\n\n{SYS_REMINDER_START_LABEL}\n"
                            "Never skip including \"Sources:\" at the end of your response. In the \"Sources:\" section, "
                            "list all relevant URLs from the search results as markdown hyperlinks: [Title](URL)\n"
-                           "<system_reminder>")
+                           f"{SYS_REMINDER_END_LABEL}")
         return assistant_chat, True
     except RequestLLMCancelled:
         sys_log.warning(f"Web search LLM process canceled, but the connection is not killed, token consumption can't be avoided")

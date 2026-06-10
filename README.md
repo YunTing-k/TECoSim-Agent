@@ -68,7 +68,7 @@ These issues limit the capability of TECoSim and the underlying cross-layer mode
 |---|-------------|------------------|
 | 1 | **自然语言驱动** Natural language driven | 描述目标，智能体自动完成设计、仿真、验证全流程 / Describe goals, the agent handles the full workflow |
 | 2 | **TECoSim 无缝集成** Seamless integration | 自动配置仿真参数、调用仿真器、解析输出结果 / Auto-configures params, invokes simulator, parses results |
-| 3 | **25+ 内置工具** 25+ built-in tools | 文件操作、Shell、网页获取、网络搜索、定时任务、任务看板等 / File I/O, bash, web fetch/search, cron, scoreboard |
+| 3 | **内置工具** built-in tools | 文件操作、Shell、网页获取、网络搜索、定时任务、任务看板等 / File I/O, bash, web fetch/search, cron, scoreboard |
 | 4 | **双模型架构** Dual-model | 主模型处理复杂任务，快速模型处理简单任务，兼顾能力与效率 / Primary for complex, fast for simple — balancing capability and efficiency |
 | 5 | **任务看板** Scoreboard | 线程安全的任务系统，支持创建/更新/查询、状态流转与依赖管理 / Thread-safe task management with status transitions and dependency tracking |
 | 6 | **权限控制** Permission control | 所有敏感操作需用户 TUI 确认 / All sensitive operations require user confirmation via TUI |
@@ -149,8 +149,8 @@ You must set your LLM API endpoint and key:
 **`BASH_PATH` must point to standard GNU Bash**, not cmd.exe or PowerShell.
 
 原因如下 | Why:
-- Agent 通过 `bash -c "<command>"` 的方式调用子进程执行命令（见 `tool_def.py` 第901行），`-c` 是 GNU Bash 的标准参数
-  The agent uses `bash -c "<command>"` via `subprocess.Popen` (line 901 of tool_def.py), and `-c` is the standard GNU Bash flag
+- Agent 通过 `bash -c "<command>"` 的方式调用子进程执行命令（见 `tool_def.py` 的 `bash` 函数），`-c` 是 GNU Bash 的标准参数
+  The agent uses `bash -c "<command>"` via `subprocess.Popen` (function `bash` in `tool_def.py`), and `-c` is the standard GNU Bash flag
 - `cmd.exe` 使用 `/c`，PowerShell 使用 `-Command`，三者互不兼容
   `cmd.exe` uses `/c`, PowerShell uses `-Command` — they are incompatible with each other
 - Agent 内置了命令风险检测引擎（`evaluate_bash_risk`），该检测基于 Bash 语义设计，若替换为 cmd/pwsh 可能导致风险判断失效
@@ -265,7 +265,8 @@ All commands start with `/` in the agent interaction interface:
 | `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
 | `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
 | `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
-| `/update_title` | 更新当前会话标题 / Update current session title |
+| `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
+| `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
 
 ---
 
@@ -278,19 +279,30 @@ TECoSimAgent/
 │   ├── constants.py             # 全局常量与默认参数 / All global constants & defaults
 │   ├── context/
 │   │   ├── agent_context.py     # 集中式Agent状态管理 / Central agent state management
-│   │   └── prompt.py            # 提示词组装与LLM响应处理 / Prompt assembly & LLM response handling
+│   │   ├── prompt.py            # 提示词组装与LLM响应处理 / Prompt assembly & LLM response handling
+│   │   └── session.py           # 会话持久化管理 / Session persistence management
 │   ├── tool/
-│   │   ├── tool_def.py          # 工具定义与实现（25+工具）/ Tool definitions & implementations
+│   │   ├── tool_def.py          # 工具定义与实现（24+工具）/ Tool definitions & implementations
 │   │   ├── tool_execute.py      # 工具执行调度器 / Tool execution dispatcher
-│   │   ├── file_filter_support.py  # 文件通配/内容搜索 / Glob/grep file search
-│   │   ├── file_io_support.py   # 文件读写编辑支持 / File read/write/edit support
 │   │   ├── simulator_support.py # 设计/运行管理与仿真器启动 / Design/run management & simulator launch
 │   │   ├── simulator_param.py   # 仿真器配置参数类型定义 / Simulator configuration TypedDicts
-│   │   ├── scoreboard.py        # 多Agent任务看板 / Task board for multi-agent coordination
-│   │   └── mcps_support.py      # MCP 工具路由 / MCP tool router
+│   │   ├── file_io_support.py   # 文件读写编辑支持 / File read/write/edit support
+│   │   ├── file_filter_support.py  # 文件通配/内容搜索 / Glob/grep file search
+│   │   ├── bash_support.py      # Bash 命令执行与风险检测 / Bash execution & risk evaluation
+│   │   ├── ask_question.py      # 结构化提问工具 / Structured question asking
+│   │   ├── ask_permission.py    # 权限请求 TUI / Permission request TUI
+│   │   ├── web_support.py       # 网页获取与网络搜索 / Web fetch & search support
+│   │   ├── cron_support.py      # 定时任务管理 / Cron task management
+│   │   ├── skills_support.py    # 技能框架支持 / Skill framework support
+│   │   ├── summarize_support.py # 会话摘要支持 / Session summarization support
+│   │   ├── mcps_support.py      # MCP 工具路由 / MCP tool router
+│   │   └── scoreboard.py        # 多Agent任务看板 / Task board for multi-agent coordination
 │   └── utility/
 │       ├── basic_utils.py       # 共享工具函数 / Shared utilities (config, platform, markdown)
 │       ├── command.py           # 内建命令系统 / Built-in command system
+│       ├── cli_args.py          # 命令行参数解析 / CLI argument parsing
+│       ├── sys_logger.py        # 日志系统 / Logging system
+│       ├── client.py            # LLM 客户端封装 / LLM client wrapper
 │       ├── ui_info.py           # TUI 组件 / TUI components (spinner, gradients, prompts)
 │       └── agent_listen.py      # 监听TUI（cron/任务监控）/ Listening TUI for cron/task monitoring
 ├── config/
@@ -304,6 +316,7 @@ TECoSimAgent/
 ├── cron/                        # 持久化定时任务 / Durable cron task persistence
 ├── log/                         # 日志文件 / Log files
 ├── doc/                         # 文档 / Documentation
+│   ├── img/                     # 图片资源 / Image resources
 │   ├── configuration.md         # 完整配置参数参考 / Full configuration reference
 │   ├── constants_reference.md   # constants.py 完整参考 / Complete constants.py reference
 │   └── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
@@ -317,3 +330,7 @@ TECoSimAgent/
 - [配置参数参考 | Configuration Reference](./doc/configuration.md) — `api_configs.json` & `agent_configs.json` 完整参数说明 / All parameter descriptions
 - [常量参考 | Constants Reference](./doc/constants_reference.md) — `constants.py` 完整参考：工具名称、Bash风险等级、UI配置等 / Tool names, bash risk levels, UI configs, etc.
 - [MCP 与 Skills 设置指南 | MCP & Skills Setup Guide](./doc/mcp_skills_setup.md) — MCP 服务器与技能详细设置指南 / Detailed setup guide for MCP servers and skills
+
+## 致谢 | Acknowledgement
+
+- [isinglch@github](https://github.com/isinglch) — 帮助发现并定位项目中的 Bug，参与了功能测试与验证工作 / Helped identify and locate bugs, participated in feature testing and verification

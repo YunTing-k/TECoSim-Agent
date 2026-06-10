@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.6.3       Yu Huang      1.0      First implementation
 2026.6.7       Yu Huang      1.1      Remove cron listen to agent_listen.py
+2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
 
 Details:
 ---------
@@ -152,7 +153,9 @@ def check_cron_tasks(ctx: AgentContext) -> bool:
     for prompt in prompt_list:
         cron_prompts += f"- {prompt}\n"
     ctx.messages.append({"role": "user",
-                         "content": f"<cron_tasks>\n{cron_prompts}\n</cron_tasks>"})
+                         "content": f"{CRON_START_LABEL}\n"
+                                    f"{cron_prompts}\n"
+                                    f"{CRON_END_LABEL}"})
     return True
 
 
