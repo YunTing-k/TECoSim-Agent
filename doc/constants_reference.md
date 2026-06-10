@@ -257,6 +257,17 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `EDIT_VIEW_LINE_MARGIN_MULTI` | `2` | 多次编辑预览上下文行数 / Context lines for multi edit preview |
 | `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `EDIT_VIEW_LINE_SPACE_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
+| `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | exact-family 回退模式标签颜色（quote_norm / unicode_escape）/ Subtle label color for exact-family fallback modes (quote_norm / unicode_escape) |
+| `MATCH_MODE_EXACT` | `exact` | 完全匹配 / Exact string match |
+| `MATCH_MODE_QUOTE_NORM` | `quote_norm` | 引号标准化匹配（弯曲引号 → 直引号）/ Quote normalized match (curly quotes → straight quotes) |
+| `MATCH_MODE_UNICODE_ESCAPE` | `unicode_escape` | Unicode 转义解码匹配（`\\uXXXX` → 实际字符）/ Unicode escape decoded match (`\\uXXXX` → actual character) |
+| `MATCH_MODE_LINE_TRIMMED` | `line_trimmed` | 行尾空白裁剪匹配 / Line trailing whitespace trimmed match |
+| `MATCH_MODE_FLEX_INDENT` | `flex_indent` | 弹性缩进匹配（忽略前导空格差异）/ Flexible indentation match (ignore leading whitespace differences) |
+| `MATCH_MODE_ESCAPE_LITERAL` | `escape_literal` | 转义字面量校正匹配（`\\t`/`\\n` → 实际字符）/ Escape literal corrected match (`\\t`/`\\n` → actual tab/newline) |
+| `MATCH_MODE_TRIMMED_BOUNDARY` | `trimmed_boundary` | 边界裁剪匹配（首尾空白去除）/ Boundary trimmed match (strip leading/trailing whitespace) |
+| `MATCH_MODE_DESC` | _(字典 dict)_ | 匹配模式枚举到 UI 显示的映射 / Map from match mode enum to human-readable description |
+| `MATCH_MODE_EXACT_FAMILY` | `{exact, quote_norm, unicode_escape}` | 精确匹配族（TUI 中灰色标签，非橙色警告）/ Exact match family (grey label in TUI, not orange warning) |
 
 ### Bash 视图 | Bash View (Command Output)
 

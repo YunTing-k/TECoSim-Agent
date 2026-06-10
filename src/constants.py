@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 2
+TECOSIM_AGENT_UPDATE_VERSION: int = 3
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -119,6 +119,8 @@ BASH_EMPTY_LABEL = "BASH_EMPTY" # no-risk (9)
 """UI"""
 MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
 MAJOR_COLOR2: str = "#54A0FF"  # common major color
+EDIT_FUZZY_WARN_COLOR: str = "#FFA500"  # fuzzy match warning
+EDIT_SUBTLE_COLOR: str = "bright_black"  # exact-family subtle label
 AGENT_CONSOLE_ICON: str = "✦"
 REASON_ICON: str = "⟡"
 REASON_ICON_SYLTE: str = f"bold {MAJOR_COLOR2}"
@@ -226,12 +228,31 @@ PERMISSION_REQUEST_DSEC_CHAR_MAX: int = 500
 STREAM_DISPLAY_REFRESH_RATE: int = 20
 STREAM_DISPLAY_MAX_REASON_LINE: int = 10
 STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
-EDIT_VIEW_RMV_BG: str = "#5F0000"  # remove line bg color
-EDIT_VIEW_ADD_BG: str = "#005F00"  # add line bg color
+EDIT_VIEW_RMV_BG: str = "#37222C"  # remove line bg color
+EDIT_VIEW_ADD_BG: str = "#303C1A"  # add line bg color
 EDIT_VIEW_LINE_MARGIN_SINGLE: int = 3
 EDIT_VIEW_LINE_MARGIN_MULTI: int = 2
 EDIT_VIEW_LEFT_SPACE_MARGIN: int = 5
 EDIT_VIEW_LINE_SPACE_MARGIN: int = 1
+"""Match mode for edit_file fallback chain"""
+MATCH_MODE_EXACT: str = "exact"
+MATCH_MODE_QUOTE_NORM: str = "quote_norm"
+MATCH_MODE_UNICODE_ESCAPE: str = "unicode_escape"
+MATCH_MODE_LINE_TRIMMED: str = "line_trimmed"
+MATCH_MODE_FLEX_INDENT: str = "flex_indent"
+MATCH_MODE_ESCAPE_LITERAL: str = "escape_literal"
+MATCH_MODE_TRIMMED_BOUNDARY: str = "trimmed_boundary"
+MATCH_MODE_DESC = {
+    MATCH_MODE_EXACT: "exact match",
+    MATCH_MODE_QUOTE_NORM: "exact (quote normalized)",
+    MATCH_MODE_UNICODE_ESCAPE: "exact (unicode decoded)",
+    MATCH_MODE_LINE_TRIMMED: "fuzzy match (line trimmed)",
+    MATCH_MODE_FLEX_INDENT: "fuzzy match (indentation flexible)",
+    MATCH_MODE_ESCAPE_LITERAL: "fuzzy match (escape literal corrected)",
+    MATCH_MODE_TRIMMED_BOUNDARY: "fuzzy match (boundary trimmed)",
+}
+# match modes considered "exact enough" — shown in subtle color, not alarming orange
+MATCH_MODE_EXACT_FAMILY = {MATCH_MODE_EXACT, MATCH_MODE_QUOTE_NORM, MATCH_MODE_UNICODE_ESCAPE}
 BASH_VIEW_LEFT_SPACE_MARGIN: int = 5
 BASH_VIEW_LINE_NUM_MARGIN: int = 1
 URL_CACHE_VIEW_MAX: int = 8

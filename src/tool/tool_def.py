@@ -67,7 +67,9 @@ from src.tool.cron_support import get_cron_list, create_cron_impl
 from src.tool.scoreboard import Scoreboard, args_to_taskupdate, task_to_info, tasks_to_info
 from src.tool.file_filter_support import glob_impl, grep_impl
 from src.tool.file_io_support import (
-    match_line_ranges, get_match_debug_info, find_actual_string, ask_edit_tui, check_read_only)
+    match_line_ranges, find_actual_string, ask_edit_tui, check_read_only,
+    match_line_trimmed, match_flexible_indent, get_enhanced_debug_info,
+    match_escape_literal, match_trimmed_boundary, match_unicode_escape)
 from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
@@ -713,9 +715,9 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                    f"{arguments.get("prompt")} failed with error, details: {create_info}", style="bold red")
             return {"status": FAIL_LABEL, "info": f"Create cron task failed with error, details: {create_info}"}
     except Exception as e:
-        sys_log.error(f"{func_name} {FAIL_LABEL}: Grep file failed with error: {e}")
-        progress.console.print(f"{func_name} {FAIL_LABEL}: Grep file failed with error: {e}", style="bold red")
-        return {"status": FAIL_LABEL, "info": f"Grep file failed with error: {e}"}
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Create cron failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Create cron failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Create cron failed with error: {e}"}
 
 
 def tool_query_cron_def() -> dict[str, Any]:
@@ -802,9 +804,9 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                    f"details: {remove_info}", style="bold red")
             return {"status": FAIL_LABEL, "info": f"Remove cron task failed with error, details: {remove_info}"}
     except Exception as e:
-        sys_log.error(f"{func_name} {FAIL_LABEL}: Grep file failed with error: {e}")
-        progress.console.print(f"{func_name} {FAIL_LABEL}: Grep file failed with error: {e}", style="bold red")
-        return {"status": FAIL_LABEL, "info": f"Grep file failed with error: {e}"}
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Remove cron failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Remove cron failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Remove cron failed with error: {e}"}
 
 
 def tool_bash_def() -> dict[str, Any]:
@@ -1572,12 +1574,11 @@ def tool_edit_file_def() -> dict[str, Any]:
                            "with more surrounding context to make it unique or use `replace_all` to change every instance "
                            "of `old_string`\n"
                            "- Prefer editing existing files and don't write new files unless explicitly required\n"
-                           "- CRLF normalized automatically: `\\r` in both `old_string` and `new_string` is stripped "
-                           "before matching/replacement, preventing CRLF-vs-LF and double-CR on Windows.\n"
+                           "- CRLF is normalized automatically before matching\n"
                            f"- `{TOOL_NAME_READ_FILE}` output preserves file bytes as-is, no escaping: if the file has `\\n` "
                            "(backslash + \"n\") in it, the output literally shows `\\n`\n"
-                           "- When match fails, error `info` includes `target(repr)`, `context(repr)` (bytes near "
-                           "closest partial match), `content_len` and `target_len`. Use info to verify actual bytes\n",
+                           "- When match fails, error `info` includes diagnostic details to help you correct `old_string` "
+                           "and retry\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1666,11 +1667,16 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         #  so if new_string kept \r, it would become \r\r\n - double CR)
         old_string_norm = old_string.replace('\r\n', '\n').replace('\r', '\n')
         new_string_norm = new_string.replace('\r\n', '\n').replace('\r', '\n')
-        # try exact match first, then fall back to quote-normalized matching
+
+        # match mode tracking (for user awareness in permission TUI)
+        match_mode = MATCH_MODE_EXACT
+
+        # Stage 1: exact match
         match_lines = match_line_ranges(raw_str, old_string_norm, True)
         count = len(match_lines)
-        # use actual_old for replacement (may differ from old_string if quote normalization was needed)
         actual_old = old_string_norm
+
+        # Stage 2: quote-normalized match
         if count == 0:
             sys_log.debug(f"{func_name}: try match via quote normalization")
             progress.console.print(f"{func_name}: try match via quote normalization", style="bright_black")
@@ -1679,17 +1685,91 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 actual_old = actual_found
                 match_lines = match_line_ranges(raw_str, actual_old, True)
                 count = len(match_lines)
+                match_mode = MATCH_MODE_QUOTE_NORM
                 sys_log.debug(f"{func_name}: matched via quote normalization: "
                               f"old_string={repr(old_string_norm)} actual={repr(actual_old)}")
                 progress.console.print(f"{func_name}: matched via quote normalization", style="bright_black")
+
+        # Stage 2b: unicode-escape match (handle \\uXXXX escape sequences in LLM output)
         if count == 0:
-            debug_info = get_match_debug_info(raw_str, old_string_norm)
+            sys_log.debug(f"{func_name}: try match via unicode escape")
+            progress.console.print(f"{func_name}: try match via unicode escape", style="bright_black")
+            ue_lines, ue_actual = match_unicode_escape(raw_str, old_string_norm)
+            if ue_lines:
+                actual_old = ue_actual
+                match_lines = ue_lines
+                count = len(match_lines)
+                match_mode = MATCH_MODE_UNICODE_ESCAPE
+                sys_log.debug(f"{func_name}: matched via unicode escape: "
+                              f"actual(repr)={repr(actual_old)}")
+                progress.console.print(f"{func_name}: matched via unicode escape", style="bright_black")
+
+        # Stage 3: line-trimmed match (handle trailing whitespace differences)
+        if count == 0:
+            sys_log.debug(f"{func_name}: try match via line trimmed")
+            progress.console.print(f"{func_name}: try match via line trimmed", style="bright_black")
+            trimmed_lines, trimmed_actual = match_line_trimmed(raw_line, old_string_norm)
+            if trimmed_lines:
+                actual_old = trimmed_actual
+                match_lines = trimmed_lines
+                count = len(match_lines)
+                match_mode = MATCH_MODE_LINE_TRIMMED
+                sys_log.debug(f"{func_name}: matched via line trimmed: "
+                              f"actual(repr)={repr(actual_old)}")
+                progress.console.print(f"{func_name}: matched via line trimmed", style="bright_black")
+
+        # Stage 4: indentation-flexible match (handle indentation level differences)
+        if count == 0:
+            sys_log.debug(f"{func_name}: try match via flexible indentation")
+            progress.console.print(f"{func_name}: try match via flexible indentation", style="bright_black")
+            indent_lines, indent_actual = match_flexible_indent(raw_line, old_string_norm)
+            if indent_lines:
+                actual_old = indent_actual
+                match_lines = indent_lines
+                count = len(match_lines)
+                match_mode = MATCH_MODE_FLEX_INDENT
+                sys_log.debug(f"{func_name}: matched via flexible indentation: "
+                              f"actual(repr)={repr(actual_old)}")
+                progress.console.print(f"{func_name}: matched via flexible indentation", style="bright_black")
+
+        # Stage 5: escape-literal match (handle \\n, \\t, \\r, etc. as literal text)
+        if count == 0:
+            sys_log.debug(f"{func_name}: try match via escape literal normalization")
+            progress.console.print(f"{func_name}: try match via escape literal", style="bright_black")
+            escape_lines, escape_actual = match_escape_literal(raw_str, old_string_norm)
+            if escape_lines:
+                actual_old = escape_actual
+                match_lines = escape_lines
+                count = len(match_lines)
+                match_mode = MATCH_MODE_ESCAPE_LITERAL
+                sys_log.debug(f"{func_name}: matched via escape literal: "
+                              f"actual(repr)={repr(actual_old)}")
+                progress.console.print(f"{func_name}: matched via escape literal", style="bright_black")
+
+        # Stage 6: trimmed-boundary match (handle extra leading/trailing whitespace)
+        if count == 0:
+            sys_log.debug(f"{func_name}: try match via trimmed boundary")
+            progress.console.print(f"{func_name}: try match via trimmed boundary", style="bright_black")
+            boundary_lines, boundary_actual = match_trimmed_boundary(raw_str, old_string_norm)
+            if boundary_lines:
+                actual_old = boundary_actual
+                match_lines = boundary_lines
+                count = len(match_lines)
+                match_mode = MATCH_MODE_TRIMMED_BOUNDARY
+                sys_log.debug(f"{func_name}: matched via trimmed boundary: "
+                              f"actual(repr)={repr(actual_old)}")
+                progress.console.print(f"{func_name}: matched via trimmed boundary", style="bright_black")
+
+        # All stages exhausted — return enhanced debug info
+        if count == 0:
+            debug_info = get_enhanced_debug_info(raw_str, raw_line, old_string_norm)
             sys_log.error(f"{func_name} {FAIL_LABEL}: No match of the string to replace. Details: {debug_info}")
             progress.console.print(f"{func_name} {FAIL_LABEL}: No match of the string to replace", style="bold red")
             return {"status": FAIL_LABEL, "info": f"No match of the string to replace. Details: {debug_info}"}
         elif count > 1 and not replace_all:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Found {count} matches of the string to replace, but `replace_all` is false")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Found {count} matches of the string to replace, but `replace_all` is false", style="bold red")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Found {count} matches of the string to replace, but "
+                                   f"`replace_all` is false", style="bold red")
             return {"status": FAIL_LABEL,
                     "info": f"Found {count} matches of the string to replace, but `replace_all` is false. To replace all occurrences, "
                             f"set `replace_all` to true. To replace only one occurrence, please provide more context to uniquely "
@@ -1697,7 +1777,8 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         multi_match = True if (count > 1 and replace_all) else False
         """request permission"""
         pause_for_permission(progress)
-        token, info = ask_edit_tui(file_path, actual_old, new_string_norm, raw_line, match_lines, multi_match, ctx, progress.console)
+        token, info = ask_edit_tui(file_path, actual_old, new_string_norm, raw_line, match_lines, multi_match, match_mode,
+                                   ctx, progress.console)
         resume_from_permission(progress)
         if not token:
             if info is None:

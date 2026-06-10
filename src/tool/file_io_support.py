@@ -22,12 +22,15 @@ Revision:
 2026.6.7       Yu Huang      2.0      Revise the display style of edit permission TUI & Add newline and space padding for
                                       all ask permission TUIs
 2026.6.9       Yu Huang      2.1      Remove read_line_with_limit to basic_utils.py & Add design and run support for simulator
+2026.6.10      Yu Huang      2.2      Implement 7-stage edit_file fallback matching chain with per-mode TUI visibility &
+                                      rewrite fill_str_line for long-line soft-wrap & fix merge_intervals for multi-preview blocks
 
 Details:
 ---------
-File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE helper - quote-normalized fuzzy
-matching, CRLF normalization, match debug info with repr context; (3) preview renderers (single/multi-match) showing diff-style
-add/remove lines; (4) edit permission TUI with preview; (5) read-only path checking against system and user-defined paths.
+File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE helper — 7-stage cascade
+fallback matching from exact to line-trimmed/indent-flexible/unescaped/boundary-trimmed, with per-match mode tracking and
+debug info; (3) preview renderers (single/match) showing diff-style add/remove with soft-wrap long lines; (4) edit permission
+TUI with preview and per-block match mode visibility; (5) read-only path checking against system and user-defined paths.
 Also provides session saving utility.
 """
 import os
@@ -109,6 +112,116 @@ def _normalize_quotes(s: str) -> str:
             .replace(_LEFT_DOUBLE_CURLY, '"').replace(_RIGHT_DOUBLE_CURLY, '"')
 
 
+def _unescape_unicode(text: str) -> str:
+    """decode Python-style \\uXXXX and \\UXXXXXXXX escape sequences to actual Unicode characters.
+    
+    Handles cases where the LLM outputs literal escape sequences (single or double-escaped)
+    instead of the actual Unicode characters (e.g., '\\u201c' or '\\\\u201c' → '\u201c').
+    Applies un-escaping repeatedly until no more escape sequences remain.
+    """
+    import re
+    def _replace_hex(match):
+        return chr(int(match.group(1), 16))
+    prev = None
+    while prev != text:
+        prev = text
+        text = text.replace('\\\\', '\\')
+        text = re.sub(r'\\u([0-9a-fA-F]{4})', _replace_hex, text)
+        text = re.sub(r'\\U([0-9a-fA-F]{8})', _replace_hex, text)
+    return text
+
+
+def _unescape_literals(text: str) -> str:
+    """decode common escape sequences that LLMs may output as literal text.
+
+    Handles cases where the LLM writes '\n' (backslash-n) instead of an actual
+    newline character. Uses a character-by-character state machine to avoid
+    double-processing already-escaped sequences.
+    """
+    result = []
+    i = 0
+    while i < len(text):
+        if text[i] == '\\' and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == 'n':
+                result.append('\n')
+                i += 2
+                continue
+            elif nxt == 't':
+                result.append('\t')
+                i += 2
+                continue
+            elif nxt == 'r':
+                result.append('\r')
+                i += 2
+                continue
+            elif nxt == '\\':
+                result.append('\\')
+                i += 2
+                continue
+            elif nxt == '\'':
+                result.append('\'')
+                i += 2
+                continue
+            elif nxt == '"':
+                result.append('"')
+                i += 2
+                continue
+        result.append(text[i])
+        i += 1
+    return ''.join(result)
+
+
+def match_escape_literal(raw_str: str, target: str) -> tuple[list[tuple[int, int]], str]:
+    """try to match target in file by un-escaping literal escape sequences.
+
+    Useful when the LLM outputs '\n' as literal text instead of actual newlines.
+    target: LLM-provided old_string (already CRLF-normalized)
+    raw_str: complete file content as a single string
+
+    Returns (match_line_ranges, actual_old_string) or ([], "").
+    """
+    unescaped = _unescape_literals(target)
+    if unescaped == target:
+        return [], ""
+
+    idx = raw_str.find(unescaped)
+    if idx == -1:
+        return [], ""
+
+    actual = raw_str[idx:idx + len(unescaped)]
+    target_lines = actual.rstrip('\n').count('\n')
+    prefix = raw_str[:idx]
+    start_line = prefix.count('\n') + 1
+    end_line = start_line + target_lines
+    return [(start_line, end_line)], actual
+
+
+def match_trimmed_boundary(raw_str: str, target: str) -> tuple[list[tuple[int, int]], str]:
+    """try to match target after removing leading/trailing whitespace from old_string.
+
+    Useful when the LLM accidentally includes extra whitespace around old_string.
+    target: LLM-provided old_string (already CRLF-normalized)
+    raw_str: complete file content as a single string
+
+    Returns (match_line_ranges, actual_old_string) or ([], "").
+    """
+    trimmed = target.strip()
+    if trimmed == target or not trimmed:
+        return [], ""
+
+    idx = raw_str.find(trimmed)
+    if idx == -1:
+        return [], ""
+
+    actual = raw_str[idx:idx + len(trimmed)]
+    target_lines = actual.rstrip('\n').count('\n')
+    prefix = raw_str[:idx]
+    start_line = prefix.count('\n') + 1
+    end_line = start_line + target_lines
+    return [(start_line, end_line)], actual
+
+
 def find_actual_string(file_content: str, search_string: str) -> str | None:
     """find the actual string in file_content that matches search_string.
 
@@ -131,6 +244,35 @@ def find_actual_string(file_content: str, search_string: str) -> str | None:
     return None
 
 
+def match_unicode_escape(raw_str: str, target: str) -> tuple[list[tuple[int, int]], str]:
+    """try to match target in file by decoding \\uXXXX Unicode escape sequences.
+
+    Useful when the LLM outputs literal Unicode escape sequences instead of
+    the actual characters (e.g., '\\u00b2' → '²').
+    raw_str: complete file content as a single string
+    target: LLM-provided old_string (already CRLF-normalized)
+
+    Returns (match_line_ranges, actual_old_string) or ([], "").
+    """
+    if '\\u' not in target and '\\U' not in target:
+        return [], ""
+
+    unescaped = _unescape_unicode(target)
+    if unescaped == target:
+        return [], ""
+
+    idx = raw_str.find(unescaped)
+    if idx == -1:
+        return [], ""
+
+    actual = raw_str[idx:idx + len(unescaped)]
+    target_lines = actual.rstrip('\n').count('\n')
+    prefix = raw_str[:idx]
+    start_line = prefix.count('\n') + 1
+    end_line = start_line + target_lines
+    return [(start_line, end_line)], actual
+
+
 def match_line_ranges(content: str, target: str, match_all: bool) -> list[tuple[int, int]]:
     """match the content with target and return the line ranges of the matches"""
     results = []
@@ -148,6 +290,139 @@ def match_line_ranges(content: str, target: str, match_all: bool) -> list[tuple[
             break
         start = index + 1
     return results
+
+
+def _strip_common_indent(text: str) -> str:
+    """strip the minimum common indentation from all non-empty lines"""
+    lines = text.splitlines()
+    min_indent = None
+    for line in lines:
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if min_indent is None or indent < min_indent:
+                min_indent = indent
+    if min_indent is None or min_indent == 0:
+        return text
+    return '\n'.join(line[min_indent:] if line.strip() else line for line in lines)
+
+
+def match_line_trimmed(raw_line: list[str], target: str) -> tuple[list[tuple[int, int]], str]:
+    """try to match target in file by trimming trailing whitespace from each line.
+
+    Useful when LLM copies code but adds trailing whitespace differences.
+    raw_line: list of original file lines (preserving native line endings)
+    target: LLM-provided old_string (already CRLF-normalized to \\n)
+
+    Returns (match_line_ranges, actual_old_string) or ([], "").
+    """
+    target_lines = target.rstrip('\n').splitlines()
+    if not target_lines:
+        return [], ""
+
+    content_stripped = [line.rstrip('\n').rstrip('\r').rstrip() for line in raw_line]
+    target_stripped = [t.rstrip() for t in target_lines]
+    t_len = len(target_stripped)
+    c_len = len(content_stripped)
+
+    start = 0
+    while start <= c_len - t_len:
+        if content_stripped[start:start + t_len] == target_stripped:
+            actual = ''.join(raw_line[start:start + t_len])
+            return [(start + 1, start + t_len)], actual
+        start += 1
+
+    return [], ""
+
+
+def match_flexible_indent(raw_line: list[str], target: str) -> tuple[list[tuple[int, int]], str]:
+    """try to match target in file by stripping common indentation from both sides.
+
+    Useful when LLM copies indented code but gets the indentation level wrong.
+    raw_line: list of original file lines (preserving native line endings)
+    target: LLM-provided old_string (already CRLF-normalized to \\n)
+
+    Returns (match_line_ranges, actual_old_string) or ([], "").
+    """
+    target_stripped = _strip_common_indent(target)
+    target_lines_stripped = target_stripped.splitlines()
+    t_len = len(target_lines_stripped)
+    if not target_lines_stripped or t_len == 0:
+        return [], ""
+
+    c_len = len(raw_line)
+
+    for start in range(c_len - t_len + 1):
+        candidate_str = ''.join(raw_line[start:start + t_len])
+        candidate_stripped = _strip_common_indent(candidate_str)
+        # also rstrip lines to handle combined indent + trailing whitespace diff
+        candidate_stripped_rstrip = '\n'.join(l.rstrip() for l in candidate_stripped.splitlines())
+        target_stripped_rstrip = '\n'.join(l.rstrip() for l in target_lines_stripped)
+        if candidate_stripped_rstrip == target_stripped_rstrip:
+            actual = ''.join(raw_line[start:start + t_len])
+            return [(start + 1, start + t_len)], actual
+
+    return [], ""
+
+
+def get_enhanced_debug_info(content: str, raw_line: list[str], target: str) -> str:
+    """get enhanced debug info with per-line match status when exact match fails.
+
+    Builds on the basic get_match_debug_info and adds line-by-line analysis
+    to help the LLM identify which part of old_string needs correction.
+    """
+    parts = [get_match_debug_info(content, target)]
+
+    target_lines = target.rstrip('\n').splitlines()
+    if not target_lines:
+        return " | ".join(parts)
+
+    content_lines = [line.rstrip('\n').rstrip('\r') for line in raw_line]
+
+    parts.append(f"target_line_count={len(target_lines)}")
+
+    # for each target line, try to find it in content (trimmed comparison)
+    # Cap per-line analysis at 30 lines to avoid excessive output for very large targets
+    _MAX_LINE_ANALYSIS = 30
+    line_status_parts = []
+    if len(target_lines) <= _MAX_LINE_ANALYSIS:
+        analyze_lines = list(enumerate(target_lines))
+        truncated_lines = False
+    else:
+        half = _MAX_LINE_ANALYSIS // 2
+        analyze_lines = list(enumerate(target_lines[:half])) + list(enumerate(target_lines[-half:], len(target_lines) - half))
+        truncated_lines = True
+
+    for i, t_line in analyze_lines:
+        t_stripped = t_line.rstrip()
+        found = False
+        for j, c_line in enumerate(content_lines):
+            if c_line.rstrip() == t_stripped:
+                line_status_parts.append(f"tln_{i + 1}=found@cln_{j + 1}")
+                found = True
+                break
+        if not found:
+            line_status_parts.append(f"tln_{i + 1}=NOT_FOUND(repr={repr(t_line)})")
+
+    if truncated_lines:
+        half = _MAX_LINE_ANALYSIS // 2
+        line_status_parts.insert(half, f"...({len(target_lines) - _MAX_LINE_ANALYSIS}_more_lines_omitted)...")
+
+    parts.append("; ".join(line_status_parts))
+
+    # try to find the first line match and show surrounding context
+    if target_lines:
+        first_stripped = target_lines[0].rstrip()
+        for j, c_line in enumerate(content_lines):
+            if c_line.rstrip() == first_stripped:
+                ctx_start = max(0, j - 1)
+                ctx_end = min(len(content_lines), j + len(target_lines) + 1)
+                ctx_repr = [f"cln_{k + 1}(repr)={repr(content_lines[k])}" for k in range(ctx_start, ctx_end)]
+                parts.append("context_around_first_match: " + "; ".join(ctx_repr))
+                break
+        else:
+            parts.append("first_line_not_found_in_file")
+
+    return " | ".join(parts)
 
 
 def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, str]:
@@ -172,23 +447,51 @@ def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, s
     return prefix1, prefix2
 
 
-def fill_str_line(input_line: str, offset: int) -> str:
-    """fill the input string with spaces of command line"""
+def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
+    """split a content line into (first_physical_line, continuation_lines).
+
+    The first element contains the content for the first physical line, padded to
+    (terminal_width - offset) for background fill. Subsequent elements are continuation
+    lines: indent(offset spaces) + content_chunk + padding, each terminal_width chars.
+
+    The caller must style continuation lines: the first len(prefix1) chars of each
+    continuation should match prefix1 style (no background), and the remainder
+    should match the content style (with background for add/remove blocks).
+    """
     width = os.get_terminal_size().columns - offset
-    if width < 0:
-        width = 0
-    if input_line.endswith('\n'):
-        output_line = input_line.rstrip('\n')
-        output_line = output_line.ljust(width) + "\n"
-    elif input_line.endswith('\r\n'):
-        output_line = input_line.rstrip('\r\n')
-        output_line = output_line.ljust(width) + "\r\n"
+    if width < 1:
+        width = 1
+
+    # preserve original line ending for the final line
+    if input_line.endswith('\r\n'):
+        line_ending = '\r\n'
+        content = input_line[:-2]
+    elif input_line.endswith('\n'):
+        line_ending = '\n'
+        content = input_line[:-1]
     else:
-        output_line = input_line.ljust(width) + "\n"
-    return output_line
+        line_ending = '\n'
+        content = input_line
+
+    if len(content) <= width:
+        return content.ljust(width) + line_ending, []
+
+    # wrap long lines
+    indent = " " * offset
+    parts = [content[:width].ljust(width)]
+    remaining = content[width:]
+    while remaining:
+        chunk = remaining[:width]
+        parts.append(indent + chunk.ljust(width))
+        remaining = remaining[width:]
+
+    # first line gets the file line ending
+    first = parts[0] + line_ending
+    return first, parts[1:]
 
 
-def render_preview_single(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]]):
+def render_preview_single(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
+                         match_mode: str = MATCH_MODE_EXACT):
     """render single-line file edit preview"""
     (start_line, end_line) = match_lines[0]
     old_lines = str_line[start_line - 1:end_line]
@@ -202,7 +505,12 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
     body.append(f"{len(new_lines)}", style=f"bold {MAJOR_COLOR2}")
     body.append(f" lines, remove ", style="bright_black")
     body.append(f"{len(old_lines)}", style=f"bold {MAJOR_COLOR2}")
-    body.append(f" lines\n\n", style="bright_black")
+    body.append(f" lines", style="bright_black")
+    if match_mode not in MATCH_MODE_EXACT_FAMILY:
+        body.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"bold {EDIT_FUZZY_WARN_COLOR}")
+    elif match_mode != MATCH_MODE_EXACT:
+        body.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"{EDIT_SUBTLE_COLOR}")
+    body.append(f"\n\n", style="bright_black")
 
     # get the maximum digits of preview
     budget_lines = max(end_line, end_line + len(new_lines) - len(old_lines))  # remove (original), added (updated) line
@@ -222,23 +530,36 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
         for idx, line in enumerate(line_prefix1):
             normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx, budget)  # original index
             body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-            body.append(f"{line}", style=f"bold white")
+            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+            first, cont_lines = filled
+            body.append(first, style=f"bold white")
+            for cl in cont_lines:
+                body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
 
     """in the modification region (remove)"""
     for idx, line in enumerate(old_lines):
         remove_prefix1, remove_prefix2 = get_line_prefix(start_line + idx, budget, mode="remove")  # original index
         body.append(remove_prefix1, style=f"bright_black")
         body.append(remove_prefix2, style=f"bright_black on {EDIT_VIEW_RMV_BG}")
-        filled_line = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
-        body.append(f"{filled_line}", style=f"bold white on {EDIT_VIEW_RMV_BG}")
+        first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
+        body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
+        p1_len = len(remove_prefix1)
+        for cl in cont_lines:
+            body.append(cl[:p1_len], style=f"bright_black")
+            body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
 
     """in the modification region (add)"""
     for idx, line in enumerate(new_lines):
-        add_prefix1, add_prefix2 = get_line_prefix(start_line + idx, budget, mode="add")  # updated index
+        add_prefix1, add_prefix2 = get_line_prefix(start_line + idx, budget, mode="add")  # shows at replacement position
         body.append(add_prefix1, style=f"bright_black")
         body.append(add_prefix2, style=f"bright_black on {EDIT_VIEW_ADD_BG}")
-        filled_line = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
-        body.append(f"{filled_line}", style=f"bold white on {EDIT_VIEW_ADD_BG}")
+        first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
+        body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
+        p1_len = len(add_prefix1)
+        for cl in cont_lines:
+            body.append(cl[:p1_len], style=f"bright_black")
+            body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
 
     """after the modification region (normal)"""
     if end_line != len(str_line):  # if tail
@@ -251,7 +572,12 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
         for idx, line in enumerate(line_prefix2):
             normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + len(new_lines) - len(old_lines), budget)  # updated index
             body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-            body.append(f"{line}", style=f"bold white")
+            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+            first, cont_lines = filled
+            body.append(first, style=f"bold white")
+            for cl in cont_lines:
+                body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
     return body
 
 
@@ -263,14 +589,15 @@ def merge_intervals(match_lines: list[tuple[int, int]]):
             merged.append((ds, de))
         else:
             last_ds, last_de = merged[-1]
-            if ds <= last_de:  # overlap or neighboring
+            if ds <= last_de + 1:  # overlap, neighboring, or consecutive
                 merged[-1] = (last_ds, max(last_de, de))
             else:
                 merged.append((ds, de))
     return merged
 
 
-def render_preview_multi(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]]):
+def render_preview_multi(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
+                         match_mode: str = MATCH_MODE_EXACT):
     """render multiple-line file edit preview"""
     merged_match_lines = merge_intervals(match_lines)  # sorted
     # get the maximum digits of preview of this block
@@ -311,23 +638,36 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             for idx, line in enumerate(line_prefix1):
                 normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx, budget)  # original index
                 body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                body.append(f"{line}", style=f"bold white")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                first, cont_lines = filled
+                body.append(first, style=f"bold white")
+                for cl in cont_lines:
+                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
 
         """in the modification region (remove)"""
         for idx, line in enumerate(old_lines):
             remove_prefix1, remove_prefix2 = get_line_prefix(start_line + idx, budget, mode="remove")  # original index
             body.append(remove_prefix1, style=f"bright_black")
             body.append(remove_prefix2, style=f"bright_black on {EDIT_VIEW_RMV_BG}")
-            filled_line = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
-            body.append(f"{filled_line}", style=f"bold white on {EDIT_VIEW_RMV_BG}")
+            first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
+            body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
+            p1_len = len(remove_prefix1)
+            for cl in cont_lines:
+                body.append(cl[:p1_len], style=f"bright_black")
+                body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
 
         """in the modification region (add)"""
         for idx, line in enumerate(new_lines):
             add_prefix1, add_prefix2 = get_line_prefix(start_line + idx + added_lines - removed_lines, budget, mode="add")  # updated index
             body.append(add_prefix1, style=f"bright_black")
             body.append(add_prefix2, style=f"bright_black on {EDIT_VIEW_ADD_BG}")
-            filled_line = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
-            body.append(f"{filled_line}", style=f"bold white on {EDIT_VIEW_ADD_BG}")
+            first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
+            body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
+            p1_len = len(add_prefix1)
+            for cl in cont_lines:
+                body.append(cl[:p1_len], style=f"bright_black")
+                body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
 
         """after the modification region (normal)"""
         this_tail = False
@@ -352,7 +692,12 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             for idx, line in enumerate(line_prefix2):
                 normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
                 body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                body.append(f"{line}", style=f"bold white")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                first, cont_lines = filled
+                body.append(first, style=f"bold white")
+                for cl in cont_lines:
+                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
         if this_tail:
             if end_line >= len(str_line) - EDIT_VIEW_LINE_MARGIN_MULTI + 1:
                 line_prefix2 = str_line[end_line:]
@@ -363,7 +708,12 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             for idx, line in enumerate(line_prefix2):
                 normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
                 body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                body.append(f"{line}", style=f"bold white")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                first, cont_lines = filled
+                body.append(first, style=f"bold white")
+                for cl in cont_lines:
+                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
             if next_head:
                 body.append("\n", style=f"bold white")
         if next_head:
@@ -373,7 +723,12 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             for idx, line in enumerate(line_prefix1):
                 normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx + added_lines - removed_lines, budget)  # updated index
                 body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                body.append(f"{line}", style=f"bold white")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                first, cont_lines = filled
+                body.append(first, style=f"bold white")
+                for cl in cont_lines:
+                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
+                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
         removed_lines += len(old_lines)
         added_lines += len(new_lines)
 
@@ -384,22 +739,37 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
     head.append(f"{added_lines}", style=f"bold {MAJOR_COLOR2}")
     head.append(f" lines, remove ", style="bright_black")
     head.append(f"{removed_lines}", style=f"bold {MAJOR_COLOR2}")
-    head.append(f" lines\n\n", style="bright_black")
+    head.append(f" lines", style="bright_black")
+    if match_mode not in MATCH_MODE_EXACT_FAMILY:
+        head.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"bold {EDIT_FUZZY_WARN_COLOR}")
+    elif match_mode != MATCH_MODE_EXACT:
+        head.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"{EDIT_SUBTLE_COLOR}")
+    head.append(f"\n\n", style="bright_black")
 
     total = head.append(body)
     return total
 
 
-def render_edit_permission(path:str, active_idx: int, user_cache: str):
+def render_edit_permission(path:str, active_idx: int, user_cache: str, match_mode: str = MATCH_MODE_EXACT):
     """render file edit permission"""
     panels = []
     title = Text()
     title.append("Permission Request", style=f"bold {MAJOR_COLOR1}")
+    if match_mode not in MATCH_MODE_EXACT_FAMILY:
+        title.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"bold {EDIT_FUZZY_WARN_COLOR}")
+    elif match_mode != MATCH_MODE_EXACT:
+        title.append(f"  [{MATCH_MODE_DESC[match_mode]}]", style=f"{EDIT_SUBTLE_COLOR}")
     body = Text()
     body.append(f"TECoSim Agent want to request permission for ", style=f"white")
     body.append(f"{TOOL_NAME_EDIT_FILE}", style=f"bold {MAJOR_COLOR1}")
     body.append(f" to path: ", style=f"white")
-    body.append(f"{path}\n\n", style=f"bold {MAJOR_COLOR1}")
+    body.append(f"{path}\n", style=f"bold {MAJOR_COLOR1}")
+    if match_mode not in MATCH_MODE_EXACT_FAMILY:
+        body.append(f"  Match mode: {MATCH_MODE_DESC[match_mode]} — the file text differed slightly but was auto-corrected\n",
+                    style=f"{EDIT_FUZZY_WARN_COLOR}")
+    elif match_mode != MATCH_MODE_EXACT:
+        body.append(f"  Match mode: {MATCH_MODE_DESC[match_mode]}\n", style=f"{EDIT_SUBTLE_COLOR}")
+    body.append(f"\n")
     str_list = ["Yes",
                 "Yes, and agree all file edit during this agent session",
                 "No",
@@ -428,7 +798,7 @@ def render_edit_permission(path:str, active_idx: int, user_cache: str):
 
 
 def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
-                 multi_match: bool, ctx: AgentContext, console: Console) -> tuple[bool, str | None]:
+                 multi_match: bool, match_mode: str, ctx: AgentContext, console: Console) -> tuple[bool, str | None]:
     """top realization of asking user for editing file TUI"""
     active_idx = 0  # default active option
     request_type = TOOL_NAME_EDIT_FILE
@@ -438,27 +808,27 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
     if ctx.permissions[request_type]:
         return True, None
     if not multi_match:
-        console.print(render_preview_single(path, old_string, new_string, str_line, match_lines))
+        console.print(render_preview_single(path, old_string, new_string, str_line, match_lines, match_mode))
     else:
-        console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines))
+        console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines, match_mode))
     while True:
         input_device = create_input()
         action = None
         try:
             with input_device.raw_mode():
                 input_device.flush_keys()
-                with Live(render_edit_permission(path, active_idx, user_cache),
+                with Live(render_edit_permission(path, active_idx, user_cache, match_mode),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:
                         key_press = input_device.read_keys()
                         for key in key_press:
                             if key.key == Keys.Up:
                                 active_idx = (active_idx - 1) % 4
-                                live.update(render_edit_permission(path, active_idx, user_cache))
+                                live.update(render_edit_permission(path, active_idx, user_cache, match_mode))
                                 live.refresh()
                             elif key.key == Keys.Down:
                                 active_idx = (active_idx + 1) % 4
-                                live.update(render_edit_permission(path, active_idx, user_cache))
+                                live.update(render_edit_permission(path, active_idx, user_cache, match_mode))
                                 live.refresh()
                             elif key.key == Keys.Enter:
                                 if active_idx != 3:
