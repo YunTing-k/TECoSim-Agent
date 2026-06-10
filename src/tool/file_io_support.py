@@ -24,14 +24,16 @@ Revision:
 2026.6.9       Yu Huang      2.1      Remove read_line_with_limit to basic_utils.py & Add design and run support for simulator
 2026.6.10      Yu Huang      2.2      Implement 7-stage edit_file fallback matching chain with per-mode TUI visibility &
                                       rewrite fill_str_line for long-line soft-wrap & fix merge_intervals for multi-preview blocks
+2026.6.10      Yu Huang      2.3      Add syntax highlighting (pygments) to edit preview diff views
+2026.6.11      Yu Huang      2.4      Refactor edit diff: separate gutter/line/content bg with per-area colors & 3-part
+                                      continuation gutter split & fix pygments TextLexer extra \n & NBSP fill for full-width bg
 
 Details:
 ---------
-File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE helper — 7-stage cascade
-fallback matching from exact to line-trimmed/indent-flexible/unescaped/boundary-trimmed, with per-match mode tracking and
-debug info; (3) preview renderers (single/match) showing diff-style add/remove with soft-wrap long lines; (4) edit permission
-TUI with preview and per-block match mode visibility; (5) read-only path checking against system and user-defined paths.
-Also provides session saving utility.
+File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE — 7-stage cascade
+fallback matching with per-mode track & debug info; (3) preview renderers with pygments syntax highlighting,
+diff-style add/remove with soft-wrap, 3-part gutter bg, and full-width fill; (4) edit permission TUI with preview
+and match mode visibility; (5) read-only path checking; (6) session saving utility.
 """
 import os
 import math
@@ -41,10 +43,15 @@ import logging
 from pathlib import Path
 from rich.console import Group, Console
 from rich.panel import Panel
+from rich.style import Style
 from rich.text import Text
 from rich.live import Live
 from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
+from pygments.styles import get_style_by_name
+from pygments.lexers import get_lexer_for_filename, TextLexer
+from pygments.util import ClassNotFound
+from pygments import lex
 from src.context import prompt
 from src.utility.basic_utils import get_user_input
 from src.context.agent_context import AgentContext
@@ -52,6 +59,84 @@ from src.tool.scoreboard import Scoreboard
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
+
+_lexer_cache: dict[str, object] = {}
+_pygments_style_map: dict | None = None
+
+
+def _get_lexer(path: str):
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _lexer_cache:
+        try:
+            _lexer_cache[ext] = get_lexer_for_filename(path)
+        except ClassNotFound:
+            _lexer_cache[ext] = TextLexer()
+    return _lexer_cache[ext]
+
+
+def _build_style_map():
+    pygments_style = get_style_by_name(EDIT_SYNTAX_THEME)
+    style_map = {}
+    for token_type, style_str in pygments_style.styles.items():
+        rich_style = Style()
+        if not style_str:
+            style_map[token_type] = rich_style
+            continue
+        parts = style_str.split()
+        if "bold" in parts:
+            rich_style = Style(bold=True)
+        if "italic" in parts:
+            rich_style += Style(italic=True)
+        if "underline" in parts:
+            rich_style += Style(underline=True)
+        for part in parts:
+            if part.startswith("#") and len(part) == 7:
+                rich_style += Style(color=part)
+            elif part.startswith("bg:#"):
+                rich_style += Style(bgcolor=part[3:])
+        if rich_style:
+            style_map[token_type] = rich_style
+    return style_map
+
+
+def _get_style_map():  # type: ignore[return-type]
+    global _pygments_style_map
+    if _pygments_style_map is None:
+        _pygments_style_map = _build_style_map()
+    return _pygments_style_map
+
+
+def _highlight_fragment(text: str, lexer, strip_bg: bool = False) -> Text:
+    style_map = _get_style_map()
+    assert style_map is not None
+    result = Text()
+    tokens = list(lex(text, lexer))
+    # pygments TextLexer (and possibly others) append an extra trailing newline;
+    # strip it when the input text did not originally end with a newline
+    if tokens and not text.endswith('\n'):
+        last_type, last_text = tokens[-1]
+        if last_text.endswith('\n'):
+            tokens[-1] = (last_type, last_text[:-1])
+    for token_type, token_text in tokens:
+        resolved = _resolve_token_style(style_map, token_type)
+        if resolved is not None:
+            if strip_bg and resolved.bgcolor:
+                resolved = Style(color=resolved.color, bold=resolved.bold,
+                                 italic=resolved.italic, underline=resolved.underline)
+            result.append(token_text, style=resolved)
+        else:
+            result.append(token_text)
+    return result
+
+
+def _resolve_token_style(style_map: dict, token_type) -> Style | None:
+    tt = token_type
+    while tt is not None:
+        s = style_map.get(tt)
+        if s is not None and s != Style():
+            return s
+        tt = tt.parent
+    return None
 
 
 def save_sessions(ctx: AgentContext, board: Scoreboard, console: Console, mute: bool = False):
@@ -425,8 +510,11 @@ def get_enhanced_debug_info(content: str, raw_line: list[str], target: str) -> s
     return " | ".join(parts)
 
 
-def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, str]:
-    """get the prefix of line with space and line index"""
+def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, str, str]:
+    """get the prefix of line with space and line index
+    Returns (prefix1_margin, prefix2_line_number, symbol).
+    symbol is ' - ' for remove, ' + ' for add, '   ' for normal.
+    """
     if idx <= 0:
         raise RuntimeError(f"Invalid line index {idx} <= 0")
     else:
@@ -436,15 +524,15 @@ def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, s
     prefix1 = " " * EDIT_VIEW_LEFT_SPACE_MARGIN
     prefix2 = " " * (EDIT_VIEW_LINE_SPACE_MARGIN + budget - digits) + f"{idx}"
     if mode == "remove":
-        prefix2 = prefix2 + " - "
+        symbol = " - "
     elif mode == "add":
-        prefix2 = prefix2 + " + "
+        symbol = " + "
     elif mode == "normal":
-        prefix2 = prefix2 + "   "
+        symbol = "   "
     else:
         sys_log.warning(f"Unknown line prefix mode: {mode}")
-        prefix2 = prefix2 + "  "
-    return prefix1, prefix2
+        symbol = "  "
+    return prefix1, prefix2, symbol
 
 
 def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
@@ -454,15 +542,17 @@ def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
     (terminal_width - offset) for background fill. Subsequent elements are continuation
     lines: indent(offset spaces) + content_chunk + padding, each terminal_width chars.
 
-    The caller must style continuation lines: the first len(prefix1) chars of each
-    continuation should match prefix1 style (no background), and the remainder
-    should match the content style (with background for add/remove blocks).
+    The caller must style continuation lines: the first len(prefix1) chars (margin) use
+    EDIT_VIEW_NORMAL_BG, the next (len(prefix2)+3) chars (line/symbol gutter) use the
+    block's line_bg, and the remainder (content) uses the block's content bg.
+
+    Padding uses U+00A0 (non-breaking space) for invisible background fill.
     """
+    _fill = '\u00A0'
     width = os.get_terminal_size().columns - offset
     if width < 1:
         width = 1
 
-    # preserve original line ending for the final line
     if input_line.endswith('\r\n'):
         line_ending = '\r\n'
         content = input_line[:-2]
@@ -474,30 +564,38 @@ def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
         content = input_line
 
     if len(content) <= width:
-        return content.ljust(width) + line_ending, []
+        return content.ljust(width, _fill) + line_ending, []
 
-    # wrap long lines
     indent = " " * offset
-    parts = [content[:width].ljust(width)]
+    parts = [content[:width].ljust(width, _fill)]
     remaining = content[width:]
     while remaining:
         chunk = remaining[:width]
-        parts.append(indent + chunk.ljust(width))
+        parts.append(indent + chunk.ljust(width, _fill))
         remaining = remaining[width:]
 
-    # first line gets the file line ending
     first = parts[0] + line_ending
     return first, parts[1:]
 
 
 def render_preview_single(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
-                         match_mode: str = MATCH_MODE_EXACT):
+                         match_mode: str = MATCH_MODE_EXACT, lexer = None):
     """render single-line file edit preview"""
     (start_line, end_line) = match_lines[0]
     old_lines = str_line[start_line - 1:end_line]
     old_str = "".join(old_lines)
     new_str = old_str.replace(old_string, new_string, 1)
     new_lines = new_str.splitlines()
+    rmv_line_bg = f"on {EDIT_VIEW_RMV_LINE_BG}"
+    add_line_bg = f"on {EDIT_VIEW_ADD_LINE_BG}"
+    # Style objects for .stylize() calls (Rich renders bg more reliably with Style vs str)
+    rmv_style = Style(bgcolor=EDIT_VIEW_RMV_BG)
+    add_style = Style(bgcolor=EDIT_VIEW_ADD_BG)
+    normal_style = Style(bgcolor=EDIT_VIEW_NORMAL_BG)
+    normal_prefix_style = Style(color="bright_black", bgcolor=EDIT_VIEW_NORMAL_BG)
+    margin_style = Style(color="bright_black", bgcolor=EDIT_VIEW_NORMAL_BG)
+    rmv_line_style = Style(color="bright_black", bgcolor=EDIT_VIEW_RMV_LINE_BG)
+    add_line_style = Style(color="bright_black", bgcolor=EDIT_VIEW_ADD_LINE_BG)
     body = Text()
     body.append("Edit file: ", style=f"bold {MAJOR_COLOR2}")
     body.append(f"{path}\n", style=f"bold white")
@@ -528,38 +626,96 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
             line_prefix1 = str_line[start_line - EDIT_VIEW_LINE_MARGIN_SINGLE - 1:start_line - 1]
             idx_prefix1 = start_line - EDIT_VIEW_LINE_MARGIN_SINGLE
         for idx, line in enumerate(line_prefix1):
-            normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx, budget)  # original index
-            body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+            normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix1 + idx, budget)  # original index
+            body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
             first, cont_lines = filled
-            body.append(first, style=f"bold white")
+            if lexer:
+                first_text = _highlight_fragment(first, lexer)
+                first_text.stylize(normal_style)
+                body.append(first_text)
+            else:
+                body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
             for cl in cont_lines:
-                body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                p = len(normal_prefix1) + len(normal_prefix2) + 3
+                if lexer:
+                    cl_text = _highlight_fragment(cl, lexer)
+                    _cl = cl_text[:p]
+                    _cl.stylize(normal_prefix_style)
+                    body.append(_cl)
+                    _cl = cl_text[p:]
+                    _cl.stylize(normal_style)
+                    body.append(_cl)
+                    body.append("\n")
+                else:
+                    body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                    body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
 
     """in the modification region (remove)"""
     for idx, line in enumerate(old_lines):
-        remove_prefix1, remove_prefix2 = get_line_prefix(start_line + idx, budget, mode="remove")  # original index
-        body.append(remove_prefix1, style=f"bright_black")
-        body.append(remove_prefix2, style=f"bright_black on {EDIT_VIEW_RMV_BG}")
-        first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
-        body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
+        remove_prefix1, remove_prefix2, remove_sym = get_line_prefix(start_line + idx, budget, mode="remove")
+        body.append(remove_prefix1, style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+        body.append(remove_prefix2, style=f"bright_black {rmv_line_bg}")
+        body.append(remove_sym, style=f"{EDIT_VIEW_RMV_SYMBOL_COLOR} {rmv_line_bg}")
+        first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2) + 3)
+        if lexer:
+            first_text = _highlight_fragment(first, lexer, strip_bg=True)
+            first_text.stylize(rmv_style)
+            body.append(first_text)
+        else:
+            body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
         p1_len = len(remove_prefix1)
+        p2_len = len(remove_prefix2) + 3  # +3 for symbol width
         for cl in cont_lines:
-            body.append(cl[:p1_len], style=f"bright_black")
-            body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
+            if lexer:
+                cl_text = _highlight_fragment(cl, lexer, strip_bg=True)
+                _cl = cl_text[:p1_len]
+                _cl.stylize(margin_style)
+                body.append(_cl)
+                _cl = cl_text[p1_len:p1_len + p2_len]
+                _cl.stylize(rmv_line_style)
+                body.append(_cl)
+                _cl = cl_text[p1_len + p2_len:]
+                _cl.stylize(rmv_style)
+                body.append(_cl)
+                body.append("\n")
+            else:
+                body.append(cl[:p1_len], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                body.append(cl[p1_len:p1_len + p2_len], style=f"bright_black {rmv_line_bg}")
+                body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
 
     """in the modification region (add)"""
     for idx, line in enumerate(new_lines):
-        add_prefix1, add_prefix2 = get_line_prefix(start_line + idx, budget, mode="add")  # shows at replacement position
-        body.append(add_prefix1, style=f"bright_black")
-        body.append(add_prefix2, style=f"bright_black on {EDIT_VIEW_ADD_BG}")
-        first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
-        body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
+        add_prefix1, add_prefix2, add_sym = get_line_prefix(start_line + idx, budget, mode="add")  # shows at replacement position
+        body.append(add_prefix1, style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+        body.append(add_prefix2, style=f"bright_black {add_line_bg}")
+        body.append(add_sym, style=f"{EDIT_VIEW_ADD_SYMBOL_COLOR} {add_line_bg}")
+        first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2) + 3)
+        if lexer:
+            first_text = _highlight_fragment(first, lexer, strip_bg=True)
+            first_text.stylize(add_style)
+            body.append(first_text)
+        else:
+            body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
         p1_len = len(add_prefix1)
+        p2_len = len(add_prefix2) + 3  # +3 for symbol width
         for cl in cont_lines:
-            body.append(cl[:p1_len], style=f"bright_black")
-            body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
+            if lexer:
+                cl_text = _highlight_fragment(cl, lexer, strip_bg=True)
+                _cl = cl_text[:p1_len]
+                _cl.stylize(margin_style)
+                body.append(_cl)
+                _cl = cl_text[p1_len:p1_len + p2_len]
+                _cl.stylize(add_line_style)
+                body.append(_cl)
+                _cl = cl_text[p1_len + p2_len:]
+                _cl.stylize(add_style)
+                body.append(_cl)
+                body.append("\n")
+            else:
+                body.append(cl[:p1_len], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                body.append(cl[p1_len:p1_len + p2_len], style=f"bright_black {add_line_bg}")
+                body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
 
     """after the modification region (normal)"""
     if end_line != len(str_line):  # if tail
@@ -570,14 +726,30 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
             line_prefix2 = str_line[end_line:end_line + EDIT_VIEW_LINE_MARGIN_SINGLE]
             idx_prefix2 = end_line + 1
         for idx, line in enumerate(line_prefix2):
-            normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + len(new_lines) - len(old_lines), budget)  # updated index
-            body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+            normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix2 + idx + len(new_lines) - len(old_lines), budget)  # updated index
+            body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+            filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
             first, cont_lines = filled
-            body.append(first, style=f"bold white")
+            if lexer:
+                first_text = _highlight_fragment(first, lexer)
+                first_text.stylize(normal_style)
+                body.append(first_text)
+            else:
+                body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
             for cl in cont_lines:
-                body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                p = len(normal_prefix1) + len(normal_prefix2) + 3
+                if lexer:
+                    cl_text = _highlight_fragment(cl, lexer)
+                    _cl = cl_text[:p]
+                    _cl.stylize(normal_prefix_style)
+                    body.append(_cl)
+                    _cl = cl_text[p:]
+                    _cl.stylize(normal_style)
+                    body.append(_cl)
+                    body.append("\n")
+                else:
+                    body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                    body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
     return body
 
 
@@ -597,9 +769,18 @@ def merge_intervals(match_lines: list[tuple[int, int]]):
 
 
 def render_preview_multi(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
-                         match_mode: str = MATCH_MODE_EXACT):
+                         match_mode: str = MATCH_MODE_EXACT, lexer = None):
     """render multiple-line file edit preview"""
     merged_match_lines = merge_intervals(match_lines)  # sorted
+    rmv_line_bg = f"on {EDIT_VIEW_RMV_LINE_BG}"
+    add_line_bg = f"on {EDIT_VIEW_ADD_LINE_BG}"
+    rmv_style = Style(bgcolor=EDIT_VIEW_RMV_BG)
+    add_style = Style(bgcolor=EDIT_VIEW_ADD_BG)
+    normal_style = Style(bgcolor=EDIT_VIEW_NORMAL_BG)
+    normal_prefix_style = Style(color="bright_black", bgcolor=EDIT_VIEW_NORMAL_BG)
+    margin_style = Style(color="bright_black", bgcolor=EDIT_VIEW_NORMAL_BG)
+    rmv_line_style = Style(color="bright_black", bgcolor=EDIT_VIEW_RMV_LINE_BG)
+    add_line_style = Style(color="bright_black", bgcolor=EDIT_VIEW_ADD_LINE_BG)
     # get the maximum digits of preview of this block
     total_added = 0
     total_removed = 0
@@ -636,38 +817,96 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
                 line_prefix1 = str_line[start_line - EDIT_VIEW_LINE_MARGIN_MULTI - 1:start_line - 1]
                 idx_prefix1 = start_line - EDIT_VIEW_LINE_MARGIN_MULTI
             for idx, line in enumerate(line_prefix1):
-                normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx, budget)  # original index
-                body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix1 + idx, budget)  # original index
+                body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
                 first, cont_lines = filled
-                body.append(first, style=f"bold white")
+                if lexer:
+                    first_text = _highlight_fragment(first, lexer)
+                    first_text.stylize(normal_style)
+                    body.append(first_text)
+                else:
+                    body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
                 for cl in cont_lines:
-                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                    p = len(normal_prefix1) + len(normal_prefix2) + 3
+                    if lexer:
+                        cl_text = _highlight_fragment(cl, lexer)
+                        _cl = cl_text[:p]
+                        _cl.stylize(normal_prefix_style)
+                        body.append(_cl)
+                        _cl = cl_text[p:]
+                        _cl.stylize(normal_style)
+                        body.append(_cl)
+                        body.append("\n")
+                    else:
+                        body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                        body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
 
         """in the modification region (remove)"""
         for idx, line in enumerate(old_lines):
-            remove_prefix1, remove_prefix2 = get_line_prefix(start_line + idx, budget, mode="remove")  # original index
-            body.append(remove_prefix1, style=f"bright_black")
-            body.append(remove_prefix2, style=f"bright_black on {EDIT_VIEW_RMV_BG}")
-            first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2))
-            body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
+            remove_prefix1, remove_prefix2, remove_sym = get_line_prefix(start_line + idx, budget, mode="remove")  # original index
+            body.append(remove_prefix1, style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+            body.append(remove_prefix2, style=f"bright_black {rmv_line_bg}")
+            body.append(remove_sym, style=f"{EDIT_VIEW_RMV_SYMBOL_COLOR} {rmv_line_bg}")
+            first, cont_lines = fill_str_line(line, offset=len(remove_prefix1) + len(remove_prefix2) + 3)
+            if lexer:
+                first_text = _highlight_fragment(first, lexer, strip_bg=True)
+                first_text.stylize(rmv_style)
+                body.append(first_text)
+            else:
+                body.append(first, style=f"bold white on {EDIT_VIEW_RMV_BG}")
             p1_len = len(remove_prefix1)
+            p2_len = len(remove_prefix2) + 3
             for cl in cont_lines:
-                body.append(cl[:p1_len], style=f"bright_black")
-                body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
+                if lexer:
+                    cl_text = _highlight_fragment(cl, lexer, strip_bg=True)
+                    _cl = cl_text[:p1_len]
+                    _cl.stylize(margin_style)
+                    body.append(_cl)
+                    _cl = cl_text[p1_len:p1_len + p2_len]
+                    _cl.stylize(rmv_line_style)
+                    body.append(_cl)
+                    _cl = cl_text[p1_len + p2_len:]
+                    _cl.stylize(rmv_style)
+                    body.append(_cl)
+                    body.append("\n")
+                else:
+                    body.append(cl[:p1_len], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                    body.append(cl[p1_len:p1_len + p2_len], style=f"bright_black {rmv_line_bg}")
+                    body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {EDIT_VIEW_RMV_BG}")
 
         """in the modification region (add)"""
         for idx, line in enumerate(new_lines):
-            add_prefix1, add_prefix2 = get_line_prefix(start_line + idx + added_lines - removed_lines, budget, mode="add")  # updated index
-            body.append(add_prefix1, style=f"bright_black")
-            body.append(add_prefix2, style=f"bright_black on {EDIT_VIEW_ADD_BG}")
-            first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2))
-            body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
+            add_prefix1, add_prefix2, add_sym = get_line_prefix(start_line + idx + added_lines - removed_lines, budget, mode="add")  # updated index
+            body.append(add_prefix1, style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+            body.append(add_prefix2, style=f"bright_black {add_line_bg}")
+            body.append(add_sym, style=f"{EDIT_VIEW_ADD_SYMBOL_COLOR} {add_line_bg}")
+            first, cont_lines = fill_str_line(line, offset=len(add_prefix1) + len(add_prefix2) + 3)
+            if lexer:
+                first_text = _highlight_fragment(first, lexer, strip_bg=True)
+                first_text.stylize(add_style)
+                body.append(first_text)
+            else:
+                body.append(first, style=f"bold white on {EDIT_VIEW_ADD_BG}")
             p1_len = len(add_prefix1)
+            p2_len = len(add_prefix2) + 3
             for cl in cont_lines:
-                body.append(cl[:p1_len], style=f"bright_black")
-                body.append(cl[p1_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
+                if lexer:
+                    cl_text = _highlight_fragment(cl, lexer, strip_bg=True)
+                    _cl = cl_text[:p1_len]
+                    _cl.stylize(margin_style)
+                    body.append(_cl)
+                    _cl = cl_text[p1_len:p1_len + p2_len]
+                    _cl.stylize(add_line_style)
+                    body.append(_cl)
+                    _cl = cl_text[p1_len + p2_len:]
+                    _cl.stylize(add_style)
+                    body.append(_cl)
+                    body.append("\n")
+                else:
+                    body.append(cl[:p1_len], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                    body.append(cl[p1_len:p1_len + p2_len], style=f"bright_black {add_line_bg}")
+                    body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {EDIT_VIEW_ADD_BG}")
 
         """after the modification region (normal)"""
         this_tail = False
@@ -690,14 +929,30 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             line_prefix2 = str_line[end_line:end_line + merged_lines]
             idx_prefix2 = end_line + 1
             for idx, line in enumerate(line_prefix2):
-                normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
-                body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
+                body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
                 first, cont_lines = filled
-                body.append(first, style=f"bold white")
+                if lexer:
+                    first_text = _highlight_fragment(first, lexer)
+                    first_text.stylize(normal_style)
+                    body.append(first_text)
+                else:
+                    body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
                 for cl in cont_lines:
-                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                    p = len(normal_prefix1) + len(normal_prefix2) + 3
+                    if lexer:
+                        cl_text = _highlight_fragment(cl, lexer)
+                        _cl = cl_text[:p]
+                        _cl.stylize(normal_prefix_style)
+                        body.append(_cl)
+                        _cl = cl_text[p:]
+                        _cl.stylize(normal_style)
+                        body.append(_cl)
+                        body.append("\n")
+                    else:
+                        body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                        body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
         if this_tail:
             if end_line >= len(str_line) - EDIT_VIEW_LINE_MARGIN_MULTI + 1:
                 line_prefix2 = str_line[end_line:]
@@ -706,14 +961,30 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
                 line_prefix2 = str_line[end_line:end_line + EDIT_VIEW_LINE_MARGIN_MULTI]
                 idx_prefix2 = end_line + 1
             for idx, line in enumerate(line_prefix2):
-                normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
-                body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix2 + idx + added_lines - removed_lines, budget)  # updated index
+                body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
                 first, cont_lines = filled
-                body.append(first, style=f"bold white")
+                if lexer:
+                    first_text = _highlight_fragment(first, lexer)
+                    first_text.stylize(normal_style)
+                    body.append(first_text)
+                else:
+                    body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
                 for cl in cont_lines:
-                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                    p = len(normal_prefix1) + len(normal_prefix2) + 3
+                    if lexer:
+                        cl_text = _highlight_fragment(cl, lexer)
+                        _cl = cl_text[:p]
+                        _cl.stylize(normal_prefix_style)
+                        body.append(_cl)
+                        _cl = cl_text[p:]
+                        _cl.stylize(normal_style)
+                        body.append(_cl)
+                        body.append("\n")
+                    else:
+                        body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                        body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
             if next_head:
                 body.append("\n", style=f"bold white")
         if next_head:
@@ -721,14 +992,30 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
             line_prefix1 = str_line[nxt_start_line - EDIT_VIEW_LINE_MARGIN_MULTI - 1:nxt_start_line - 1]
             idx_prefix1 = nxt_start_line - EDIT_VIEW_LINE_MARGIN_MULTI
             for idx, line in enumerate(line_prefix1):
-                normal_prefix1, normal_prefix2 = get_line_prefix(idx_prefix1 + idx + added_lines - removed_lines, budget)  # updated index
-                body.append(normal_prefix1 + normal_prefix2, style=f"bright_black")
-                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2))
+                normal_prefix1, normal_prefix2, _ = get_line_prefix(idx_prefix1 + idx + added_lines - removed_lines, budget)  # updated index
+                body.append(normal_prefix1 + normal_prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                filled = fill_str_line(line, offset=len(normal_prefix1) + len(normal_prefix2) + 3)
                 first, cont_lines = filled
-                body.append(first, style=f"bold white")
+                if lexer:
+                    first_text = _highlight_fragment(first, lexer)
+                    first_text.stylize(normal_style)
+                    body.append(first_text)
+                else:
+                    body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
                 for cl in cont_lines:
-                    body.append(cl[:len(normal_prefix1) + len(normal_prefix2)], style=f"bright_black")
-                    body.append(cl[len(normal_prefix1) + len(normal_prefix2):] + "\n", style=f"bold white")
+                    p = len(normal_prefix1) + len(normal_prefix2) + 3
+                    if lexer:
+                        cl_text = _highlight_fragment(cl, lexer)
+                        _cl = cl_text[:p]
+                        _cl.stylize(normal_prefix_style)
+                        body.append(_cl)
+                        _cl = cl_text[p:]
+                        _cl.stylize(normal_style)
+                        body.append(_cl)
+                        body.append("\n")
+                    else:
+                        body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                        body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
         removed_lines += len(old_lines)
         added_lines += len(new_lines)
 
@@ -808,9 +1095,11 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
     if ctx.permissions[request_type]:
         return True, None
     if not multi_match:
-        console.print(render_preview_single(path, old_string, new_string, str_line, match_lines, match_mode))
+        render_lexer = _get_lexer(path)
+        console.print(render_preview_single(path, old_string, new_string, str_line, match_lines, match_mode, render_lexer))
     else:
-        console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines, match_mode))
+        render_lexer = _get_lexer(path)
+        console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines, match_mode, render_lexer))
     while True:
         input_device = create_input()
         action = None

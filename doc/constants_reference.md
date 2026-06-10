@@ -132,8 +132,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `MAJOR_COLOR1` | `#FF9FF3`（亮粉 bright pink） | 强调色、内容图标、进度条终点 / Accent, content icon, progress bar end |
 | `MAJOR_COLOR2` | `#54A0FF`（蓝 blue） | 主色调、命令名称、进度条起点 / Primary color, command names, progress bar start |
 | `REASONING_COLOR` | `#54A0FF` | 推理文本颜色 / Reasoning text color |
-| `EDIT_VIEW_RMV_BG` | `#5F0000`（暗红 dark red） | 文件编辑 diff 删除行背景 / Removed line background in edit diff |
-| `EDIT_VIEW_ADD_BG` | `#005F00`（暗绿 dark green） | 文件编辑 diff 新增行背景 / Added line background in edit diff |
+| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色 / Fuzzy match warning color |
+| `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | 精确匹配族回退模式标签 / Subtle label for exact-family fallback modes |
 
 ### 图标与符号 | Icons & Symbols
 
@@ -253,6 +253,14 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
+| `EDIT_VIEW_RMV_BG` | `#37222C`（暗红 dark red） | 删除行内容区域背景色 / Removed line content background |
+| `EDIT_VIEW_ADD_BG` | `#20303B`（暗青 dark cyan） | 新增行内容区域背景色 / Added line content background |
+| `EDIT_VIEW_NORMAL_BG` | `#141414`（深灰 dark gray） | 未修改行背景色 / Normal/context line background |
+| `EDIT_VIEW_RMV_LINE_BG` | `#2D1F26`（暗红 dark red） | 删除行行号栏背景色 / Removed line number gutter background |
+| `EDIT_VIEW_ADD_LINE_BG` | `#1B2B34`（暗青 dark cyan） | 新增行行号栏背景色 / Added line number gutter background |
+| `EDIT_VIEW_RMV_SYMBOL_COLOR` | `#E26A75`（粉红 pink） | 删除行 `-` 符号颜色 / Remove `-` symbol color |
+| `EDIT_VIEW_ADD_SYMBOL_COLOR` | `#B8DB87`（绿 green） | 新增行 `+` 符号颜色 / Add `+` symbol color |
+| `EDIT_SYNTAX_THEME` | `one-dark` | 编辑预览语法高亮主题 / Syntax highlighting theme for edit preview |
 | `EDIT_VIEW_LINE_MARGIN_SINGLE` | `3` | 单次编辑预览上下文行数 / Context lines for single edit preview |
 | `EDIT_VIEW_LINE_MARGIN_MULTI` | `2` | 多次编辑预览上下文行数 / Context lines for multi edit preview |
 | `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |

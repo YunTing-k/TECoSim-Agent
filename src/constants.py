@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 3
+TECOSIM_AGENT_UPDATE_VERSION: int = 4
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -228,12 +228,18 @@ PERMISSION_REQUEST_DSEC_CHAR_MAX: int = 500
 STREAM_DISPLAY_REFRESH_RATE: int = 20
 STREAM_DISPLAY_MAX_REASON_LINE: int = 10
 STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
-EDIT_VIEW_RMV_BG: str = "#37222C"  # remove line bg color
-EDIT_VIEW_ADD_BG: str = "#303C1A"  # add line bg color
+EDIT_VIEW_RMV_BG: str = "#37222C"  # remove line content bg color
+EDIT_VIEW_ADD_BG: str =  "#20303B" # add line content bg color
+EDIT_VIEW_NORMAL_BG: str = "#141414"  # normal/context line bg color
+EDIT_VIEW_RMV_LINE_BG: str = "#2D1F26"  # remove line number darker bg color
+EDIT_VIEW_ADD_LINE_BG: str = "#1B2B34"  # add line number darker bg color
+EDIT_VIEW_RMV_SYMBOL_COLOR: str = "#E26A75"  # remove '-' symbol color
+EDIT_VIEW_ADD_SYMBOL_COLOR: str = "#B8DB87"  # add '+' symbol color
 EDIT_VIEW_LINE_MARGIN_SINGLE: int = 3
 EDIT_VIEW_LINE_MARGIN_MULTI: int = 2
 EDIT_VIEW_LEFT_SPACE_MARGIN: int = 5
 EDIT_VIEW_LINE_SPACE_MARGIN: int = 1
+EDIT_SYNTAX_THEME: str = "one-dark"
 """Match mode for edit_file fallback chain"""
 MATCH_MODE_EXACT: str = "exact"
 MATCH_MODE_QUOTE_NORM: str = "quote_norm"
