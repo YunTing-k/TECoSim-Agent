@@ -73,7 +73,6 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization |
 | `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`) |
 | `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown |
-| `RENDER_BASH_AS_MD` | 是否以 Markdown 格式渲染 Bash 命令输出 / Render bash command output as Markdown |
 | `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session |
 | `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected |
 | `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated |
@@ -87,7 +86,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds) |
 | `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume |
 | `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit |
-| `WEB_FETCH_LLM_CAHR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM |
+| `WEB_FETCH_LLM_CHAR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM |
 | `WEB_SEARCH_API_MODE` | 网络搜索 API 模式（如 `deep`）/ Web search API mode |
 | `WEB_SEARCH_PROXY` | 网络搜索代理地址 / Web search proxy |
 | `WEB_SEARCH_INCLUDE_DOMAINS` | 网络搜索限定包含的域名 / Web search included domains |
@@ -125,8 +124,8 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 > **模型兼容性 | Model Compatibility**
 > - `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT`（`api_configs.json`）：分别控制主模型和快速模型的 DeepSeek 格式支持。启用后 Agent 会在对应模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`
 >   Per-model DeepSeek format support in `api_configs.json`. When enabled, the agent handles the `thinking` field in responses, converting it to `reasoning` format. Set to `false` for non-DeepSeek models
-> - `RENDER_RESPONSE_AS_MD` / `RENDER_BASH_AS_MD`：控制 LLM 响应和 Bash 输出是否用 Rich 库的 Markdown 渲染。关闭后以纯文本显示
->   Controls whether LLM responses and Bash output are rendered as Markdown via the Rich library. Disable for plain text display
+> - `RENDER_RESPONSE_AS_MD`：控制 LLM 响应是否用 Rich 库的 Markdown 渲染。关闭后以纯文本显示
+>   Controls whether LLM responses are rendered as Markdown via the Rich library. Disable for plain text display
 
 ---
 

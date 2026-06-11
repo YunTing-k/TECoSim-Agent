@@ -639,7 +639,7 @@ def render_exit(ctx: AgentContext, active_idx: int):
     body = Text()
     body.append(f"\nAre you sure to exit TECoSim Agent?\n", style="white")
     body.append(f"Tip: You can always resume this session with ", style="white")
-    body.append(f"python src.main -r ", style=f"bold {MAJOR_COLOR2}")
+    body.append(f"python -m src.main -r ", style=f"bold {MAJOR_COLOR2}")
     body.append(f"{ctx.session_uuid}\n\n", style=f"bold {MAJOR_COLOR1}")
     str_list = ["Yes", "No"]
     for i in range(2):

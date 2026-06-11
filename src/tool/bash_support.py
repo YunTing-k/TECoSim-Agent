@@ -11,24 +11,30 @@ Revision:
 ---------
 2026.5.12      Yu Huang      1.0      Separate from tool_def.py
 2026.5.28      Yu Huang      1.1      Revise the bash risk evaluate
-2026.6.5       Yu Huang      1.2      Render bash command as Markdown support
+2026.6.5       Yu Huang      1.2      Render bash command as Markdown via rich-markdown
+2026.6.11      Yu Huang      1.3      Unify as edit-view style: line-number gutter + pygments highlight-then-wrap (preserves
+                                      token boundaries across continuation) + dual-BG padding with $bash/$out labels & truncation
 
 Details:
 ---------
 Bash risk evaluation engine. `split_commands()` tokenizes complex multi-pipe commands via shlex. `get_bash_risk()` classifies
 each fragment (high-risk: sudo, dd, iptables, etc.; package mgmt; network; file ops; git; docker; build/script; safe commands).
-`evaluate_bash_risk()` returns highest risk across all fragments, respecting user-granted permission tokens.
+`evaluate_bash_risk()` returns highest risk across all fragments, respecting user-granted permission tokens. `get_bash_render()`
+renders commands with edit-view gutter, pygments syntax highlighting, and visual padding for permission preview.
+`get_bash_result_render()` shows command output with line numbers, configurable truncation, and visual padding.
 """
 import logging
 import re
 import shlex
+import math
+import os
+import unicodedata
 
 from rich.text import Text
-from rich.table import Table
-from rich.console import Group
+from rich.style import Style
 from src.constants import *
 from src.context.agent_context import AgentContext
-from src.utility.basic_utils import BashMD
+from src.tool.file_io_support import _highlight_fragment, _get_lexer, get_line_prefix, fill_str_line
 
 sys_log = logging.getLogger('logger')
 
@@ -531,32 +537,168 @@ def evaluate_bash_risk(commands: str, ctx: AgentContext) -> tuple[str, str, int]
     return cmd_risk_list[idx], cmd_reason_list[idx], cmd_level_list[idx]
 
 
-def get_bash_render(commands: str, as_md: bool) -> Group:
-    """get the renderable of a bash command string"""
-    parts = []
+def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: Style, max_width: int, gutter_width: int):
+    """highlight then split by display width — preserves token boundaries across continuation lines."""
+    hl = _highlight_fragment(line, lexer, strip_bg=True)
+    plain = str(hl)
+
+    char_styles = [None] * len(plain)
+    for span in hl.spans:
+        for i in range(span.start, span.end):
+            if char_styles[i] is None:
+                char_styles[i] = span.style
+
+    lines = []
+    pos = 0
+    total = len(plain)
+    while pos < total:
+        w = 0
+        start = pos
+        while pos < total:
+            cw = 2 if unicodedata.east_asian_width(plain[pos]) in ('F', 'W') else 1
+            if w + cw > max_width:
+                break
+            w += cw
+            pos += 1
+        chunk = Text()
+        i = start
+        while i < pos:
+            j = i + 1
+            sty = char_styles[i]
+            while j < pos and char_styles[j] == sty:
+                j += 1
+            chunk.append(plain[i:j], style=sty)
+            i = j
+        chunk.stylize(content_style)
+        if lines:
+            chunk = Text.assemble((" " * gutter_width, gutter_style), chunk)
+        else:
+            _pad = max_width - len(plain[start:pos])
+            if _pad > 0:
+                chunk.append("\u00a0" * _pad, style=content_style)
+        lines.append(chunk)
+
+    if len(lines) > 1:
+        last = lines[-1]
+        _pad = gutter_width + max_width - len(str(last))
+        if _pad > 0:
+            last.append("\u00a0" * _pad, style=content_style)
+    return lines[0] if lines else Text(), lines[1:]
+
+
+def get_bash_render(commands: str) -> Text:
+    """render bash command with line-number gutter, pygments syntax highlighting, and visual padding."""
+    lexer = _get_lexer('script.sh')
+    content_style = Style(bgcolor=EDIT_VIEW_NORMAL_BG)
+    gutter_style = Style(color="bright_black", bgcolor=BASH_VIEW_GUTTER_BG)
+
     lines = commands.strip('\n').split('\n')
-    line_count = len(lines)
-    line_num_width = len(str(line_count))
+    budget = math.floor(math.log10(max(len(lines), 1))) + 1
+    gutter_width = EDIT_VIEW_LEFT_SPACE_MARGIN + budget + EDIT_VIEW_LINE_SPACE_MARGIN + 1
+    max_width = os.get_terminal_size().columns - gutter_width - 1
+    _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
+    gutter_nbsp = "\u00a0" * gutter_width
 
-    if as_md:
-        t = Table(show_header=False, show_edge=False, padding=(0, 0, 0, BASH_VIEW_LEFT_SPACE_MARGIN),
-                  box=None, collapse_padding=True)
-        t.add_column(vertical="middle")
-        numbered_lines = []
-        for i, line in enumerate(lines, 1):
-            numbered_lines.append(f"{i:>{line_num_width}}:{' ' * BASH_VIEW_LINE_NUM_MARGIN}{line}")
-        numbered_commands = "\n".join(numbered_lines)
-        bash_content = BashMD("```bash\n" + numbered_commands.strip('\n') + "\n```")
-        t.add_row(bash_content)
-    else:
-        t = Table(show_header=False, show_edge=False, padding=0,
-                  box=None, collapse_padding=True)
-        t.add_column(no_wrap=True, vertical="middle")
-        t.add_column(vertical="middle")
-        line_numbers = "\n".join(
-            f"{' ' * BASH_VIEW_LEFT_SPACE_MARGIN}{i:>{line_num_width}}{":" + ' ' * BASH_VIEW_LINE_NUM_MARGIN}"
-            for i in range(1, line_count + 1))
-        t.add_row(Text(f"{line_numbers}", style=f"bright_black"), Text(commands.strip('\n')))
+    body = Text()
+    for i in range(BASH_VIEW_PADDING_LINES):
+        if i == 0:
+            lbl = _pad_label("$bash")
+            body.append(lbl, style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
+            first, _ = fill_str_line("", offset=len(lbl))
+            body.append(first, style=content_style)
+        else:
+            first, _ = fill_str_line("", offset=gutter_width)
+            body.append(gutter_nbsp, style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
+            body.append(first, style=content_style)
 
-    parts.append(t)
-    return Group(*parts)
+    for idx, line in enumerate(lines):
+        prefix1, prefix2, _ = get_line_prefix(idx + 1, budget)
+        body.append(prefix1 + prefix2 + " ", style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
+        first, cont_lines = _highlight_and_wrap(line, lexer, content_style, gutter_style,
+                                                 max_width, gutter_width)
+        body.append(first)
+        if cont_lines:
+            for cl in cont_lines:
+                body.append("\n")
+                body.append(cl)
+            body.append("\n")
+        else:
+            body.append("\n")
+
+    for _ in range(BASH_VIEW_PADDING_LINES):
+        first, _ = fill_str_line("", offset=gutter_width)
+        body.append(gutter_nbsp, style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
+        body.append(first, style=content_style)
+    return body
+
+
+def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
+    """render bash execution output with line numbers, configurable truncation, and visual padding."""
+    output = stdout.rstrip('\n')
+    if stderr and stderr.strip():
+        if output:
+            output += "\n"
+        output += stderr.rstrip('\n')
+
+    if not output:
+        return Text("(empty output)", style="bright_black")
+
+    truncated = False
+    truncated_lines = 0
+    if 0 < BASH_RESULT_MAX_CHARS < len(output):
+        output = output[:BASH_RESULT_MAX_CHARS]
+        truncated = True
+
+    lines = output.split('\n')
+    if 0 < BASH_RESULT_MAX_LINES < len(lines):
+        truncated_lines = len(lines) - BASH_RESULT_MAX_LINES
+        lines = lines[:BASH_RESULT_MAX_LINES]
+        truncated = True
+
+    budget = math.floor(math.log10(max(len(lines), 1))) + 1
+    gutter_width = EDIT_VIEW_LEFT_SPACE_MARGIN + budget + EDIT_VIEW_LINE_SPACE_MARGIN + 1
+    _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
+    content_style = Style(bgcolor=BASH_RESULT_CONTENT_BG)
+
+    body = Text()
+    for i in range(BASH_RESULT_PADDING_LINES):
+        if i == 0:
+            lbl = _pad_label("$ out")
+            body.append(lbl, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+            first, _ = fill_str_line("", offset=len(lbl))
+            body.append(first, style=content_style)
+        else:
+            gutter_nbsp = "\u00a0" * gutter_width
+            first, _ = fill_str_line("", offset=len(gutter_nbsp))
+            body.append(gutter_nbsp, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+            body.append(first, style=content_style)
+
+    for idx, line in enumerate(lines):
+        prefix1, prefix2, _ = get_line_prefix(idx + 1, budget)
+        body.append(prefix1, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+        body.append(prefix2 + " ", style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+        first, cont_lines = fill_str_line(line, offset=len(prefix1) + len(prefix2) + 1)
+        body.append(first, style=content_style)
+        p = len(prefix1) + len(prefix2) + 1
+        for cl in cont_lines:
+            body.append(cl[:p], style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+            body.append(cl[p:] + "\n", style=f"bold white on {BASH_RESULT_CONTENT_BG}")
+
+    if truncated:
+        info = "(%d lines not shown)" % truncated_lines if truncated_lines else "(output truncated)"
+        prefix1, prefix2, _ = get_line_prefix(len(lines) + 1, budget)
+        body.append(prefix1, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+        body.append(prefix2 + " ", style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+        info_first, info_cont = fill_str_line(info, offset=len(prefix1) + len(prefix2) + 1)
+        body.append(info_first, style=Style(color="bright_black", bgcolor=BASH_RESULT_CONTENT_BG))
+        p = len(prefix1) + len(prefix2) + 1
+        for cl in info_cont:
+            body.append(cl[:p], style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+            body.append(cl[p:] + "\n", style=f"bright_black on {BASH_RESULT_CONTENT_BG}")
+
+    for _ in range(BASH_RESULT_PADDING_LINES):
+        gutter_nbsp = "\u00a0" * gutter_width
+        first, _ = fill_str_line("", offset=len(gutter_nbsp))
+        body.append(gutter_nbsp, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
+        body.append(first, style=content_style)
+    return body

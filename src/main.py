@@ -214,12 +214,10 @@ if __name__ == '__main__':
                     else:  # plain text input
                         task_reminder = prompt.get_task_reminder(ctx, board, "user_input")
                         if task_reminder is not None:
-                            ctx.messages.append({"role": "user", "content": f"{user_input}\n"
-                                                                            f"{SYS_REMINDER_START_LABEL}\n"
+                            ctx.messages.append({"role": "user", "content": f"{SYS_REMINDER_START_LABEL}\n"
                                                                             f"{task_reminder}\n"
                                                                             f"{SYS_REMINDER_END_LABEL}"})
-                        else:
-                            ctx.messages.append({"role": "user", "content": user_input})
+                        ctx.messages.append({"role": "user", "content": user_input})
                         ctx.user_prompts += 1
                         if ctx.user_prompts == ctx.agent_configs["AUTO_SUMMARY_TRIGGER"]:  # summarize according to history
                             title = summarize_support.summarize_session(ctx=ctx, console=console)

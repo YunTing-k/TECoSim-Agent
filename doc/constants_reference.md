@@ -155,8 +155,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
-| `REASON_ICON_SYLTE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
-| `CONTENT_ICON_SYLTE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
+| `REASON_ICON_STYLE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
+| `CONTENT_ICON_STYLE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
 | `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
 | `BASH_STYLE` | `none` | Bash 命令输出样式 / Bash output style |
@@ -276,13 +276,32 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `MATCH_MODE_TRIMMED_BOUNDARY` | `trimmed_boundary` | 边界裁剪匹配（首尾空白去除）/ Boundary trimmed match (strip leading/trailing whitespace) |
 | `MATCH_MODE_DESC` | _(字典 dict)_ | 匹配模式枚举到 UI 显示的映射 / Map from match mode enum to human-readable description |
 | `MATCH_MODE_EXACT_FAMILY` | `{exact, quote_norm, unicode_escape}` | 精确匹配族（TUI 中灰色标签，非橙色警告）/ Exact match family (grey label in TUI, not orange warning) |
+| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
+| `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | exact-family 回退模式标签颜色（quote_norm / unicode_escape）/ Subtle label color for exact-family fallback modes (quote_norm / unicode_escape) |
+| `MATCH_MODE_EXACT` | `exact` | 完全匹配 / Exact string match |
+| `MATCH_MODE_QUOTE_NORM` | `quote_norm` | 引号标准化匹配（弯曲引号 → 直引号，含破折号/NBSP/全角空格）/ Quote + punctuation normalized match (curly quotes/dashes/NBSP/fullwidth-space → ASCII) |
+| `MATCH_MODE_UNICODE_ESCAPE` | `unicode_escape` | Unicode 转义解码匹配（`\\uXXXX` → 实际字符）/ Unicode escape decoded match (`\\uXXXX` → actual character) |
+| `MATCH_MODE_LINE_TRIMMED` | `line_trimmed` | 行尾空白裁剪匹配 / Line trailing whitespace trimmed match |
+| `MATCH_MODE_FLEX_INDENT` | `flex_indent` | 弹性缩进匹配（忽略前导空格差异）/ Flexible indentation match (ignore leading whitespace differences) |
+| `MATCH_MODE_ESCAPE_LITERAL` | `escape_literal` | 转义字面量校正匹配（`\\t`/`\\n` → 实际字符）/ Escape literal corrected match (`\\t`/`\\n` → actual tab/newline) |
+| `MATCH_MODE_TRIMMED_BOUNDARY` | `trimmed_boundary` | 边界裁剪匹配（首尾空白去除）/ Boundary trimmed match (strip leading/trailing whitespace) |
+| `MATCH_MODE_DESC` | _(字典 dict)_ | 匹配模式枚举到 UI 显示的映射 / Map from match mode enum to human-readable description |
+| `MATCH_MODE_EXACT_FAMILY` | `{exact, quote_norm, unicode_escape}` | 精确匹配族（TUI 中灰色标签，非橙色警告）/ Exact match family (grey label in TUI, not orange warning) |
+| `_PUNCTUATION_MAP` | (6 项 `dict`) | Unicode 标点归一化表：en-dash/em-dash→连字符，NBSP/全角空格→普通空格，弯曲引号→直引号 / Punctuation normalization map: en/em-dashes, NBSP, fullwidth-space, curly quotes → ASCII |
 
-### Bash 视图 | Bash View (Command Output)
+### Bash 视图 | Bash View (Command Preview & Result Output)
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `BASH_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `BASH_VIEW_LINE_NUM_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+| `BASH_VIEW_GUTTER_BG` | `#222222`（深灰 dark grey） | Bash 命令预览行号栏背景色 / Bash command gutter background |
+| `BASH_VIEW_PADDING_LINES` | `1` | Bash 命令预览首尾空白过渡行数 / Blank padding lines above/below command block |
+| `BASH_RESULT_GUTTER_BG` | `#282828`（中灰 mid grey） | Bash 结果输出行号栏背景色 / Bash result gutter background |
+| `BASH_RESULT_CONTENT_BG` | `#1C1C1C`（浅黑 light black） | Bash 结果输出内容区背景色 / Bash result content background |
+| `BASH_RESULT_MAX_LINES` | `20` | Bash 结果预览最大显示行数（超出截断）/ Max lines to display before truncation |
+| `BASH_RESULT_MAX_CHARS` | `1200` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
+| `BASH_RESULT_PADDING_LINES` | `1` | Bash 结果预览首尾空白过渡行数 / Blank padding lines above/below result block |
 
 ### URL 缓存 | URL Cache
 
@@ -308,7 +327,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `2` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `5` | Agent 更新版本号 / Agent update version |
 | `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID，用于 Scoreboard 任务认领识别 / Main agent identifier for Scoreboard task claiming |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |

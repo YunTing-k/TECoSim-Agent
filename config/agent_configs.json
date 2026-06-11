@@ -37,7 +37,6 @@
     "MCP_TIMEOUT_S": 60,
 
     "RENDER_RESPONSE_AS_MD": true,
-    "RENDER_BASH_AS_MD": true,
     "RESUME_DISPLAY_SYS_REMINDER": false,
     "RESUME_DISPLAY_SKILLS": false,
     "RESUME_DISPLAY_CRONS": false,

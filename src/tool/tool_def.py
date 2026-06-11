@@ -42,6 +42,8 @@ Revision:
 2026.6.9       Yu Huang      3.8      Add design and run support for simulator & Merge task get/list into task query & Revise the prompts
                                       of task tools & Revise the prompts simulation tools
 2026.6.10      Yu Huang      3.9      Main/Fast model can configure deepseek support dependently & Add fallback of query tasks if id is not valid
+2026.6.11      Yu Huang      4.0      Unify bash command render as edit-view style (line-number gutter + pygments highlight-
+                                      then-wrap); add result preview with line numbers, configurable truncation and padding
 
 Details:
 ---------
@@ -76,7 +78,7 @@ from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.web_support import web_search_top, web_search_process
 from src.tool.ask_permission import ask_permission_tui
-from src.tool.bash_support import evaluate_bash_risk, get_bash_render
+from src.tool.bash_support import evaluate_bash_risk, get_bash_render, get_bash_result_render
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled
 from src.constants import *
 
@@ -898,7 +900,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         """request permission"""
         pause_for_permission(progress)
         command = arguments["command"]
-        progress.console.print(get_bash_render(command, ctx.agent_configs["RENDER_BASH_AS_MD"]))
+        progress.console.print(get_bash_render(command))
         token, info = ask_permission_tui(ctx, risk, f"bash description: {arguments["description"]}, "
                                          f"risk level: {level} with reason: {reason}.\n(Full command is shown above)",
                                          progress.console)
@@ -958,10 +960,14 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                               f"{description} with command: {command} timeout > {timeout / 1000} s. Command interrupted")
                 progress.console.print(f"{func_name} {TIMEOUT_LABEL}: "
                                        f"{description} timeout > {timeout / 1000} s. Command interrupted", style="bold red")
+                stdout_str = stdout.decode('utf-8', errors='replace')
+                stderr_str = stderr.decode('utf-8', errors='replace')
+                if stdout_str.strip() or stderr_str.strip():
+                    progress.console.print(get_bash_result_render(stdout_str, stderr_str))
                 return {"status": TIMEOUT_LABEL,
                         "return code": proc.returncode,
-                        "stdout": stdout.decode('utf-8', errors='replace'),
-                        "stderr": stderr.decode('utf-8', errors='replace')}
+                        "stdout": stdout_str,
+                        "stderr": stderr_str}
             except Exception as e:
                 proc.terminate()
                 try:
@@ -972,10 +978,14 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                 raise RuntimeError(e)
             sys_log.debug(f"{func_name}: {description} with command {command} done")
             progress.console.print(f"{func_name}: {description} done", style="bright_black")
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+            if stdout_str.strip() or stderr_str.strip():
+                progress.console.print(get_bash_result_render(stdout_str, stderr_str))
             return {"status": DONE_LABEL,
                     "return code": proc.returncode,
-                    "stdout": stdout.decode('utf-8', errors='replace'),
-                    "stderr": stderr.decode('utf-8', errors='replace')}
+                    "stdout": stdout_str,
+                    "stderr": stderr_str}
         finally:
             if _tmp_script_path is not None:
                 try:

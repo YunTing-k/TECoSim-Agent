@@ -24,7 +24,7 @@ from tool.file_io_support import (
     find_actual_string, match_line_ranges,
     get_match_debug_info, get_enhanced_debug_info,
     _unescape_unicode, _unescape_literals, _strip_common_indent,
-    _normalize_quotes,
+    _normalize_quotes, _normalize_punctuation,
 )
 
 
@@ -334,6 +334,105 @@ class TestNormalizeQuotes(unittest.TestCase):
 
     def test_straight_unchanged(self):
         self.assertEqual(_normalize_quotes("'hello'"), "'hello'")
+
+    def test_backward_compat(self):
+        """old API delegates to _normalize_punctuation."""
+        self.assertEqual(_normalize_quotes('\u2018x\u2019'), _normalize_punctuation('\u2018x\u2019'))
+
+
+class TestNormalizePunctuation(unittest.TestCase):
+    def test_em_dash(self):
+        self.assertEqual(_normalize_punctuation('foo\u2014bar'), 'foo-bar')
+
+    def test_en_dash(self):
+        self.assertEqual(_normalize_punctuation('foo\u2013bar'), 'foo-bar')
+
+    def test_nbsp(self):
+        self.assertEqual(_normalize_punctuation('hello\u00a0world'), 'hello world')
+
+    def test_fullwidth_space(self):
+        self.assertEqual(_normalize_punctuation('hello\u3000world'), 'hello world')
+
+    def test_all_at_once(self):
+        result = _normalize_punctuation('x\u2014\u00a0y = \u201cz\u201d')
+        self.assertEqual(result, 'x- y = "z"')
+
+
+class TestFindActualStringEnhanced(unittest.TestCase):
+    """Tests for enhanced find_actual_string with dash/space normalization and EOF-first."""
+
+    def test_dash_normalization(self):
+        content = 'if x == y-then do_something()'
+        target = 'if x == y\u2014then do_something()'
+        self.assertEqual(find_actual_string(content, target), content)
+
+    def test_nbsp_normalization(self):
+        content = 'hello world'
+        target = 'hello\u00a0world'
+        self.assertEqual(find_actual_string(content, target), content)
+
+    def test_fullwidth_space(self):
+        content = 'foo bar'
+        target = 'foo\u3000bar'
+        self.assertEqual(find_actual_string(content, target), content)
+
+    def test_normal_forward_still_works(self):
+        self.assertEqual(find_actual_string('hello', 'hello'), 'hello')
+
+    def test_eof_first_rfind(self):
+        content = 'prefix-early\u2014rest prefix-late\u2014end'
+        target = 'prefix-late-end'
+        self.assertIsNotNone(find_actual_string(content, target))
+
+
+class TestPatternLengthGuards(unittest.TestCase):
+    def test_match_line_ranges(self):
+        self.assertEqual(match_line_ranges('short', 'this is too long for short', True), [])
+
+    def test_line_trimmed(self):
+        self.assertEqual(match_line_trimmed(['line1\n'], 'line1\nline2\nline3\n'), ([], ''))
+
+    def test_flex_indent(self):
+        self.assertEqual(match_flexible_indent(['line1\n'], 'line1\n\nline2\n\nline3\n'), ([], ''))
+
+    def test_escape_literal(self):
+        self.assertEqual(match_escape_literal('short', '\\n\\n\\n\\n\\n\\n\\n'), ([], ''))
+
+    def test_trimmed_boundary(self):
+        self.assertEqual(match_trimmed_boundary('short', '  this is too long  '), ([], ''))
+
+    def test_unicode_escape(self):
+        result = match_unicode_escape('short', '\\u0041\\u0042\\u0043\\u0044\\u0045\\u0046')
+        self.assertEqual(result, ([], ''))
+
+    def test_normal_cases_still_pass(self):
+        self.assertEqual(len(match_line_ranges('hello world', 'hello', True)), 1)
+
+
+class TestHunkSeparator(unittest.TestCase):
+    """Test that the U+22EE separator appears between blocks."""
+
+    def test_separator_rendered(self):
+        from unittest.mock import patch
+        from rich.console import Console
+        import io, re, os
+        from tool.file_io_support import render_preview_multi
+
+        str_line = [
+            'def foo():\n', '    return 1\n',
+            'def bar():\n', '    return 2\n',
+            'def baz():\n', '    return 3\n',
+            'def qux():\n', '    return 4\n',
+            'def xyz():\n', '    return 5\n',
+            'def abc():\n', '    return 6\n',
+        ]
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            body = render_preview_multi('t.py', 'return', 'yield', str_line, [(2, 2), (7, 7)])
+        f = io.StringIO()
+        console = Console(file=f, force_terminal=True, width=120, height=40)
+        console.print(body)
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', f.getvalue())
+        self.assertIn('\u22ee', stripped)
 
 
 class TestIntegration(unittest.TestCase):
