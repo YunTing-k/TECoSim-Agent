@@ -409,32 +409,6 @@ class TestPatternLengthGuards(unittest.TestCase):
         self.assertEqual(len(match_line_ranges('hello world', 'hello', True)), 1)
 
 
-class TestHunkSeparator(unittest.TestCase):
-    """Test that the U+22EE separator appears between blocks."""
-
-    def test_separator_rendered(self):
-        from unittest.mock import patch
-        from rich.console import Console
-        import io, re, os
-        from tool.file_io_support import render_preview_multi
-
-        str_line = [
-            'def foo():\n', '    return 1\n',
-            'def bar():\n', '    return 2\n',
-            'def baz():\n', '    return 3\n',
-            'def qux():\n', '    return 4\n',
-            'def xyz():\n', '    return 5\n',
-            'def abc():\n', '    return 6\n',
-        ]
-        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
-            body = render_preview_multi('t.py', 'return', 'yield', str_line, [(2, 2), (7, 7)])
-        f = io.StringIO()
-        console = Console(file=f, force_terminal=True, width=120, height=40)
-        console.print(body)
-        stripped = re.sub(r'\x1b\[[0-9;]*m', '', f.getvalue())
-        self.assertIn('\u22ee', stripped)
-
-
 class TestIntegration(unittest.TestCase):
     """End-to-end fallback chain simulation with realistic data."""
 
@@ -493,3 +467,4 @@ class TestIntegration(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

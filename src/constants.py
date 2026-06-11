@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 5
+TECOSIM_AGENT_UPDATE_VERSION: int = 6
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -93,6 +93,7 @@ GLOB_FILE_ENTRIES_DEFAULT: int = 250
 GREP_FILE_HEAD_LIMIT_DEFAULT: int = 250
 READ_FILE_MAX_LINE: int = 10000
 READ_FILE_ENCODING_DEFAULT: str = "utf-8"
+READ_FILE_LINE_CHAR_LIMIT: int = 2000  # max chars per line before truncation (LLM-facing output)
 WRITE_FILE_MODE_DEFAULT: str = "write"
 WRITE_FILE_ENCODING_DEFAULT: str = "utf-8"
 EDIT_FILE_ENCODING_DEFAULT: str = "utf-8"
@@ -268,6 +269,11 @@ BASH_RESULT_CONTENT_BG: str = "#141414"  # bash result output content bg
 BASH_RESULT_MAX_LINES: int = 20  # max lines to display in bash result preview
 BASH_RESULT_MAX_CHARS: int = 1200  # max chars to display in bash result preview
 BASH_RESULT_PADDING_LINES: int = 1  # blank padding lines above and below the result block
+WRITE_VIEW_GUTTER_BG: str = "#222222"  # write file preview gutter bg
+WRITE_VIEW_CONTENT_BG: str = "#141414"  # write file preview content bg
+WRITE_VIEW_PADDING_LINES: int = 1  # blank padding lines above and below write preview
+WRITE_VIEW_MAX_LINES: int = 30  # max lines to display in write file preview
+WRITE_VIEW_MAX_CHARS: int = 2000  # max chars to display in write file preview
 URL_CACHE_VIEW_MAX: int = 8
 URL_CACHE_CONTENT_CHAR_MAX: int = 100
 MCP_TOOL_DESC_CHAR_LIMIT: int =  250

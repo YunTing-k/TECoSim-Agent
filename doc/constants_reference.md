@@ -58,8 +58,8 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `CRON_END_LABEL` | `</cron_tasks>` | 定时任务内容结束标记 / Marks the end of cron task content |
 
 > **显示控制 | Display Control**
-> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS` 分别控制是否显示这些标签包裹的内容。
-> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, and `RESUME_DISPLAY_CRONS` in `agent_configs.json`.
+> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出。
+> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, and `RESUME_DISPLAY_CRONS` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews.
 
 ---
 
@@ -303,6 +303,16 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `BASH_RESULT_MAX_CHARS` | `1200` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
 | `BASH_RESULT_PADDING_LINES` | `1` | Bash 结果预览首尾空白过渡行数 / Blank padding lines above/below result block |
 
+### Write 文件预览 | Write File Preview
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `WRITE_VIEW_GUTTER_BG` | `#222222`（深灰 dark grey） | Write 预览行号栏背景色 / Write preview gutter background |
+| `WRITE_VIEW_CONTENT_BG` | `#141414`（线黑 line black） | Write 预览内容区背景色 / Write preview content background |
+| `WRITE_VIEW_PADDING_LINES` | `1` | Write 预览首尾空白过渡行数 / Blank padding lines above/below write preview |
+| `WRITE_VIEW_MAX_LINES` | `30` | Write 预览最大显示行数（超出截断）/ Max lines to display before truncation |
+| `WRITE_VIEW_MAX_CHARS` | `2000` | Write 预览最大显示字符数（超出截断）/ Max chars to display before truncation |
+
 ### URL 缓存 | URL Cache
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
@@ -362,5 +372,6 @@ These constants control the agent's core identity and basic behavior:
 | `BASH_TIMEOUT_MS_DEFAULT` | `120000` (2 min) | Bash 命令默认超时。Agent 的 `bash` 工具若不指定 timeout 参数则使用此值 / Default bash command timeout; used when no timeout argument is given |
 | `BASH_TIMEOUT_MS_MAX` | `600000` (10 min) | Bash 命令最大超时上限。Agent 拒绝任何超过此值的 timeout 参数，防止误设过长超时 / Max bash command timeout; the agent rejects any timeout exceeding this limit |
 | `READ_FILE_MAX_LINE` | `10000` | 单次读取文件最大行数。超过此行数后不再继续读取 / Max lines per file read; stops reading beyond this limit |
+| `READ_FILE_LINE_CHAR_LIMIT` | `2000` | LLM 输出单行最大字符数（超出截断并标记）/ Max chars per line in LLM output (truncated with marker) |
 | `READ_LOG_MAX_LINE` | `10000` | 单次读取日志最大行数。与 `READ_FILE_MAX_LINE` 不同，此值专门针对仿真日志读取 / Max lines per log read (separate from `READ_FILE_MAX_LINE`, specific to simulation logs) |
 | `PERMISSION_REQUEST_DSEC_CHAR_MAX` | `500` | 权限请求描述的最大字符数。用户在权限 TUI 中输入注释时超过此长度会被截断 / Max chars for permission request description; user comments exceeding this are truncated |

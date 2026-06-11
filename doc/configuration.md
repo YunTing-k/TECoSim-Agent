@@ -96,6 +96,9 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `WEB_SEARCH_LLM_CHAR_LIMIT` | 网络搜索结果传给 LLM 的最大字符数 / Web search result char limit for LLM |
 | `RESUME_DISPLAY_SKILLS` | 恢复会话时是否显示已加载的技能内容 / Whether to display loaded skills content when resuming session |
 | `RESUME_DISPLAY_CRONS` | 恢复会话时是否显示定时任务内容 / Whether to display cron tasks content when resuming session |
+| `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls |
+| `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session |
+| `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）

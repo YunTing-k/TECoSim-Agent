@@ -12,6 +12,7 @@ Revision:
 2026.5.27      Yu Huang      1.0      First implementation
 2026.6.8       Yu Huang      1.1      Remove simulator params to simulator_param.py & Simulator run management support
 2026.6.9       Yu Huang      1.2      Add design and run support for simulator & Revise the highlight of the IO console print
+2026.6.11      Yu Huang      1.3      Adopt XML-wrapped pipe-format in read_log_impl via format_file_for_llm
 
 Details:
 ---------
@@ -34,7 +35,7 @@ import subprocess
 from enum import Enum
 from typing import Any, TypedDict
 from rich.console import Console
-from src.utility.basic_utils import read_line_with_limit
+from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -475,6 +476,7 @@ def runs_to_info(runs: list[Run]) -> str:
     """convert runs list to info string"""
     info = ""
     for run in runs:
+
         info += f"Run ID: {run["run_id"]}\n"
         info += f" - Subject: {run["subject"]}\n"
         # info += f" - Description: {run["description"]}\n"
@@ -770,10 +772,7 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid log type: {log_type}")
             console.print(f"{func_name} {FAIL_LABEL}: Invalid log type: {log_type}", style="bold red")
             return False, FAIL_LABEL, f"Invalid log type: {log_type}", -1, "(None)"
-        log_line: list[str] = []
-        for i, line in enumerate(clean_line, start=1):
-            log_line.append(f"{i}\t{line}")
-        total_line_num = len(log_line)
+        total_line_num = len(clean_line)
         """prepare the content"""
         read_line_num: int | None = arguments.get("line_num")
         if read_line_num is not None and read_line_num > READ_LOG_MAX_LINE:
@@ -784,6 +783,8 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
         offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         byte_limit = llm_kb_limit * 1024
+        start_line = 1
+        line_truncated = False
         if method == "from_top":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -793,12 +794,11 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1")
                 console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
                 return False, FAIL_LABEL, f"Invalid line num: {read_line_num} < 1", -1, "(None)"
-            if total_line_num <= read_line_num:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
-            else:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, 0, read_line_num - 1, byte_limit, 'utf-8')
+            start_line = 1
+            if total_line_num > read_line_num:
+                line_truncated = True
+            end_idx = min(read_line_num, total_line_num) - 1
+            log_str, byte_truncated, read_lines = read_line_with_limit(clean_line, 0, end_idx, byte_limit, 'utf-8')
         elif method == "from_bottom":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -809,11 +809,13 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
                 console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
                 return False, FAIL_LABEL, f"Invalid line num: {read_line_num} < 1", -1, "(None)"
             if total_line_num <= read_line_num:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
+                start_line = 1
+                end_idx = total_line_num - 1
             else:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, 'utf-8')
+                start_line = total_line_num - read_line_num + 1
+                end_idx = total_line_num - 1
+                line_truncated = True
+            log_str, byte_truncated, read_lines = read_line_with_limit(clean_line, start_line - 1, end_idx, byte_limit, 'utf-8')
         elif method == "offset":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -832,24 +834,27 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
                 console.print(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} > total line num {total_line_num}",
                               style="bold red")
                 return False, FAIL_LABEL, f"Invalid offset: {offset_line_num} > total line num {total_line_num}", -1, "(None)"
-            if (offset_line_num - 1 + read_line_num) <= total_line_num:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, offset_line_num - 1, offset_line_num - 2 + read_line_num, byte_limit, 'utf-8')
-            else:
-                log_str, truncated, read_lines = read_line_with_limit(
-                    log_line, offset_line_num - 1, total_line_num - 1, byte_limit, 'utf-8')
+            start_line = offset_line_num
+            end_idx = min(offset_line_num - 1 + read_line_num, total_line_num) - 1
+            if end_idx < total_line_num - 1:
+                line_truncated = True
+            log_str, byte_truncated, read_lines = read_line_with_limit(clean_line, start_line - 1, end_idx, byte_limit, 'utf-8')
         elif method == "all":
-            log_str, truncated, read_lines = read_line_with_limit(log_line, 0, total_line_num - 1, byte_limit, 'utf-8')
+            log_str, byte_truncated, read_lines = read_line_with_limit(clean_line, 0, total_line_num - 1, byte_limit, 'utf-8')
         else:
             return False, FAIL_LABEL, f"Invalid method type: {method}", -1, "(None)"
-        if not truncated:
+
+        truncated = byte_truncated or line_truncated
+        # TODO: log path is hidden to LLM because maybe manage simulation to avoid the concept of this session?
+        formatted = format_file_for_llm(clean_line, "(Hidden)", start_line, read_lines, total_line_num, truncated)
+        if not byte_truncated:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Run id: {run_id} "
                           f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}")
             console.print(f"{func_name} {SUCCESS_LABEL}: Run id: {run_id} "
                                    f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                                    f"offset: {offset_line_num}", style="bright_black")
-            return True, SUCCESS_LABEL, "", total_line_num, log_str
+            return True, SUCCESS_LABEL, "", total_line_num, formatted
         else:
             sys_log.warning(f"{func_name} {TRUNCATED_LABEL}: Run id: {run_id} "
                             f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
@@ -862,7 +867,7 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
                           f"larger than {llm_kb_limit} KB and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` "
                           f"in {AGENT_CONFIGS_PATH}", style="bold yellow")
             return True, TRUNCATED_LABEL, (f"Target read-in part is larger than {llm_kb_limit} KB and truncated, user should "
-                                           f"modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}"), read_lines, log_str
+                                           f"modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}"), read_lines, formatted
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}")
         console.print(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}", style="bold red")

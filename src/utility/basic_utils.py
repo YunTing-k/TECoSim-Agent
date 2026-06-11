@@ -15,6 +15,7 @@ Revision:
 2026.6.5       Yu Huang      1.3      Render bash command as Markdown support
 2026.6.8       Yu Huang      1.4      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      1.5      Remove read_line_with_limit to basic_utils.py
+2026.6.11      Yu Huang      1.6      Add format_file_for_llm: XML-wrapped pipe-separated line-number output for LLM consumption
 
 Details:
 ---------
@@ -280,3 +281,38 @@ def read_line_with_limit(lines: list[str], line_start: int, line_end: int, byte_
             lines_count += 1
     output = "".join(formatted_lines)
     return output, truncated, lines_count
+
+
+def format_file_for_llm(lines: list[str], file_path: str, start_line: int,
+                        shown_count: int, total_lines: int, truncated: bool) -> str:
+    """format file content for LLM consumption with pipe-separated line numbers and XML wrapper.
+
+    Output format (following CodeWhale/OpenCode best practices):
+      <file path="..." lines="X-Y" total="Z" truncated="true|false">
+            X| content
+      ...
+            Y| content
+      (footer)
+      </file>
+    """
+    offset_idx = start_line - 1
+    snippet = lines[offset_idx : offset_idx + shown_count]
+    shown_first = start_line
+    shown_last = start_line + len(snippet) - 1
+    width = max(6, len(str(shown_last)))
+
+    output = f'<file path="{file_path}" lines="{shown_first}-{shown_last}" total="{total_lines}" truncated="{str(truncated).lower()}">\n'
+    for i, line in enumerate(snippet):
+        line_no = start_line + i
+        if len(line) > READ_FILE_LINE_CHAR_LIMIT:
+            line = line[:READ_FILE_LINE_CHAR_LIMIT] + f"... (line truncated to {READ_FILE_LINE_CHAR_LIMIT} chars)\n"
+        output += f"{line_no:>{width}}│ {line}"
+
+    if truncated:
+        next_offset = start_line + len(snippet)
+        remaining = total_lines - next_offset + 1
+        output += f"\n({remaining} lines not shown, use offset={next_offset} to continue)\n"
+    else:
+        output += f"\n(End of file - total {total_lines} lines)\n"
+    output += "</file>\n"
+    return output

@@ -173,8 +173,14 @@ for chunk in chunks:
     chunk.stylize(content_bg)           # apply background to each chunk
 ```
 
-O(n) 逐字符样式提取开销对 Bash 命令（通常 < 500 字符）可忽略。编辑视图的 `render_preview_*` 尚未应用此优化（单行通常 < 120 字符，影响较小）。
-The O(n) per-character style extraction cost is negligible for Bash commands (typically < 500 chars). Edit view `render_preview_*` has not yet applied this optimization (lines typically < 120 chars).
+O(n) 逐字符样式提取开销对 Bash 命令（通常 < 500 字符）和编辑视图单行（通常 < 120 字符）均可忽略。`_highlight_and_wrap_edit`（编辑视图用）与 bash 侧 `_highlight_and_wrap` 结构一致，区别为：
+- 返回值纯内容（无 gutter），由调用方 `_render_normal_block`/`_render_diff_block` 负责拼接 gutter 和 NBSP padding
+- `_render_normal_block` 续行 gutter 用 `Text.assemble((" " * offset, gutter_style), chunk)` 单 span
+- `_render_diff_block` 续行 gutter 用 `Text.assemble((margin, style), (line_gutter, style), chunk)` 三 span
+The O(n) per-character style extraction cost is negligible for Bash commands (typically < 500 chars) and edit view lines (typically < 120 chars). `_highlight_and_wrap_edit` (edit view) shares the same structure as the bash-side `_highlight_and_wrap`, with these differences:
+- Returns pure content (no gutter); callers `_render_normal_block`/`_render_diff_block` handle gutter assembly and NBSP padding
+- `_render_normal_block` continuation gutter uses `Text.assemble((" " * offset, gutter_style), chunk)` (single span)
+- `_render_diff_block` continuation gutter uses `Text.assemble((margin, style), (line_gutter, style), chunk)` (three spans)
 
 ---
 

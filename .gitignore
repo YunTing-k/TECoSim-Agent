@@ -5,6 +5,7 @@
 /update_requirements.bat
 /clean.bat
 /session/**/*.json
+/session/**/*.log
 /session/**/user_history
 /cron/cron_configs.json
 /mcps/sources/**/

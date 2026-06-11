@@ -29,15 +29,23 @@ Revision:
                                       continuation gutter split & fix pygments TextLexer extra \n & NBSP fill for full-width bg
 2026.6.11      Yu Huang      2.5      Refactor render_preview_*: extract 4 shared helpers to eliminate ~194 lines of duplication
 2026.6.11      Yu Huang      2.6      Fix CJK continuation via unicodedata display-width slicing & Rich multi-span boundary &
-                                      enhance match chain with dash/space normalization, EOF-first rfind, pattern guards, hunk separator
+                                       enhance match chain with dash/space normalization, EOF-first rfind, pattern guards, hunk separator
+2026.6.11      Yu Huang      2.7      Apply highlight-then-split to edit preview: _highlight_and_wrap_edit preserves token styles
+                                       across wrap boundaries (replaces per-chunk _highlight_fragment in render_normal/diff_block)
+2026.6.11      Yu Huang      2.8      Add get_write_render for write_file permission preview with syntax highlighting,
+                                        line-number gutter, configurable truncation, and highlight-then-split wrapping
+2026.6.11      Yu Huang      2.9      Move format_file_for_llm to basic_utils.py (circular import) & integrate pipe-format
+                                        into read_file/read_log_impl XML-wrapped LLM output with truncation footer
 
 Details:
 ---------
 File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE — 7-stage cascade
 fallback matching with per-mode track & enhanced Unicode normalization (quotes/dashes/spaces) and EOF-first rfind;
 (3) preview renderers with pygments syntax highlighting, diff-style add/remove with soft-wrap, 3-part gutter bg,
-CJK display-width continuity, and inter-hunk separator; (4) edit permission TUI with preview and match mode
-visibility; (5) read-only path checking; (6) session saving utility.
+CJK display-width continuity, inter-hunk separator, and highlight-then-split token-style preservation;
+(4) write_file content preview (get_write_render) with lexer-based highlighting, line-number gutter, configurable
+truncation, and highlight-then-split wrapping; (5) edit permission TUI with preview and match mode
+visibility; (6) read-only path checking; (7) session saving utility.
 """
 import os
 import math
@@ -582,6 +590,59 @@ def _slice_by_width(s: str, max_width: int) -> tuple[str, str]:
     return s, ''
 
 
+def _highlight_and_wrap_edit(line: str, lexer, max_width: int, strip_bg: bool = True) -> tuple[Text, list[Text]]:
+    """highlight full line then split by display width — preserves token styles across wrap boundaries.
+
+    Returns (first_chunk, cont_chunks) where first_chunk is a Text object with the
+    first display-width slice of content (no gutter, no padding, no newline), and
+    cont_chunks is a list of Text objects for each subsequent wrapping slice
+    (no gutter, no padding). The caller is responsible for adding gutter, NBSP padding,
+    and newlines.
+
+    max_width is the available display-width for content (terminal columns minus gutter offset minus 1).
+    """
+    if line.endswith('\r\n'):
+        content = line[:-2]
+    elif line.endswith('\n'):
+        content = line[:-1]
+    else:
+        content = line
+
+    hl = _highlight_fragment(content, lexer, strip_bg=strip_bg)
+    plain = str(hl)
+
+    char_styles: list[Style | None] = [None] * len(plain)
+    for span in hl.spans:
+        for i in range(span.start, span.end):
+            if char_styles[i] is None:
+                char_styles[i] = span.style
+
+    chunks: list[Text] = []
+    pos = 0
+    total = len(plain)
+    while pos < total:
+        w = 0
+        start = pos
+        while pos < total:
+            cw = 2 if unicodedata.east_asian_width(plain[pos]) in ('F', 'W') else 1
+            if w + cw > max_width:
+                break
+            w += cw
+            pos += 1
+        chunk = Text()
+        i = start
+        while i < pos:
+            j = i + 1
+            sty = char_styles[i]
+            while j < pos and char_styles[j] == sty:
+                j += 1
+            chunk.append(plain[i:j], style=sty)
+            i = j
+        chunks.append(chunk)
+
+    return chunks[0] if chunks else Text(), chunks[1:]
+
+
 def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
     """split a content line into (first_physical_line, continuation_lines).
 
@@ -662,28 +723,33 @@ def _render_normal_block(body: Text, lines: list[str], start_idx: int, budget: i
     normal_prefix_style = styles['normal_prefix_style']
     for idx, line in enumerate(lines):
         prefix1, prefix2, _ = get_line_prefix(start_idx + idx, budget)
+        offset = len(prefix1) + len(prefix2) + 3
         body.append(prefix1 + prefix2 + "   ", style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
-        first, cont_lines = fill_str_line(line, offset=len(prefix1) + len(prefix2) + 3)
         if lexer:
-            first_text = _highlight_fragment(first, lexer)
-            first_text.stylize(normal_style)
-            body.append(first_text)
-        else:
-            body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
-        p = len(prefix1) + len(prefix2) + 3
-        for cl in cont_lines:
-            if lexer:
-                cl_text = _highlight_fragment(cl, lexer)
-                _part = cl_text[:p]
-                _part.stylize(normal_prefix_style)
-                body.append(_part)
-                _part = cl_text[p:]
-                _part.stylize(normal_style)
-                body.append(_part)
+            width = os.get_terminal_size().columns - offset - 1
+            if width < 1:
+                width = 1
+            first_chunk, cont_chunks = _highlight_and_wrap_edit(line, lexer, width, strip_bg=False)
+            first_chunk.stylize(normal_style)
+            _pad = width - _display_width(str(first_chunk))
+            if _pad > 0:
+                first_chunk.append("\u00a0" * _pad, style=normal_style)
+            first_chunk.append("\n")
+            body.append(first_chunk)
+            for chunk in cont_chunks:
+                chunk.stylize(normal_style)
+                cl = Text.assemble((" " * offset, normal_prefix_style), chunk)
+                _pad = offset + width - _display_width(str(cl))
+                if _pad > 0:
+                    cl.append("\u00a0" * _pad, style=normal_style)
+                body.append(cl)
                 body.append("\n")
-            else:
-                body.append(cl[:p], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
-                body.append(cl[p:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
+        else:
+            first, cont_lines = fill_str_line(line, offset)
+            body.append(first, style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
+            for cl in cont_lines:
+                body.append(cl[:offset], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
+                body.append(cl[offset:] + "\n", style=f"bold white on {EDIT_VIEW_NORMAL_BG}")
 
 
 def _render_diff_block(body: Text, lines: list[str], start_idx: int, budget: int,
@@ -704,36 +770,124 @@ def _render_diff_block(body: Text, lines: list[str], start_idx: int, budget: int
 
     for idx, line in enumerate(lines):
         prefix1, prefix2, symbol = get_line_prefix(start_idx + idx, budget, mode=mode)
+        offset = len(prefix1) + len(prefix2) + 3
+        p1_len = len(prefix1)
+        p2_len = len(prefix2) + 3
         body.append(prefix1, style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
         body.append(prefix2, style=f"bright_black {line_bg}")
         body.append(symbol, style=f"{symbol_color} {line_bg}")
-        first, cont_lines = fill_str_line(line, offset=len(prefix1) + len(prefix2) + 3)
         if lexer:
-            first_text = _highlight_fragment(first, lexer, strip_bg=True)
-            first_text.stylize(content_style)
-            body.append(first_text)
-        else:
-            body.append(first, style=f"bold white on {content_bg}")
-        p1_len = len(prefix1)
-        p2_len = len(prefix2) + 3
-        margin_style = styles['margin_style']
-        for cl in cont_lines:
-            if lexer:
-                cl_text = _highlight_fragment(cl, lexer, strip_bg=True)
-                _part = cl_text[:p1_len]
-                _part.stylize(margin_style)
-                body.append(_part)
-                _part = cl_text[p1_len:p1_len + p2_len]
-                _part.stylize(line_style)
-                body.append(_part)
-                _part = cl_text[p1_len + p2_len:]
-                _part.stylize(content_style)
-                body.append(_part)
+            width = os.get_terminal_size().columns - offset - 1
+            if width < 1:
+                width = 1
+            first_chunk, cont_chunks = _highlight_and_wrap_edit(line, lexer, width, strip_bg=True)
+            first_chunk.stylize(content_style)
+            _pad = width - _display_width(str(first_chunk))
+            if _pad > 0:
+                first_chunk.append("\u00a0" * _pad, style=content_style)
+            first_chunk.append("\n")
+            body.append(first_chunk)
+            margin_style = styles['margin_style']
+            for chunk in cont_chunks:
+                chunk.stylize(content_style)
+                cl = Text.assemble(
+                    (" " * p1_len, margin_style),
+                    (" " * p2_len, line_style),
+                    chunk,
+                )
+                _pad = offset + width - _display_width(str(cl))
+                if _pad > 0:
+                    cl.append("\u00a0" * _pad, style=content_style)
+                body.append(cl)
                 body.append("\n")
-            else:
+        else:
+            first, cont_lines = fill_str_line(line, offset)
+            body.append(first, style=f"bold white on {content_bg}")
+            for cl in cont_lines:
                 body.append(cl[:p1_len], style=f"bright_black on {EDIT_VIEW_NORMAL_BG}")
                 body.append(cl[p1_len:p1_len + p2_len], style=f"bright_black {line_bg}")
                 body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {content_bg}")
+
+
+def get_write_render(path: str, content: str) -> Text:
+    """render file content preview for write_file permission.
+
+    Syntax-highlighted (based on file extension), with line-number gutter,
+    configurable truncation, highlight-then-split long-line wrapping,
+    and visual padding above/below.
+    """
+    lexer = _get_lexer(path) if path else TextLexer()
+    content_style = Style(bgcolor=WRITE_VIEW_CONTENT_BG)
+    gutter_style = Style(color="bright_black", bgcolor=WRITE_VIEW_GUTTER_BG)
+
+    truncated = False
+    truncated_lines = 0
+    if 0 < WRITE_VIEW_MAX_CHARS < len(content):
+        content = content[:WRITE_VIEW_MAX_CHARS]
+        truncated = True
+
+    lines = content.split('\n')
+    if 0 < WRITE_VIEW_MAX_LINES < len(lines):
+        truncated_lines = len(lines) - WRITE_VIEW_MAX_LINES
+        lines = lines[:WRITE_VIEW_MAX_LINES]
+        truncated = True
+
+    budget = math.floor(math.log10(max(len(lines), 1))) + 1
+    gutter_width = EDIT_VIEW_LEFT_SPACE_MARGIN + budget + EDIT_VIEW_LINE_SPACE_MARGIN + 1
+    max_width = os.get_terminal_size().columns - gutter_width - 1
+    if max_width < 1:
+        max_width = 1
+    _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
+    gutter_nbsp = "\u00a0" * gutter_width
+
+    body = Text()
+    for i in range(WRITE_VIEW_PADDING_LINES):
+        if i == 0:
+            lbl = _pad_label("$write")
+            body.append(lbl, style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+            first, _ = fill_str_line("", offset=len(lbl))
+            body.append(first, style=content_style)
+        else:
+            first, _ = fill_str_line("", offset=gutter_width)
+            body.append(gutter_nbsp, style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+            body.append(first, style=content_style)
+
+    for idx, line in enumerate(lines):
+        prefix1, prefix2, _ = get_line_prefix(idx + 1, budget)
+        body.append(prefix1 + prefix2 + " ", style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+        first_chunk, cont_chunks = _highlight_and_wrap_edit(line, lexer, max_width, strip_bg=True)
+        first_chunk.stylize(content_style)
+        _pad = max_width - _display_width(str(first_chunk))
+        if _pad > 0:
+            first_chunk.append("\u00a0" * _pad, style=content_style)
+        first_chunk.append("\n")
+        body.append(first_chunk)
+        for chunk in cont_chunks:
+            chunk.stylize(content_style)
+            cl = Text.assemble((" " * gutter_width, gutter_style), chunk)
+            _pad = gutter_width + max_width - _display_width(str(cl))
+            if _pad > 0:
+                cl.append("\u00a0" * _pad, style=content_style)
+            body.append(cl)
+            body.append("\n")
+
+    if truncated:
+        info = "(%d lines not shown)" % truncated_lines if truncated_lines else "(output truncated)"
+        prefix1, prefix2, _ = get_line_prefix(len(lines) + 1, budget)
+        body.append(prefix1 + prefix2 + " ", style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+        info_first, info_cont = fill_str_line(info, offset=len(prefix1) + len(prefix2) + 1)
+        body.append(info_first, style=Style(color="bright_black", bgcolor=WRITE_VIEW_CONTENT_BG))
+        p = len(prefix1) + len(prefix2) + 1
+        for cl in info_cont:
+            body.append(cl[:p], style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+            body.append(cl[p:] + "\n", style=f"bright_black on {WRITE_VIEW_CONTENT_BG}")
+
+    for _ in range(WRITE_VIEW_PADDING_LINES):
+        first, _ = fill_str_line("", offset=gutter_width)
+        body.append(gutter_nbsp, style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
+        body.append(first, style=content_style)
+
+    return body
 
 
 def render_preview_single(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],

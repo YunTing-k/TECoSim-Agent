@@ -28,8 +28,10 @@ Revision:
 2026.6.8       Yu Huang      2.6      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      2.7      Revise the system prompts of task tools & Revise the highlight of the IO console print
 2026.6.10      Yu Huang      2.8      Revise the system prompts of task tools & Main/Fast model can configure deepseek support dependently &
-                                      Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
-                                      Fix the bug of stream messages handling under direct connection API
+                                       Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
+                                       Fix the bug of stream messages handling under direct connection API
+2026.6.11      Yu Huang      2.9      Add resume-display preview switches for write_file/bash command/bash result in print_messages &
+                                       integrate get_write_render/get_bash_render/get_bash_result_render into history replay
 
 Details:
 ---------
@@ -55,6 +57,8 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
 from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
+from src.tool.file_io_support import get_write_render
+from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
     get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD)
@@ -350,6 +354,10 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
         display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
         cron_str = Text("<Cron tasks are invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         display_cron = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
+        display_write = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
+        display_bash = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
+        display_bash_result = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
+        tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
                 continue
@@ -375,7 +383,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
                     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
-                                 vertical="top")
+                                  vertical="top")
                     t.add_column(vertical="top")
                     if as_md:
                         t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
@@ -393,7 +401,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
                     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
-                                 vertical="top")
+                                  vertical="top")
                     t.add_column(vertical="top")
                     if as_md:
                         t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(msg["content"]))
@@ -405,7 +413,28 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     for tool_calls in msg["tool_calls"]:
                         tool_name = tool_calls["function"]["name"]
                         console.print(f"Tool used: [{MAJOR_COLOR1}]{tool_name}[/{MAJOR_COLOR1}]", style="bright_black")
+                        if tool_calls.get("id"):
+                            tool_id_map[tool_calls["id"]] = tool_name
+                        try:
+                            args = json.loads(tool_calls["function"]["arguments"])
+                        except (json.JSONDecodeError, TypeError, KeyError):
+                            args = {}
+                        if display_write and tool_name == TOOL_NAME_WRITE_FILE:
+                            console.print(get_write_render(args.get("path", ""), args.get("content", "")))
+                        if display_bash and tool_name == TOOL_NAME_BASH:
+                            console.print(get_bash_render(args.get("command", "")))
             elif msg["role"] == "tool":
+                if display_bash_result and msg.get("tool_call_id"):
+                    matched_name = tool_id_map.get(msg["tool_call_id"], "")
+                    if matched_name == TOOL_NAME_BASH:
+                        try:
+                            result = json.loads(msg["content"])
+                        except (json.JSONDecodeError, TypeError):
+                            result = {}
+                        stdout = result.get("stdout", "")
+                        stderr = result.get("stderr", "")
+                        if stdout or stderr:
+                            console.print(get_bash_result_render(stdout, stderr))
                 continue
             else:
                 sys_log.debug(f"Unknown role: {msg["role"]} in history massages")

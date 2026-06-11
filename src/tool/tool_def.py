@@ -43,7 +43,10 @@ Revision:
                                       of task tools & Revise the prompts simulation tools
 2026.6.10      Yu Huang      3.9      Main/Fast model can configure deepseek support dependently & Add fallback of query tasks if id is not valid
 2026.6.11      Yu Huang      4.0      Unify bash command render as edit-view style (line-number gutter + pygments highlight-
-                                      then-wrap); add result preview with line numbers, configurable truncation and padding
+                                       then-wrap); add result preview with line numbers, configurable truncation and padding
+2026.6.11      Yu Huang      4.1      Adopt XML-wrapped pipe-separated line-number format for read_file/read_log LLM output &
+                                       integrate get_write_render into write_file permission preview & add resume-display switches
+                                       for write/bash preview in print_messages
 
 Details:
 ---------
@@ -63,7 +66,7 @@ from datetime import datetime
 from rich.progress import Progress
 from src.utility import ui_info
 from src.utility.ui_info import pause_for_permission, resume_from_permission
-from src.utility.basic_utils import read_line_with_limit
+from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, create_cron_impl
 from src.tool.scoreboard import Scoreboard, args_to_taskupdate, task_to_info, tasks_to_info
@@ -71,7 +74,8 @@ from src.tool.file_filter_support import glob_impl, grep_impl
 from src.tool.file_io_support import (
     match_line_ranges, find_actual_string, ask_edit_tui, check_read_only,
     match_line_trimmed, match_flexible_indent, get_enhanced_debug_info,
-    match_escape_literal, match_trimmed_boundary, match_unicode_escape)
+    match_escape_literal, match_trimmed_boundary, match_unicode_escape,
+    get_write_render)
 from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
@@ -1216,9 +1220,9 @@ def tool_read_file_def() -> dict[str, Any]:
         "function": {
             "name": TOOL_NAME_READ_FILE,
             "description": "Reads a file from the local filesystem with given path, method, line num and encoding method. "
-                           "You can access any file directly by using this tool. Results are returned using cat -n format, "
-                           "with line numbers starting from 1. This tool will also return the total line count of the file "
-                           "(regardless of read method).\n"
+                           "You can access any file directly by using this tool. Results are returned in an XML wrapper "
+                           "with pipe-separated line numbers starting from 1.\n"
+                           "This tool will also return the total line count of the file (regardless of read method).\n"
                            "- IMPORTANT: Never start by reading the entire file (`all`) unless the file is known to be very "
                            "short or instructed to do so\n"
                            "- For any unfamiliar file, first use `from_top` with a moderate number of lines (e.g., 50-100) "
@@ -1325,10 +1329,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         encoding = arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)
         with open(file_path, 'r', encoding=encoding) as f:
             raw_line = f.readlines()
-        file_line: list[str] = []
-        for i, line in enumerate(raw_line, start=1):
-            file_line.append(f"{i}\t{line}")
-        total_line_num = len(file_line)
+        total_line_num = len(raw_line)
         """prepare the content"""
         read_line_num: int | None = arguments.get("line_num")
         if read_line_num is not None and read_line_num > READ_FILE_MAX_LINE:
@@ -1338,6 +1339,8 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         offset_line_num = arguments.get("offset", 0)
         method = str(arguments["method"]).lower()
         byte_limit = ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"] * 1024
+        start_line = 1
+        line_truncated = False
         if method == "from_top":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -1347,12 +1350,11 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1")
                 progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
-            if total_line_num <= read_line_num:
-                # file_str = "".join(file_line)
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
-            else:
-                # file_str = "".join(file_line[0:read_line_num])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, read_line_num - 1, byte_limit, encoding)
+            start_line = 1
+            if total_line_num > read_line_num:
+                line_truncated = True
+            end_idx = min(read_line_num, total_line_num) - 1
+            file_str, byte_truncated, read_lines = read_line_with_limit(raw_line, 0, end_idx, byte_limit, encoding)
         elif method == "from_bottom":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -1363,11 +1365,13 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid line num: {read_line_num} < 1", style="bold red")
                 raise RuntimeError(f"Invalid line num: {read_line_num} < 1")
             if total_line_num <= read_line_num:
-                # file_str = "".join(file_line)
-                file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
+                start_line = 1
+                end_idx = total_line_num - 1
             else:
-                # file_str = "".join(file_line[-read_line_num:])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, total_line_num - read_line_num, total_line_num - 1, byte_limit, encoding)
+                start_line = total_line_num - read_line_num + 1
+                end_idx = total_line_num - 1
+                line_truncated = True
+            file_str, byte_truncated, read_lines = read_line_with_limit(raw_line, start_line - 1, end_idx, byte_limit, encoding)
         elif method == "offset":
             if read_line_num is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Line num can't be empty")
@@ -1385,19 +1389,20 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} > total line num {total_line_num}")
                 progress.console.print(f"{func_name} {FAIL_LABEL}: Invalid offset: {offset_line_num} > total line num {total_line_num}", style="bold red")
                 raise RuntimeError(f"Invalid offset: {offset_line_num} > total line num {total_line_num}")
-            if (offset_line_num - 1 + read_line_num) <= total_line_num:
-                # file_str = "".join(file_line[offset_line_num - 1:offset_line_num - 1 + read_line_num])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, offset_line_num - 2 + read_line_num, byte_limit, encoding)
-            else:
-                # file_str = "".join(file_line[offset_line_num - 1:])
-                file_str, truncated, read_lines = read_line_with_limit(file_line, offset_line_num - 1, total_line_num - 1, byte_limit, encoding)
+            start_line = offset_line_num
+            end_idx = min(offset_line_num - 1 + read_line_num, total_line_num) - 1
+            if end_idx < total_line_num - 1:
+                line_truncated = True
+            file_str, byte_truncated, read_lines = read_line_with_limit(raw_line, start_line - 1, end_idx, byte_limit, encoding)
         elif method == "all":
-            # file_str = "".join(file_line)
-            file_str, truncated, read_lines = read_line_with_limit(file_line, 0, total_line_num - 1, byte_limit, encoding)
+            file_str, byte_truncated, read_lines = read_line_with_limit(raw_line, 0, total_line_num - 1, byte_limit, encoding)
         else:
             raise RuntimeError(f"Invalid method type: {method}")
+
+        truncated = byte_truncated or line_truncated
         ctx.file_read_log(file_path)
-        if not truncated:
+        formatted = format_file_for_llm(raw_line, file_path, start_line, read_lines, total_line_num, truncated)
+        if not byte_truncated:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: "
                           f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}, encoding: {encoding}")
@@ -1406,7 +1411,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                    f"offset: {offset_line_num}, encoding: {encoding}", style="bright_black")
             return {"status": SUCCESS_LABEL,
                     "total_line": total_line_num,
-                    "file_content": file_str}
+                    "file_content": formatted}
         else:
             sys_log.warning(f"{func_name} {TRUNCATED_LABEL}: "
                           f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
@@ -1422,7 +1427,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                     "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
                             f"user should modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}",
                     "total_line": read_lines,
-                    "file_content": file_str}
+                    "file_content": formatted}
     except UnicodeDecodeError as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Can't read file with given encoding, error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Can't read file with given encoding, error: {e}", style="bold red")
@@ -1492,6 +1497,9 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     try:
         """request permission"""
         pause_for_permission(progress)
+        file_path = arguments["path"]
+        content: str = arguments["content"]
+        progress.console.print(get_write_render(file_path, content))
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, "
                                          f"mode: {arguments.get("mode", WRITE_FILE_MODE_DEFAULT)}, "
@@ -1505,7 +1513,6 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
             else:
                 return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
         """check if read-only"""
-        file_path = arguments["path"]
         if_readonly, check_info = check_read_only(file_path, ctx)
         if if_readonly:
             sys_log.error(f"{func_name} {FAIL_LABEL}: {check_info}")
@@ -1530,7 +1537,6 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
             sys_log.warning(f"{func_name}: Unknown mode: {mode}, falling back to `write`")
             progress.console.print(f"{func_name}: Unknown mode: {mode}, falling back to `write`", style="bold yellow")
         encoding = arguments.get("encoding", WRITE_FILE_ENCODING_DEFAULT)
-        content: str = arguments["content"]
         with open(file=file_path, mode=w_mode, encoding=encoding) as f:
             f.write(content)
         content_bytes = content.encode(encoding)
@@ -2513,10 +2519,10 @@ def tool_read_log_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_READ_LOG,
-            "description": f"Read the stdout or stderr log of a simulation `{SIM_RUN_NAME}`. Results are returned in cat -n "
-                           f"format with line numbers starting from 1. The total line count of the log will always be returned. "
-                           f"Use `from_bottom` (50-100 lines) to check for errors; use `offset` for targeted reads. Avoid "
-                           f"reading the entire log (`all`) unless it's known to be short",
+            "description": f"Read the stdout or stderr log of a simulation `{SIM_RUN_NAME}`. Results are returned in an XML "
+                           f"wrapper with pipe-separated line numbers starting from 1. The total line count of the log will "
+                           f"always be returned. Use `from_bottom` (50-100 lines) to check for errors; use `offset` for "
+                           f"targeted reads. Avoid reading the entire log (`all`) unless it's known to be short",
             "parameters": {
                 "type": "object",
                 "properties": {
