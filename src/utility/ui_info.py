@@ -29,6 +29,7 @@ Revision:
 2026.6.9       Yu Huang      2.4      Add design and run support for simulator
 2026.6.10      Yu Huang      2.5      Revise the live TUI with the same console instance &  Revise the display cut off issue if
                                       there are multiple tool calls
+2026.6.11      Yu Huang      2.6      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py
 
 Details:
 ---------
@@ -58,6 +59,7 @@ from typing import Callable, Any
 from src.context import prompt
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
+from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -69,76 +71,6 @@ def set_terminal_title(title: str):
         print(f"\033]0;{AGENT_CONSOLE_ICON} {title}\007", end="", flush=True)
     else:
         print(f"\033]0;{AGENT_CONSOLE_ICON} TECoSim Agent\007", end="", flush=True)
-
-
-def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
-    """convert rgb to hex color"""
-    r, g, b = rgb
-    for value, name in [(r, 'R'), (g, 'G'), (b, 'B')]:
-        if not isinstance(value, int):
-            sys_log.error(f"Invalid RGB value: {name}={value} must be integer")
-            raise TypeError(f"Invalid RGB value: {name}={value} must be integer")
-        if value < 0 or value > 255:
-            sys_log.error(f"Invalid RGB value: {name}={value} out of range [0, 255]")
-            raise ValueError(f"Invalid RGB value: {name}={value} out of range [0, 255]")
-
-    try:
-        hex_color = f"#{r:02X}{g:02X}{b:02X}"
-        return hex_color
-    except Exception as e:
-        sys_log.error(f"Failed to convert RGB {rgb} to hex with error: {e}")
-        raise RuntimeError(f"Failed to convert RGB {rgb} to hex with error: {e}")
-
-
-def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
-    """convert hex color to rgb"""
-    hex_color = hex_color.lstrip('#').upper()
-
-    if not all(c in '0123456789ABCDEF' for c in hex_color):
-        sys_log.error(f"Invalid hex color: {hex_color}")
-        raise ValueError(f"Invalid hex color: {hex_color}")
-
-    if len(hex_color) == 3:
-        hex_color = ''.join(c * 2 for c in hex_color)
-    elif len(hex_color) != 6:
-        sys_log.error(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
-        raise ValueError(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
-
-    try:
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-        return r, g, b
-    except Exception as e:
-        sys_log.error(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
-        raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
-
-
-def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int) -> tuple[list[int], list[int], list[int]]:
-    """get gradient color RGB list according to RGB color and gradient"""
-    r_list: list[int] = []
-    g_list: list[int] = []
-    b_list: list[int] = []
-    for i in range(gradient):
-        ratio = i / (gradient - 1)
-        r_list.append(int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio))
-        g_list.append(int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio))
-        b_list.append(int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))
-    return r_list, g_list, b_list
-
-
-def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int) -> list[str]:
-    """get gradient color hex list according to hex color and gradient"""
-    start_rgb = hex_to_rgb(start_hex)
-    end_rgb = hex_to_rgb(end_hex)
-    h_list: list[str] = []
-    for i in range(gradient):
-        ratio = i / (gradient - 1)
-        h_list.append(rgb_to_hex((
-            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
-            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
-            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))))
-    return h_list
 
 
 def vertical_color_grad_text(text: str, start_rgb: tuple, end_rgb: tuple) -> Text:

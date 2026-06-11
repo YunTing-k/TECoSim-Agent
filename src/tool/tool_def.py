@@ -43,10 +43,10 @@ Revision:
                                       of task tools & Revise the prompts simulation tools
 2026.6.10      Yu Huang      3.9      Main/Fast model can configure deepseek support dependently & Add fallback of query tasks if id is not valid
 2026.6.11      Yu Huang      4.0      Unify bash command render as edit-view style (line-number gutter + pygments highlight-
-                                       then-wrap); add result preview with line numbers, configurable truncation and padding
+                                      then-wrap); add result preview with line numbers, configurable truncation and padding
 2026.6.11      Yu Huang      4.1      Adopt XML-wrapped pipe-separated line-number format for read_file/read_log LLM output &
-                                       integrate get_write_render into write_file permission preview & add resume-display switches
-                                       for write/bash preview in print_messages
+                                      integrate get_write_render into write_file permission preview & add resume-display switches
+                                      for write/bash preview in print_messages
 
 Details:
 ---------

@@ -29,13 +29,13 @@ Revision:
                                       continuation gutter split & fix pygments TextLexer extra \n & NBSP fill for full-width bg
 2026.6.11      Yu Huang      2.5      Refactor render_preview_*: extract 4 shared helpers to eliminate ~194 lines of duplication
 2026.6.11      Yu Huang      2.6      Fix CJK continuation via unicodedata display-width slicing & Rich multi-span boundary &
-                                       enhance match chain with dash/space normalization, EOF-first rfind, pattern guards, hunk separator
+                                      enhance match chain with dash/space normalization, EOF-first rfind, pattern guards, hunk separator
 2026.6.11      Yu Huang      2.7      Apply highlight-then-split to edit preview: _highlight_and_wrap_edit preserves token styles
-                                       across wrap boundaries (replaces per-chunk _highlight_fragment in render_normal/diff_block)
+                                      across wrap boundaries (replaces per-chunk _highlight_fragment in render_normal/diff_block)
 2026.6.11      Yu Huang      2.8      Add get_write_render for write_file permission preview with syntax highlighting,
-                                        line-number gutter, configurable truncation, and highlight-then-split wrapping
+                                      line-number gutter, configurable truncation, and highlight-then-split wrapping
 2026.6.11      Yu Huang      2.9      Move format_file_for_llm to basic_utils.py (circular import) & integrate pipe-format
-                                        into read_file/read_log_impl XML-wrapped LLM output with truncation footer
+                                      into read_file/read_log_impl XML-wrapped LLM output with truncation footer
 
 Details:
 ---------

@@ -26,8 +26,8 @@ class TestFormatFileForLlm(unittest.TestCase):
         lines = ["import os\n", "import sys\n", "\n", "def main():\n", "    pass\n"]
         result = format_file_for_llm(lines, "/src/foo.py", 1, 5, 5, False)
         self.assertIn('<file path="/src/foo.py" lines="1-5" total="5" truncated="false">', result)
-        self.assertIn("1│ import os\n", result)
-        self.assertIn("5│     pass\n", result)
+        self.assertIn("1│import os\n", result)
+        self.assertIn("5│    pass\n", result)
         self.assertIn("(End of file - total 5 lines)\n</file>", result)
 
     def test_truncated_footer(self):
@@ -40,7 +40,7 @@ class TestFormatFileForLlm(unittest.TestCase):
         lines = [f"line{i}\n" for i in range(100)]
         result = format_file_for_llm(lines, "/big.txt", 51, 50, 100, False)
         self.assertIn('lines="51-100"', result)
-        self.assertIn("51│ line50\n", result)
+        self.assertIn("51│line50\n", result)
         self.assertIn("(End of file - total 100 lines)", result)
 
     def test_partial_show_truncated(self):
@@ -52,22 +52,22 @@ class TestFormatFileForLlm(unittest.TestCase):
     def test_empty_snippet(self):
         lines = ["x\n"]
         result = format_file_for_llm(lines, "/empty.txt", 1, 0, 1, False)
-        self.assertIn('lines="1-0"', result)
+        self.assertIn('lines="0-0"', result)
         self.assertIn("(End of file - total 1 lines)\n</file>", result)
 
     def test_pipe_separator_visible(self):
         lines = ["hello world\n"]
         result = format_file_for_llm(lines, "/t.txt", 1, 1, 1, False)
         self.assertIn("\u2502", result)
-        self.assertIn("1\u2502 hello world", result)
+        self.assertIn("1\u2502hello world", result)
 
     def test_large_file_digit_width(self):
         total = 200
         lines = [f"L{i}\n" for i in range(total)]
         result = format_file_for_llm(lines, "/t.txt", 195, 3, total, False)
-        self.assertIn("195│ L194\n", result)
-        self.assertIn("196│ L195\n", result)
-        self.assertIn("197│ L196\n", result)
+        self.assertIn("195│L194\n", result)
+        self.assertIn("196│L195\n", result)
+        self.assertIn("197│L196\n", result)
 
     def test_line_char_truncation(self):
         from unittest.mock import patch
@@ -82,7 +82,7 @@ class TestFormatFileForLlm(unittest.TestCase):
         lines = ["hello\n"]
         result = format_file_for_llm(lines, "/one.txt", 1, 1, 1, False)
         self.assertIn('lines="1-1" total="1"', result)
-        self.assertIn("1│ hello\n", result)
+        self.assertIn("1│hello\n", result)
         self.assertIn("(End of file - total 1 lines)", result)
 
 

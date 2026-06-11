@@ -173,7 +173,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
 | `TASK_VIEW_RIGHT_MARGIN` | `1` | 任务列表状态图标右侧缩进 / Right margin for task status icons |
 | `TASK_COLOR_GRADIENT` | `128` | 任务动画渐变阶数 / Gradient color steps for task animation |
-| `TASK_COLOR_PERIOD` | `2.0` | 任务动画周期（秒）/ Task animation period (seconds) |
+| `TASK_COLOR_PERIOD` | `1.75` | 任务动画周期（秒）/ Task animation period (seconds) |
 | `TASK_PENDING_WITHOUT_OWNER_ICON` | `○` | 无归属待处理任务图标 / Icon for pending task without owner |
 | `TASK_PENDING_WITHOUT_OWNER_ICON_STYLE` | `bright_black` | 无归属待处理任务图标样式 / Style for pending task without owner icon |
 | `TASK_PENDING_WITHOUT_OWNER_STYLE` | `bright_black` | 无归属待处理任务文本样式 / Style for pending task without owner text |
@@ -194,11 +194,11 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `LISTEN_TUI_COLOR_START` | `#FF9FF3`（亮粉） | 监听 TUI 标题渐变起始色 / Listen TUI gradient start |
 | `LISTEN_TUI_COLOR_END` | `#54A0FF`（蓝） | 监听 TUI 标题渐变终止色 / Listen TUI gradient end |
 | `LISTEN_TUI_COLOR_GRADIENT` | `128` | 监听 TUI 渐变色阶数 / Listen TUI gradient steps |
-| `LISTEN_TUI_COLOR_PERIOD` | `2.0` | 监听 TUI 动画周期（秒）/ Listen TUI animation period (seconds) |
+| `LISTEN_TUI_COLOR_PERIOD` | `1.75` | 监听 TUI 动画周期（秒）/ Listen TUI animation period (seconds) |
 | `CRON_LISTEN_COLOR_START` | `#FF9FF3`（亮粉） | Cron 监听渐变起始色 / Cron listen gradient start |
 | `CRON_LISTEN_COLOR_END` | `#54A0FF`（蓝） | Cron 监听渐变终止色 / Cron listen gradient end |
 | `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
-| `CRON_LISTEN_COLOR_PERIOD` | `2.0` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
+| `CRON_LISTEN_COLOR_PERIOD` | `1.75` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
 | `KEY_LISTEN_SLEEP_TIME_MS` | `100` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
 
 ### 会话标题 | Session Titles
@@ -248,6 +248,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `STREAM_DISPLAY_REFRESH_RATE` | `20` | 流式响应 TUI 刷新率（次/秒）/ Stream response TUI refresh rate (fps) |
 | `STREAM_DISPLAY_MAX_REASON_LINE` | `10` | 推理内容显示截断行数 / Max reasoning lines before truncation |
 | `STREAM_DISPLAY_MAX_CONTENT_LINE` | `20` | 内容显示截断行数 / Max content lines before truncation |
+| `MESSAGE_COLOR_GRADIENT` | `128` | 消息动态颜色渐变的阶数 / Gradient color steps for message color animation |
+| `MESSAGE_COLOR_PERIOD` | `1.75` | 消息动态颜色变化周期（秒），与 `LISTEN_TUI_COLOR_PERIOD` 联动 / Message color animation period (seconds), synced with `LISTEN_TUI_COLOR_PERIOD` |
 
 ### 编辑视图 | Edit View (File Diff)
 
@@ -337,7 +339,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `5` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `7` | Agent 更新版本号 / Agent update version |
 | `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID，用于 Scoreboard 任务认领识别 / Main agent identifier for Scoreboard task claiming |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |

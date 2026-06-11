@@ -7,60 +7,43 @@
 
 ## 简介 | Introduction
 ### 背景 | Background
-现代显示系统一个是典型的具有**多个层次的耦合嵌套的复杂系统**，并可按照设计层次大致划分为物理层、器件层、电路层、面板/宏电路层、驱动/应用层与系统性能层等六个层次。
-The modern display systems represent a **complex multi-level coupled hierarchical system**, which can be fundamentally categorized into six design layers: Physical layer, Device layer, Circuit layer, Panel/macro-circuit layer, Driver/application layer, System performance layer.
+现代显示系统是**多层次嵌套的复杂系统**（物理层 → 器件层 → 电路层 → 面板层 → 应用层 → 系统性能层）。层次间的深度耦合产生了横跨多层级的复杂现象——**电压降效应**（IR Drop）、**热电耦合效应**（Thermo-Electrical Coupling）、**显示残影**（Ghost Shadow）等，这些不良现象严重影响显示质量，且无法在单个层次分析捕捉。
+Modern display systems are **multi-level nested complex systems** (Physical → Device → Circuit → Panel → Application → System Performance). The deep inter-level coupling produces complex phenomena spanning multiple layers — **IR drop**, **thermo-electrical coupling**, **ghost shadow** — which severely degrade display quality and cannot be captured by single-level analysis.
 
 <div align="center">
   <img src="./doc/img/hierarchy_of_displays.png" width="100%" />
 </div>
 
-之前的个人项目[TECoSim仿真器](https://github.com/YunTing-k/TECoSim) （暂未开源），采用**自底向上逐层抽象** + **系统级端到端仿真** 的**跨层次协同的仿真方法**对显示系统进行建模与仿真。
-With my previous project [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not open yet), we can model the display system with a **cross-level co-simulation methodology** that combines **bottom-up hierarchical abstraction** with **system-level end-to-end simulation**.
-
-建模的层级包括 | The modeling levels includes:
-1. - **物理层（Material/Interface）**：底层物理材料、界面的光、电学特性
-   - **Material/Interface**: The optoelectronic properties of physical materials and interfaces
-2. - **器件层（Semiconductor Device）**：驱动晶体管的电流电压、温敏、迟滞特性
-   - **Semiconductor Device**: I-V characteristics, thermal sensitivity, and hysteresis behaviors of semiconductor devices
-3. - **电路层（Pixel Circuit）**：多个半导体器件组成的像素电路
-   - **Pixel Circuit**: Pixel circuits integrate multiple semiconductor devices
-4. - **面板/宏电路层（Display Panel）**：由规模化集成的像素电路，考虑寄生电阻/电容的电源网络，以及宏观材质构成的显示面板
-   - **Display Panel**: Display panel consisting of a large-scale integrated pixel circuits, power supply network considering parasitic resistance/capacitance, and macro-scale material property
-5. - **驱动/应用层（Driving Scheme）**：显示面板的刷新率、灰阶映射算法、颜色抖动算法、亮度控制算法等
-   - **Driving Scheme**: Refresh rate, gray-scale mapping algorithms, color dithering, and brightness control schemes, etc.
-6. - **系统性能层（Display Quality）**：由以上所有嵌套耦合层次所共同决定的系统最终性能,如显示面板的显示不均一性、色偏、伪影
-   - **Display Quality**: The final system performance co-determined by all the above nested coupled hierarchies, such as display non-uniformity, color shift, and artifacts in the display panel
+[TECoSim仿真器](https://github.com/YunTing-k/TECoSim)（暂未开源）正是为建模这些跨层次耦合效应而生，采用**自底向上逐层抽象**与**系统级端到端仿真**相结合的**跨层次协同仿真方法**。
+The [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not yet open-source) was built specifically to model these cross-level coupling effects, using a **cross-level co-simulation** approach combining **bottom-up abstraction** with **system-level end-to-end simulation**.
 
 ### 敏捷设计的困境 | Dilemma of Agile Design
-TECoSim仿真器的提出是为了对多层次耦合的复杂显示系统进行建模与仿真，以便为显示面板设计提供量化的指导，加快前期设计、验证等流程的迭代收敛。
-The TECoSim simulator was proposed to model and simulate complex multi-level coupled display systems, aiming to provide quantitative guidance for display panel design and accelerate the iterative convergence of early-stage design, verification, and related processes.
+TECoSim 面临两个核心瓶颈：
+TECoSim faces two fundamental bottlenecks:
 
-1. 然而TECoSim的跨层级的建模范式使得其使用**门槛较高**，使用者既需要理解从底层到顶层多个不同的设计领域，还需要对数值计算方法也需要有基本的了解，才能针对性地进行参数调优，开展设计与仿真工作。
-However, the cross-level modeling paradigm of TECoSim results in a **high barrier to entry**. Users need to understand multiple different design domains ranging from the bottom level to the top level, as well as have a basic understanding of numerical computation methods, in order to perform targeted parameter tuning and carry out design and simulation work effectively.
+1. **门槛高** — 跨层级建模范式要求使用者同时掌握多个领域知识，难以快速上手
+   **High barrier to entry** — mastering cross-level modeling requires knowledge across multiple domains
+2. **依赖人工** — 仅有"设计→仿真"的单向流程，缺乏"指标→设计"的自动化优化
+   **Manual tuning** — only "design→simulate" flow exists, lacking "spec→design" automation
 
-2. 此外，TECoSim只提供了“设计输入-结果输出”范式的仿真，对于显示系统的优化只能**依赖专家调优**，缺乏高效的自动化调优方法以实现“指标输入-设计输出”的高效设计范式。
-Furthermore, TECoSim only provides a "design input → result output" simulation paradigm. Optimization of the display system can only **rely on expert tuning**, lacking efficient automated optimization methods to achieve an efficient "specification input → design output" design paradigm.
-
----
-
-以上问题限制了TECoSim及其背后的跨层次建模思想在真实场景下的能力，因此诞生了**TECoSim Agent**项目。
-These issues limit the capability of TECoSim and the underlying cross-layer modeling philosophy in real-world scenarios, which led to the creation of the **TECoSim Agent** project.
+以上问题催生了 **TECoSim Agent** 项目。
+These limitations led to the **TECoSim Agent** project.
 
 ---
 
 ### 项目贡献 | Contribution of this Project
 
-**TECoSim Agent** 是一个嵌入了 TECoSim 仿真器的 LLM 智能体——通过 Harness 封装调用 TECoSim，提供端到端的显示面板设计能力：
-**TECoSim Agent** is an LLM-powered agent that embeds the TECoSim simulator — invoking it through a dedicated harness for end-to-end display panel design:
+**意图-物理跨层对齐的设计范式 | Intent-Physics Cross-Level Alignment Paradigm**
 
----
+传统设计流程中，设计意图需要专家 **手动拆解** 为可执行的设计-仿真迭代步骤，同时各仿真工具仅 **孤立考虑各个层级**、严重忽略层间耦合。最终导致系统性能 **缺乏全局可参考依据**，**设计效率低下**。
+Traditional design requires experts to **manually translate** design intent into executable design-simulation iteration steps, while simulation tools **address each layer in isolation**, severely neglecting cross-level coupling. The result is a system-level evaluation with **no reliable global reference** and **inefficient design workflows**.
 
-**核心能力 | Core Capabilities**
+**TECoSim Agent** 深度嵌入跨层次建模的 TECoSim 仿真器到 LLM 智能体，结合专家工具和工作流编排，**实现设计意图到物理仿真的全层级贯通**。
+**TECoSim Agent** deeply embeds the cross-level modeling TECoSim simulator into an LLM agent, combining expert tools and workflow orchestration — **achieving cross-level alignment from design intent to physical simulation**.
 
-- **端到端面板设计** — 根据用户指标，自动完成面板初始化设计、仿真配置、运行与结果分析
-  **End-to-end panel design** — handles design initialization, simulation configuration, execution, and result analysis per user specifications
-- **自然语言交互** — 无需深入了解底层仿真参数，通过对话即可完成设计迭代
-  **Natural language interface** — iterate designs through conversation, no need to master low-level simulation parameters
+<div align="center">
+  <img src="./doc/img/agent_tui.png" width="100%" />
+</div>
 
 **主要特性 | Key Features**
 
@@ -140,6 +123,7 @@ You must set your LLM API endpoint and key:
 | `RIPGREP_PATH` | `"rg"` | `ripgrep` 可执行文件路径 / Path to `ripgrep` executable |
 | `WEB_SEARCH_BACKEND` | _(空 empty)_ | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Set to enable web search |
 | `WEB_SEARCH_API_KEY` | _(空 empty)_ | 网络搜索 API Key / API key for your web search backend |
+| `DISPLAY_RESPONSE_REASON` | `true` | 是否显示 LLM 推理过程（关闭时显示 "Thinking ..." 占位）/ Whether to display LLM reasoning content |
 
 ### 3. Bash 与 ripgrep 路径说明 | Bash & ripgrep Notes
 

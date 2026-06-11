@@ -15,7 +15,9 @@ Revision:
 2026.6.5       Yu Huang      1.3      Render bash command as Markdown support
 2026.6.8       Yu Huang      1.4      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      1.5      Remove read_line_with_limit to basic_utils.py
-2026.6.11      Yu Huang      1.6      Add format_file_for_llm: XML-wrapped pipe-separated line-number output for LLM consumption
+2026.6.11      Yu Huang      1.6      Add format_file_for_llm: XML-wrapped left-aligned pipe-separated line-number output for LLM consumption
+2026.6.11      Yu Huang      1.7      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py &
+                                      Remove the space noise in readout content line prefix
 
 Details:
 ---------
@@ -67,6 +69,76 @@ class BashMD(Markdown):
         self.code_theme = "one-dark"
         self.hyperlinks = True
         self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
+
+
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    """convert rgb to hex color"""
+    r, g, b = rgb
+    for value, name in [(r, 'R'), (g, 'G'), (b, 'B')]:
+        if not isinstance(value, int):
+            sys_log.error(f"Invalid RGB value: {name}={value} must be integer")
+            raise TypeError(f"Invalid RGB value: {name}={value} must be integer")
+        if value < 0 or value > 255:
+            sys_log.error(f"Invalid RGB value: {name}={value} out of range [0, 255]")
+            raise ValueError(f"Invalid RGB value: {name}={value} out of range [0, 255]")
+
+    try:
+        hex_color = f"#{r:02X}{g:02X}{b:02X}"
+        return hex_color
+    except Exception as e:
+        sys_log.error(f"Failed to convert RGB {rgb} to hex with error: {e}")
+        raise RuntimeError(f"Failed to convert RGB {rgb} to hex with error: {e}")
+
+
+def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """convert hex color to rgb"""
+    hex_color = hex_color.lstrip('#').upper()
+
+    if not all(c in '0123456789ABCDEF' for c in hex_color):
+        sys_log.error(f"Invalid hex color: {hex_color}")
+        raise ValueError(f"Invalid hex color: {hex_color}")
+
+    if len(hex_color) == 3:
+        hex_color = ''.join(c * 2 for c in hex_color)
+    elif len(hex_color) != 6:
+        sys_log.error(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
+        raise ValueError(f"Invalid hex color: {hex_color} not in 3 or 6 hex digits")
+
+    try:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return r, g, b
+    except Exception as e:
+        sys_log.error(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
+        raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
+
+
+def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int) -> tuple[list[int], list[int], list[int]]:
+    """get gradient color RGB list according to RGB color and gradient"""
+    r_list: list[int] = []
+    g_list: list[int] = []
+    b_list: list[int] = []
+    for i in range(gradient):
+        ratio = i / (gradient - 1)
+        r_list.append(int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio))
+        g_list.append(int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio))
+        b_list.append(int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))
+    return r_list, g_list, b_list
+
+
+def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int) -> list[str]:
+    """get gradient color hex list according to hex color and gradient"""
+    start_rgb = hex_to_rgb(start_hex)
+    end_rgb = hex_to_rgb(end_hex)
+    h_list: list[str] = []
+    for i in range(gradient):
+        ratio = i / (gradient - 1)
+        h_list.append(rgb_to_hex((
+            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
+            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
+            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))))
+    return h_list
 
 
 def load_configs(configs_path: str, name: str, console: Console):
@@ -289,24 +361,26 @@ def format_file_for_llm(lines: list[str], file_path: str, start_line: int,
 
     Output format (following CodeWhale/OpenCode best practices):
       <file path="..." lines="X-Y" total="Z" truncated="true|false">
-            X| content
+      X|content
       ...
-            Y| content
+      Y|content
       (footer)
       </file>
     """
     offset_idx = start_line - 1
     snippet = lines[offset_idx : offset_idx + shown_count]
-    shown_first = start_line
-    shown_last = start_line + len(snippet) - 1
-    width = max(6, len(str(shown_last)))
-
+    if shown_count > 0:
+        shown_first = start_line
+        shown_last = start_line + len(snippet) - 1
+    else:
+        shown_first = 0
+        shown_last = 0
     output = f'<file path="{file_path}" lines="{shown_first}-{shown_last}" total="{total_lines}" truncated="{str(truncated).lower()}">\n'
     for i, line in enumerate(snippet):
         line_no = start_line + i
         if len(line) > READ_FILE_LINE_CHAR_LIMIT:
             line = line[:READ_FILE_LINE_CHAR_LIMIT] + f"... (line truncated to {READ_FILE_LINE_CHAR_LIMIT} chars)\n"
-        output += f"{line_no:>{width}}│ {line}"
+        output += f"{line_no}│{line}"
 
     if truncated:
         next_offset = start_line + len(snippet)

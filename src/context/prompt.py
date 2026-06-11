@@ -28,10 +28,11 @@ Revision:
 2026.6.8       Yu Huang      2.6      Bash and ripgrep path configurable support
 2026.6.9       Yu Huang      2.7      Revise the system prompts of task tools & Revise the highlight of the IO console print
 2026.6.10      Yu Huang      2.8      Revise the system prompts of task tools & Main/Fast model can configure deepseek support dependently &
-                                       Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
-                                       Fix the bug of stream messages handling under direct connection API
+                                      Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
+                                      Fix the bug of stream messages handling under direct connection API
 2026.6.11      Yu Huang      2.9      Add resume-display preview switches for write_file/bash command/bash result in print_messages &
-                                       integrate get_write_render/get_bash_render/get_bash_result_render into history replay
+                                      integrate get_write_render/get_bash_render/get_bash_result_render into history replay
+2026.6.11      Yu Huang      3.0      Add tools name display with color gradient in stream mode & Add switch if displaying the reasoning content
 
 Details:
 ---------
@@ -61,7 +62,8 @@ from src.tool.file_io_support import get_write_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
-    get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD)
+    get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD,
+    grad_color_hex_list)
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -608,12 +610,13 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
                       style="bold yellow")
 
     """print the final content"""
-    console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"]))
+    console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"],
+                                   ctx.agent_configs["DISPLAY_RESPONSE_REASON"]))
 
     return assistant_tool_calls
 
 
-def get_block_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool) -> Group:
+def get_block_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool, show_reason: bool) -> Group:
     """get the render of the non-stream messages"""
     parts = []
 
@@ -625,12 +628,16 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
         t.add_column(vertical="top")
-        if as_md:
-            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                      ReasonMD("{Think}: " + collected_reasoning))
+        if show_reason:
+            if as_md:
+                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                          ReasonMD("{Think}: " + collected_reasoning))
+            else:
+                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                          Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
         else:
             t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                      Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
+                      Text("Think done", style=REASON_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -653,40 +660,49 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
     return Group(*parts)
 
 
-def get_stream_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool) -> Group:
+def get_stream_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool, show_reason: bool,
+                      collected_tool_names: list[str] | None, base_time: datetime, color_list: list[str]) -> Group:
     """get the render of the stream messages with smart truncation for long content"""
+    now_time = datetime.now()
+    time_diff = (now_time - base_time).total_seconds()
+    position_in_period = time_diff % MESSAGE_COLOR_PERIOD
+    index = int((position_in_period / MESSAGE_COLOR_PERIOD) * len(color_list)) % len(color_list)
+    color = color_list[index]
     max_reasoning_lines = STREAM_DISPLAY_MAX_REASON_LINE
     max_content_lines = STREAM_DISPLAY_MAX_CONTENT_LINE
     parts = []
 
     """display reasoning with truncation for long output"""
     if collected_reasoning not in (None, ""):
-        reason_lines = collected_reasoning.split('\n')
-        parts.append(Text("\n"))
-        if len(reason_lines) > max_reasoning_lines:
-            # Show indicator and latest lines when reasoning is too long
-            indicator = Text(f"[", style=f"bright_black")
-            indicator.append(f"{AGENT_CONSOLE_ICON}", style=f"bold {MAJOR_COLOR1}")
-            indicator.append(f" generating reasoning..., ", style=f"bright_black")
-            indicator.append(f"{len(reason_lines)}", style=f"bold {MAJOR_COLOR1}")
-            indicator.append(f" lines total, showing latest ", style=f"bright_black")
-            indicator.append(f"{max_reasoning_lines}", style=f"bold {MAJOR_COLOR1}")
-            indicator.append(f" lines]\n", style=f"bright_black")
-            parts.append(indicator)
-            reason_display = '\n'.join(reason_lines[-max_reasoning_lines:])
-            reason_display = reason_display.lstrip()
-            reason_display = reason_display.rstrip()
-        else:
-            reason_display = collected_reasoning
-
         t = Table(show_header=False, show_edge=False, padding=0,
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
         t.add_column(vertical="top")
-        if as_md:
-            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + reason_display))
+        parts.append(Text("\n"))
+        if show_reason:
+            reason_lines = collected_reasoning.split('\n')
+            if len(reason_lines) > max_reasoning_lines:
+                # Show indicator and latest lines when reasoning is too long
+                indicator = Text(f"[", style=f"bright_black")
+                indicator.append(f"{AGENT_CONSOLE_ICON}", style=f"bold {color}")
+                indicator.append(f" generating reasoning..., ", style=f"bright_black")
+                indicator.append(f"{len(reason_lines)}", style=f"bold {color}")
+                indicator.append(f" lines total, showing latest ", style=f"bright_black")
+                indicator.append(f"{max_reasoning_lines}", style=f"bold {color}")
+                indicator.append(f" lines]\n", style=f"bright_black")
+                parts.append(indicator)
+                reason_display = '\n'.join(reason_lines[-max_reasoning_lines:])
+                reason_display = reason_display.lstrip()
+                reason_display = reason_display.rstrip()
+            else:
+                reason_display = collected_reasoning
+
+            if as_md:
+                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + reason_display))
+            else:
+                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), Text("{Think}: " + reason_display, style=REASON_STYLE))
         else:
-            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), Text("{Think}: " + reason_display, style=REASON_STYLE))
+            t.add_row(Text(f" {REASON_ICON} ", style=f"bold {color}"), Text("Thinking ... ", style=f"bold {color}"))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -698,11 +714,11 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         if len(content_lines) > max_content_lines:
             # Show indicator and latest lines when content is too long
             indicator = Text(f"[", style=f"bright_black")
-            indicator.append(f"{AGENT_CONSOLE_ICON}", style=f"bold {MAJOR_COLOR1}")
+            indicator.append(f"{AGENT_CONSOLE_ICON}", style=f"bold {color}")
             indicator.append(f" generating content..., ", style=f"bright_black")
-            indicator.append(f"{len(content_lines)}", style=f"bold {MAJOR_COLOR1}")
+            indicator.append(f"{len(content_lines)}", style=f"bold {color}")
             indicator.append(f" lines total, showing latest ", style=f"bright_black")
-            indicator.append(f"{max_content_lines}", style=f"bold {MAJOR_COLOR1}")
+            indicator.append(f"{max_content_lines}", style=f"bold {color}")
             indicator.append(f" lines]\n", style=f"bright_black")
             parts.append(indicator)
             display_content = '\n'.join(content_lines[-max_content_lines:])
@@ -722,6 +738,20 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         parts.append(t)
         parts.append(Text("\n"))
 
+    """display tool calls being prepared"""
+    if collected_tool_names:
+        names = [n for n in collected_tool_names if n.strip()]
+        if names:
+            if collected_content in (None, "") and collected_reasoning in (None, ""):
+                parts.append(Text("\n"))
+            line = Text("Preparing tools: ", style=f"bright_black")
+            for i, name in enumerate(names):
+                if i > 0:
+                    line.append(", ", style="bright_black")
+                line.append(name, style=f"{color}")
+            parts.append(line)
+            parts.append(Text("\n"))
+
     return Group(*parts)
 
 
@@ -736,9 +766,14 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     final_usage = None
     final_finish_reason = None
     as_md = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
+    show_reason = ctx.agent_configs["DISPLAY_RESPONSE_REASON"]
+    tool_names: list[str] = []
+    base_time = datetime.now()
+    msg_color_list = grad_color_hex_list(MAJOR_COLOR1, MAJOR_COLOR2, MESSAGE_COLOR_GRADIENT)
+    msg_color_list = msg_color_list + msg_color_list[::-1]
 
     """process each chunk"""
-    with Live(get_stream_render(collected_reasoning, collected_content, as_md),
+    with Live(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names, base_time, msg_color_list),
               refresh_per_second=STREAM_DISPLAY_REFRESH_RATE, console=console, transient=True) as live:
         for chunk in response:
             if not chunk.choices:
@@ -791,10 +826,12 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
                     if tool_call_delta.function and tool_call_delta.function.arguments:
                         tc["function"]["arguments"] += tool_call_delta.function.arguments
             """update display"""
-            live.update(get_stream_render(collected_reasoning, collected_content, as_md))
+            tool_names = [tc["function"]["name"] for tc in collected_tool_calls.values() if tc["function"]["name"].strip()]
+            live.update(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names if tool_names else None,
+                                          base_time, msg_color_list))
 
     """print the final content"""
-    console.print(get_block_render(collected_reasoning, collected_content, as_md))
+    console.print(get_block_render(collected_reasoning, collected_content, as_md, show_reason))
 
     """check finish reason"""
     sys_log.debug(f"Finish reason: {final_finish_reason}")

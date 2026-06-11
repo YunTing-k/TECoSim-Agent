@@ -8,7 +8,7 @@ Creates temp test files, mocks permission/progress, calls read_file directly.
 
 Run:  python test/read_integration_test.py
 """
-import sys, os, unittest, io, re, json, tempfile, shutil
+import sys, os, unittest, io, re, tempfile, shutil
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.getcwd())
@@ -21,7 +21,6 @@ from unittest.mock import patch, MagicMock
 from rich.console import Console
 from src.context.agent_context import AgentContext
 from src.tool.tool_def import read_file
-from src.tool.simulator_support import read_log_impl, RunManager
 
 
 def _strip_ansi(text: str) -> str:
@@ -95,8 +94,8 @@ class TestReadFileContentCorrectness(unittest.TestCase):
         content = result["file_content"]
         parsed = _extract_content(content)
         self.assertEqual(len(parsed), 5)
-        self.assertEqual(parsed[0], (1, " Content of line 1"))
-        self.assertEqual(parsed[4], (5, " Content of line 5"))
+        self.assertEqual(parsed[0], (1, "Content of line 1"))
+        self.assertEqual(parsed[4], (5, "Content of line 5"))
         self.assertIn('truncated="true"', content)
 
     def test_from_bottom_content(self):
@@ -106,8 +105,8 @@ class TestReadFileContentCorrectness(unittest.TestCase):
         content = result["file_content"]
         parsed = _extract_content(content)
         self.assertEqual(len(parsed), 5)
-        self.assertEqual(parsed[0], (26, " Content of line 26"))
-        self.assertEqual(parsed[4], (30, " Content of line 30"))
+        self.assertEqual(parsed[0], (26, "Content of line 26"))
+        self.assertEqual(parsed[4], (30, "Content of line 30"))
         self.assertIn('truncated="true"', content)
 
     def test_offset_content(self):
@@ -117,8 +116,8 @@ class TestReadFileContentCorrectness(unittest.TestCase):
         content = result["file_content"]
         parsed = _extract_content(content)
         self.assertEqual(len(parsed), 5)
-        self.assertEqual(parsed[0], (12, " Content of line 12"))
-        self.assertEqual(parsed[4], (16, " Content of line 16"))
+        self.assertEqual(parsed[0], (12, "Content of line 12"))
+        self.assertEqual(parsed[4], (16, "Content of line 16"))
 
     def test_all_content(self):
         ctx = _make_ctx()
@@ -127,8 +126,8 @@ class TestReadFileContentCorrectness(unittest.TestCase):
         content = result["file_content"]
         parsed = _extract_content(content)
         self.assertEqual(len(parsed), 30)
-        self.assertEqual(parsed[0], (1, " Content of line 1"))
-        self.assertEqual(parsed[29], (30, " Content of line 30"))
+        self.assertEqual(parsed[0], (1, "Content of line 1"))
+        self.assertEqual(parsed[29], (30, "Content of line 30"))
         self.assertIn('truncated="false"', content)
         self.assertIn("(End of file - total 30 lines)", content)
 
@@ -198,8 +197,8 @@ class TestFormatFileForLlmEdgeCases(unittest.TestCase):
         from utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(30)]
         result = format_file_for_llm(lines, "/t.txt", 5, 3, 30, True)
-        self.assertIn("5│ L4\n", result)
-        self.assertIn("7│ L6\n", result)
+        self.assertIn("5│L4\n", result)
+        self.assertIn("7│L6\n", result)
         self.assertNotIn("L0", result)
         self.assertNotIn("L7", result)
 
@@ -207,15 +206,15 @@ class TestFormatFileForLlmEdgeCases(unittest.TestCase):
         from utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(20)]
         result = format_file_for_llm(lines, "/t.txt", 17, 4, 20, True)
-        self.assertIn("17│ L16\n", result)
-        self.assertIn("20│ L19\n", result)
+        self.assertIn("17│L16\n", result)
+        self.assertIn("20│L19\n", result)
         self.assertNotIn("L15", result)
 
     def test_shown_count_zero(self):
         from utility.basic_utils import format_file_for_llm
         lines = ["x\n"]
         result = format_file_for_llm(lines, "/t.txt", 1, 0, 1, False)
-        self.assertIn('lines="1-0"', result)
+        self.assertIn('lines="0-0"', result)
 
     def test_total_line_count_in_footer(self):
         from utility.basic_utils import format_file_for_llm

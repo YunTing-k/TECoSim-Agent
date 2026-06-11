@@ -31,7 +31,7 @@ from src.context.agent_context import AgentContext
 from src.tool.cron_support import check_cron_tasks
 from src.tool.scoreboard import Scoreboard, TaskStatus, Task, get_tasks_render
 from src.constants import *
-from src.utility.ui_info import grad_color_hex_list
+from src.utility.basic_utils import grad_color_hex_list
 
 sys_log = logging.getLogger('logger')
 
