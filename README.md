@@ -140,6 +140,19 @@ You must set your LLM API endpoint and key:
 - Agent 内置了命令风险检测引擎（`evaluate_bash_risk`），该检测基于 Bash 语义设计，若替换为 cmd/pwsh 可能导致风险判断失效
   The built-in command risk detection (`evaluate_bash_risk`) is designed for Bash semantics; using cmd/pwsh may bypass security checks
 
+> **⚠️ 安全建议 — 推荐在沙箱中运行 | Security Advisory — Run in a Sandbox**
+>
+> Agent 可通过 `bash` 工具执行任意系统命令（包括文件读写、网络请求、进程管理等高风险操作）。尽管内置了多层风险检测与权限确认机制，**过滤系统并不绝对可靠**，无法完全覆盖所有恶意或误操作的场景。
+> The agent can execute arbitrary system commands via the `bash` tool (including file I/O, network requests, process management, and other high-risk operations). Although the system has built-in multi-layer risk detection and permission confirmation mechanisms, **the filtering system is not infallible** and cannot guarantee complete coverage against all malicious or accidental operations.
+>
+> **因此，强烈建议将本 Agent 部署在沙箱环境（如 Docker 容器、虚拟机、专用隔离服务器）中运行，避免直接暴露在宿主机的生产环境或含有敏感数据的系统中。**
+> **Therefore, it is strongly recommended to deploy this agent within a sandboxed environment (e.g., Docker container, virtual machine, dedicated isolated server) rather than exposing it directly to a production host or systems containing sensitive data.**
+>
+> 额外建议 | Additional recommendations:
+> - 使用最小权限的专用系统账户运行，而非 root/管理员账户 / Run with a dedicated least-privilege system account, not root/administrator
+> - 通过 `/readonly_add` 命令将关键路径设为只读，防止无意中被写入 / Use `/readonly_add` to mark critical paths as read-only to prevent accidental writes
+> - 定期审计 Agent 的执行日志，排查异常命令 / Regularly audit agent execution logs for anomalous commands
+
 #### ripgrep 路径 | ripgrep Path
 
 Agent 通过 `grep_file` 工具调用 ripgrep（`rg`）进行文件内容搜索。安装方式：
@@ -314,6 +327,8 @@ TECoSimAgent/
 - [配置参数参考 | Configuration Reference](./doc/configuration.md) — `api_configs.json` & `agent_configs.json` 完整参数说明 / All parameter descriptions
 - [常量参考 | Constants Reference](./doc/constants_reference.md) — `constants.py` 完整参考：工具名称、Bash风险等级、UI配置等 / Tool names, bash risk levels, UI configs, etc.
 - [MCP 与 Skills 设置指南 | MCP & Skills Setup Guide](./doc/mcp_skills_setup.md) — MCP 服务器与技能详细设置指南 / Detailed setup guide for MCP servers and skills
+- [Rich 开发注意事项 | Rich Development Pitfalls](./doc/rich_pitfalls.md) — 终端 TUI 预览功能开发中遇到的 Rich 库关键问题与解决方案 / Key issues and solutions when developing TUI preview features with the Rich library
+- [任务管理机制对比研究 | Task Management Comparison](./doc/task_management_comparison.md) — 四款主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across four major coding agents
 
 ## 致谢 | Acknowledgement
 

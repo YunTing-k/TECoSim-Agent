@@ -47,6 +47,7 @@ Revision:
 2026.6.11      Yu Huang      4.1      Adopt XML-wrapped pipe-separated line-number format for read_file/read_log LLM output &
                                       integrate get_write_render into write_file permission preview & add resume-display switches
                                       for write/bash preview in print_messages
+2026.6.12      Yu Huang      4.2      Add task tool result feedback (guidance on create/update) & query_task ownership-grouped summary
 
 Details:
 ---------
@@ -69,7 +70,7 @@ from src.utility.ui_info import pause_for_permission, resume_from_permission
 from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, create_cron_impl
-from src.tool.scoreboard import Scoreboard, args_to_taskupdate, task_to_info, tasks_to_info
+from src.tool.scoreboard import Scoreboard, TaskStatus, args_to_taskupdate, task_to_info, tasks_to_info
 from src.tool.file_filter_support import glob_impl, grep_impl
 from src.tool.file_io_support import (
     match_line_ranges, find_actual_string, ask_edit_tui, check_read_only,
@@ -306,18 +307,6 @@ def tool_create_task_def() -> dict[str, Any]:
                            "in login flow\")\n"
                            "- `description`: What needs to be done\n"
                            f"All tasks are created with status `{TASK_PENDING_LABEL}` and a unique integer task id.\n\n"
-                           "## Usage\n\n"
-                           "- After receiving new instructions, immediately capture user requirements as tasks\n"
-                           f"- Use `{TOOL_NAME_QUERY_TASK}` (with no args) to get task list first to avoid creating duplicate "
-                           f"tasks\n"
-                           f"- You can also query a specific task's detail by `{TOOL_NAME_QUERY_TASK}` with its task id\n"
-                           "- Create tasks with clear, specific subjects that describe the outcome\n"
-                           f"- After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set up dependencies (`add_blocks` / "
-                           f"`add_blocked_by`) if needed\n"
-                           f"- When you start working on a task, use `{TOOL_NAME_UPDATE_TASK}` to mark it as `{TASK_IN_PROGRESS_LABEL}` "
-                           f"BEFORE beginning work\n"
-                           f"- After completing a task, use `{TOOL_NAME_UPDATE_TASK}` to mark it as `{TASK_COMPLETED_LABEL}` "
-                           f"and add any new follow-up tasks discovered during implementation\n"
                            "## When to Use This Tool\n\n"
                            "Use this tool proactively in these scenarios:\n\n"
                            "- Complex multi-step tasks "
@@ -326,8 +315,25 @@ def tool_create_task_def() -> dict[str, Any]:
                            "- User explicitly requests todo list: When the user directly asks you to use the todo list\n"
                            "- User provides multiple tasks: When user provides a list of things to be done (numbered or "
                            "comma-separated)\n"
-                           "A good rule of thumb: each task should represent a meaningful milestone "
-                           "(e.g. \"Collect data\"), not individual tool calls (e.g. \"Read file A\").\n",
+                           "A good rule of thumb: each task should represent a meaningful milestone (e.g. \"Collect data\"), "
+                           "not individual tool calls (e.g. \"Read file A\").\n\n"
+                           "## Task Decomposition Rules\n\n"
+                           "You MUST create multiple tasks when:\n"
+                           "- A request requires 3+ distinct actions or spans multiple logical phases\n"
+                           "- A request involves 2 or more files/directories or independent operations\n"
+                           "- The user provides a numbered or comma-separated list\n\n"
+                           "Good example for request \"add dark mode toggle and run tests\":\n"
+                           "  Task 1: Add theme state management (description: Create theme context/store)\n"
+                           "  Task 2: Build toggle UI component (description: Add theme switch to settings)\n"
+                           "  Task 3: Wire theme to existing components (description: Apply theme classes across app)\n"
+                           "  Task 4: Run tests and fix failures (description: Execute test suite, fix any issues)\n\n"
+                           "Bad example (same request - DO NOT DO THIS):\n"
+                           "  Task 1: Implement dark mode (description: Add dark mode to the app)\n\n"
+                           f"After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set dependencies and mark progress.\n"
+                           f"When you start a task, mark it `{TASK_IN_PROGRESS_LABEL}` via `{TOOL_NAME_UPDATE_TASK}` BEFORE "
+                           f"beginning work. After completing, mark it `{TASK_COMPLETED_LABEL}` and add any follow-up tasks.\n"
+                           f"Only ONE task should be `{TASK_IN_PROGRESS_LABEL}` at a time. Do NOT batch-complete multiple "
+                           f"tasks after the fact.\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -361,7 +367,7 @@ def create_task(arguments: dict[str, Any], board: Scoreboard, progress: Progress
             if not MUTE_TASK_OP_INFO:
                 progress.console.print(f"{func_name} {SUCCESS_LABEL}: Create task success with info: {create_info}",
                                        style="bright_black")
-            return {"status": SUCCESS_LABEL, "info": create_info}
+            return {"status": SUCCESS_LABEL, "info": create_info + f"\nMark your first task as in_progress via `{TOOL_NAME_UPDATE_TASK}` (with task_id) and begin work."}
         else:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Create task failed with error, details: {create_info}")
             if not MUTE_TASK_OP_INFO:
@@ -496,8 +502,13 @@ def update_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard,
             return {"status": FAIL_LABEL, "info": f"Update task failed with error, details: {task_info}"}
         """update task"""
         assert task is not None
+        target_status = task["status"]
         if_success, update_info = board.update_task(task)
         if if_success:
+            if target_status == TASK_IN_PROGRESS_LABEL:
+                update_info += f"\nProceed with this task. Only ONE task {TASK_IN_PROGRESS_LABEL} at a time."
+            elif target_status == TASK_COMPLETED_LABEL or target_status == TASK_DELETED_LABEL:
+                update_info += f"\nTask resolved. Use `{TOOL_NAME_QUERY_TASK}` (no args) to find your next available task."
             sys_log.debug(f"{func_name} {DONE_LABEL}: Update task done with info: {update_info}")
             if not MUTE_TASK_OP_INFO:
                 progress.console.print(f"{func_name} {DONE_LABEL}: Update task done with info: {update_info}",
@@ -606,6 +617,40 @@ def query_task(arguments: dict[str, Any], ctx: AgentContext, board: Scoreboard, 
             """list all tasks"""
             tasks = board.list_tasks()
             tasks_info = tasks_to_info(tasks, ctx.agent_id)
+            # append summary: counts grouped by status and ownership (conservative — only relevant to this agent)
+            status_counts = board.count_by_status()
+            unclaimed = board.list_unclaimed_tasks()
+            mine = board.list_tasks(ctx.agent_id)
+            pending_unclaimed = sum(1 for t in unclaimed if t["status"] == TaskStatus.PENDING)
+            pending_mine = sum(1 for t in mine if t["status"] == TaskStatus.PENDING)
+            in_progress_mine = sum(1 for t in mine if t["status"] == TaskStatus.IN_PROGRESS)
+            completed_mine = sum(1 for t in mine if t["status"] == TaskStatus.COMPLETED)
+            parts = []
+            pending = status_counts.get(TaskStatus.PENDING, 0)
+            if pending > 0:
+                detail_parts = []
+                if pending_unclaimed > 0:
+                    detail_parts.append(f"{pending_unclaimed} unclaimed")
+                if pending_mine > 0:
+                    detail_parts.append(f"{pending_mine} by you")
+                detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+                parts.append(f"{pending} pending{detail}")
+            in_progress = status_counts.get(TaskStatus.IN_PROGRESS, 0)
+            if in_progress > 0:
+                detail_parts = []
+                if in_progress_mine > 0:
+                    detail_parts.append(f"{in_progress_mine} by you")
+                detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+                parts.append(f"{in_progress} in_progress{detail}")
+            completed = status_counts.get(TaskStatus.COMPLETED, 0)
+            if completed > 0:
+                detail_parts = []
+                if completed_mine > 0:
+                    detail_parts.append(f"{completed_mine} by you")
+                detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+                parts.append(f"{completed} completed{detail}")
+            summary = ", ".join(parts) if parts else "No active tasks"
+            tasks_info += f"\n[{summary}]"
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: List task success")
             if not MUTE_TASK_OP_INFO:
                 progress.console.print(f"{func_name} {SUCCESS_LABEL}: List task success",

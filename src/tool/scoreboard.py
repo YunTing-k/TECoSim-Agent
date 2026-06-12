@@ -12,6 +12,7 @@ Revision:
 2026.6.5-7       Yu Huang       1.0      First implementation
 2026.6.9         Yu Huang       1.1      Revise the highlight of the IO console print
 2026.6.10        Yu Huang       1.2      Add reminder for LLM to manage workflow proactively
+2026.6.12        Yu Huang       1.3      Add count_by_status() & fix Status display using .value
 
 Details:
 ---------
@@ -490,6 +491,16 @@ class Scoreboard:
         with self._lock:
             return [task for task in self._tasks.values() if task["owner"] is None]
 
+    def count_by_status(self) -> dict[TaskStatus, int]:
+        """return count of non-archived tasks grouped by status"""
+        with self._lock:
+            counts: dict[TaskStatus, int] = {}
+            for task in self._tasks.values():
+                if task["if_archived"]:
+                    continue
+                counts[task["status"]] = counts.get(task["status"], 0) + 1
+            return counts
+
 
     def archive_tasks(self):
         """archive resolved tasks (completed/deleted).
@@ -622,7 +633,7 @@ def task_to_info(task: Task, agent_id: str) -> str:
         info += f"Owner ID: {task["owner"]} (You)\n"
     else:
         info += f"Owner ID: {task["owner"]} (other agent)\n"
-    info += f"Status: {task["status"]}\n"
+    info += f"Status: {task["status"].value}\n"
     if len(task["blocks"]) == 0:
         info += f"Blocks: (None)\n"
     else:
@@ -647,7 +658,7 @@ def tasks_to_info(tasks: list[Task], agent_id: str) -> str:
             info += f" - Owner ID: {task["owner"]} (You)\n"
         else:
             info += f" - Owner ID: {task["owner"]} (other agent)\n"
-        info += f" - Status: {task["status"]}\n"
+        info += f" - Status: {task["status"].value}\n"
         # if len(task["blocks"]) == 0:
         #     info += f" - Blocks: (None)\n"
         # else:

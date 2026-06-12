@@ -2,7 +2,7 @@
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 7
+TECOSIM_AGENT_UPDATE_VERSION: int = 8
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -45,7 +45,7 @@ TASK_PENDING_LABEL: str = "pending"
 TASK_IN_PROGRESS_LABEL: str = "in_progress"
 TASK_COMPLETED_LABEL: str = "completed"
 TASK_DELETED_LABEL: str = "deleted"
-TASK_DISPLAYS_BEFORE_ARCHIVED: int = 3
+TASK_DISPLAYS_BEFORE_ARCHIVED: int = 6
 MUTE_TASK_OP_INFO: bool = True
 RUN_PENDING_LABEL: str = "PENDING"
 RUN_CANCELLED_LABEL: str = "CANCELLED"

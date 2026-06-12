@@ -33,6 +33,7 @@ Revision:
 2026.6.11      Yu Huang      2.9      Add resume-display preview switches for write_file/bash command/bash result in print_messages &
                                       integrate get_write_render/get_bash_render/get_bash_result_render into history replay
 2026.6.11      Yu Huang      3.0      Add tools name display with color gradient in stream mode & Add switch if displaying the reasoning content
+2026.6.12      Yu Huang      3.1      Upgrade workflow guidelines to CONSTRAINT-level mandate (3+ steps MUST create_task) with Good/Bad examples
 
 Details:
 ---------
@@ -110,30 +111,19 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 " - You are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), capable of display "
                 "panel visual quality, IR drop, and temperature distribution analysis under thermo-electrical coupling effects\n"
                 "# Workflow Guidelines\n"
-                f"IMPORTANT: Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are "
-                f"your primary mechanism for planning and communicating with the user. When receiving any user request, "
-                f"follow this flow:\n"
-                f"  1. Call `{TOOL_NAME_QUERY_TASK}` to check the progress of the current task. Call it with no arguments "
-                f"to get the task list in brief, or with a known task ID to see that specific task's current state in detail\n"
-                f"  2. If no relevant tasks exist, call `{TOOL_NAME_CREATE_TASK}` to break down the work into milestones "
-                f"(e.g. \"Collect data\"), not single tool calls (e.g. \"Read file A\"). Then start executing them, using "
-                f"`{TOOL_NAME_UPDATE_TASK}` to mark progress at each milestone\n"
-                f"  3. If relevant tasks exist and not resolved, keep on executing and use `{TOOL_NAME_UPDATE_TASK}` to mark "
-                f"progress at each milestone\n"
-                f"Make sure to use `{TOOL_NAME_CREATE_TASK}` and `{TOOL_NAME_UPDATE_TASK}` to communicate your plan and "
-                f"progress to the user - viewing the task list is always the best way for the user to understand what you're doing\n"
-                # f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your primary "
-                # f"mechanism for planning and communicating with the user. When receiving any non-trivial user request, "
-                # f"call `{TOOL_NAME_CREATE_TASK}` before taking action. Use task tools to manage your workflow:\n"
-                # f"   - When the user's request involves 3+ distinct steps → `{TOOL_NAME_CREATE_TASK}` first to plan\n"
-                # f"   - When the user's request is ambiguous or open-ended → `{TOOL_NAME_CREATE_TASK}` to clarify scope, "
-                # f"then `{TOOL_NAME_ASK_QUESTION}` if needed\n"
-                # f"   - A good rule of thumb: each task should represent a meaningful milestone (e.g. \"Set up design\", "
-                # f"\"Run simulation\", \"Analyze results\"), not individual tool calls (e.g. \"Read file A\", \"Read file B\"). "
-                # f"Create a new task only when entering a new logical phase of work.\n"
-                # f"   - After completing a step → `{TOOL_NAME_UPDATE_TASK}` to mark progress and surface the next step\n"
-                # f"Use `{TOOL_NAME_CREATE_TASK}` and `{TOOL_NAME_UPDATE_TASK}` to communicate your plan and progress to the "
-                # f"user - viewing the task list is the best way for the user to understand what you're doing\n"
+                f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your PRIMARY "
+                f"mechanism for planning and communicating with the user.\n\n"
+                f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST "
+                f"to break work into multiple tasks BEFORE taking action. You MUST NOT create a single catch-all task like "
+                f"\"Implement the feature\". You MUST NOT begin work until tasks are created.\n\n"
+                f"Task tools are also the PRIMARY way for the user to see your progress - keep them current at all times.\n\n"
+                f"Follow this flow for every user request:\n"
+                f"  1. Call `{TOOL_NAME_QUERY_TASK}` (no arguments) to check current task status\n"
+                f"  2. Call `{TOOL_NAME_CREATE_TASK}` to break work into meaningful milestones - each task should represent "
+                f"a logical phase (e.g. \"Set up design\", \"Run simulation\", \"Analyze results\"), NOT a single tool call "
+                f"(e.g. \"Read file A\")\n"
+                f"  3. Mark ONE task `{TASK_IN_PROGRESS_LABEL}` via `{TOOL_NAME_UPDATE_TASK}`, work on it, then mark it "
+                f"`{TASK_COMPLETED_LABEL}` before starting the next. Do NOT batch-complete multiple tasks after the fact\n"
                 "# Simulation Guidelines\n"
                 " - Before the first simulation, you should check if the simulator is available. Only recheck when needed.\n"
                 f" - A `{SIM_DESIGN_NAME}` is always needed before launching simulator for panel design or evaluation. "
@@ -283,10 +273,10 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
                 info += (f"Make sure using `{TOOL_NAME_CREATE_TASK}` to break down the work into milestones and communicate "
                          f"your plan and progress to the user with `{TOOL_NAME_UPDATE_TASK}`\n")
             if len(unresolved_tasks) > 0:
-                info += (f"There are {len(unresolved_tasks)} tasks owned by you but not resolved (IDs: "
+                info += (f"There are {len(unresolved_tasks)} tasks owned by you but not resolved (Task IDs: "
                          f"{[task["task_id"] for task in unresolved_tasks]})\n")
             if len(unclaimed_tasks) > 0:
-                info += (f"There are {len(unresolved_tasks)} tasks not claimed by any agent (IDs: "
+                info += (f"There are {len(unresolved_tasks)} tasks not claimed by any agent (Task IDs: "
                          f"{[task["task_id"] for task in unclaimed_tasks]})\n")
     if remind_from == "user_input":
         """
