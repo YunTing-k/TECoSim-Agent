@@ -316,7 +316,11 @@ TECoSimAgent/
 │   ├── img/                     # 图片资源 / Image resources
 │   ├── configuration.md         # 完整配置参数参考 / Full configuration reference
 │   ├── constants_reference.md   # constants.py 完整参考 / Complete constants.py reference
-│   └── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
+│   ├── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
+│   ├── rich_pitfalls.md         # Rich 库开发注意事项 / Rich development pitfalls
+│   ├── task_management_comparison.md  # 任务管理机制对比研究 / Task management comparison
+│   ├── subagent_comparison.md   # Subagent 架构对比分析 / Subagent architecture comparison
+│   └── ref/                     # 参考系统提示词 / Reference system prompts
 └── requirements.txt
 ```
 
@@ -329,6 +333,7 @@ TECoSimAgent/
 - [MCP 与 Skills 设置指南 | MCP & Skills Setup Guide](./doc/mcp_skills_setup.md) — MCP 服务器与技能详细设置指南 / Detailed setup guide for MCP servers and skills
 - [Rich 开发注意事项 | Rich Development Pitfalls](./doc/rich_pitfalls.md) — 终端 TUI 预览功能开发中遇到的 Rich 库关键问题与解决方案 / Key issues and solutions when developing TUI preview features with the Rich library
 - [任务管理机制对比研究 | Task Management Comparison](./doc/task_management_comparison.md) — 四款主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across four major coding agents
+- [Subagent 架构对比分析 | Subagent Architecture Comparison](./doc/subagent_comparison.md) — Claude Code · CodeWhale · Codex · OpenCode 四款 Agent 架构深度对比 / In-depth comparison of subagent/task architectures across four coding agents
 
 ## 致谢 | Acknowledgement
 

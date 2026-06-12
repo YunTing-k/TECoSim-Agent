@@ -12,6 +12,7 @@ Revision:
 2026.5.21-22   Yu Huang      1.0      First implementation
 2026.5.31      Yu Huang      1.1      Add keyboard interrupt & Define used file/dir. paths in constants.py
 2026.6.1       Yu Huang      1.2      Define all used status labels in constants.py
+2026.6.12      Yu Huang      1.3      Add threading lock in MCP router for subagent coordination
 
 Details:
 ---------
@@ -23,6 +24,7 @@ import sys
 import json
 import asyncio
 import logging
+import threading
 
 from typing import Any
 from argparse import Namespace
@@ -105,6 +107,7 @@ class MCPToolRouter:
         self.tool_registry: dict[str, Client] = {}  # tool name -> Client map
         self.mcps_ini_info: dict[str, dict[str, Any]] = {}  # MCP name -> MCP initialize info map
         self.mcps_tools: dict[str, list[dict[str, Any]]] = {}  # MCP name -> registered tools {name, desc} name map
+        self._call_lock = threading.Lock()
 
 
     async def reg_all_tools(self, console: Console):
@@ -192,8 +195,9 @@ class MCPToolRouter:
 
     def call_tool_sync(self, tool_name: str, arguments: dict[str, Any], timeout: int, console: Console)\
             -> tuple[dict[str, Any] | None, str]:
-        """try to call the input tool with name (sync wrapper)"""
-        results, info = asyncio.run(self.call_tool(tool_name, arguments, timeout, console))
+        """try to call the input tool with name (sync wrapper, thread-safe)"""
+        with self._call_lock:
+            results, info = asyncio.run(self.call_tool(tool_name, arguments, timeout, console))
         return results, info
 
 

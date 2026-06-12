@@ -100,6 +100,9 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls |
 | `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session |
 | `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session |
+| `SUBAGENT_DEFAULT_MAX_STEPS` | 子 Agent 默认最大步骤数（LLM 请求次数），超出后自动终止 / Default max steps for subagents |
+| `SUBAGENT_DEFAULT_MODEL_TYPE` | 子 Agent 默认模型类型：`"main"` 或 `"fast"` / Default model type for subagents |
+| `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）
@@ -155,5 +158,11 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | Bash 视图 Bash View | Bash 命令输出的行号视图参数 / Line number view params for bash output |
 | URL 缓存 URL Cache | URL 缓存显示参数 / URL cache display params |
 | MCP 参数 MCP Params | MCP 工具描述显示限制 / MCP tool description limit |
+| 子 Agent SubAgent | 子 Agent 状态、图标、色彩渐变、轮询间隔等参数 / Subagent status labels, icons, color gradients, poll intervals |
+
+> **子 Agent 参数 | SubAgent Parameters**
+> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `10`）：子 Agent 最多向 LLM 发起的请求轮数。达到上限后返回 `[steps exhausted]` 提示
+> - `SUBAGENT_DEFAULT_MODEL_TYPE`（默认 `"fast"`）：`"fast"` 使用 FAST_MODEL_* 配置，`"main"` 使用 MAIN_MODEL_* 配置
+> - `SUBAGENT_TIMEOUT_S`（默认 `300`）：子 Agent 运行时间上限。设为 `null` 则无限制
 
 > 完整参数参考（工具名称列表、Bash 风险等级、UI 主题色、图标等）请参阅 | See [constants_reference.md](./constants_reference.md) for the full parameter reference.

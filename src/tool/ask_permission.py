@@ -18,6 +18,7 @@ Revision:
 2026.6.6       Yu Huang      1.6      Bugfix of submit action in all ask permission TUIs
 2026.6.7       Yu Huang      1.7      Revise the display style of all ask permission TUIs & Add newline and space padding
                                       for all ask permission TUIs
+2026.6.12      Yu Huang      1.8      Add subagent_mute flag for subagent coordination
 
 Details:
 ---------
@@ -88,6 +89,10 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
     user_cache = ""
     if ctx.args.dangerously_allow_all:
         return True, None
+    if ctx.subagent_mute:
+        if request_type in ctx.permissions and ctx.permissions[request_type]:
+            return True, None
+        return False, None
     if request_type in ctx.permissions:
         if ctx.permissions[request_type]:
             return True, None

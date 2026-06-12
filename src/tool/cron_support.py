@@ -12,6 +12,7 @@ Revision:
 2026.6.3       Yu Huang      1.0      First implementation
 2026.6.7       Yu Huang      1.1      Remove cron listen to agent_listen.py
 2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
+2026.6.13      Yu Huang      1.3      Bugfix: one-shot cron tasks now check next_time before firing
 
 Details:
 ---------
@@ -123,7 +124,7 @@ def check_cron_tasks(ctx: AgentContext) -> bool:
                 while now >= cron_task["next_time"]:
                     cron_task["next_time"] = cron_task["cron"].get_next(datetime, update_current=True)
                 prompt_list.append(cron_task["prompt"])
-        elif not cron_task["if_end"]:
+        elif now >= cron_task["next_time"] and not cron_task["if_end"]:
             cron_task["if_end"] = True
             assert ctx.active_cron >= 1
             ctx.active_cron -= 1

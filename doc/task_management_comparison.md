@@ -187,18 +187,7 @@ TECoSimAgent 的多 agent 协作任务系统，经对比研究后已从以下 5 
 
 ---
 
-## 8. 后续改进方向 | Future Improvement Directions
-
-| 优先级 Priority | 措施 Measure | 参考来源 Source |
-|--------|------|------|
-| **P1** | `completion_pct` 百分比进度反馈 / Percentage progress feedback | CodeWhale |
-| **P2** | 全量替换兼容模式（与增量并存）/ Full replace compatible mode (coexist with incremental) | CodeWhale/OpenCode/Codex |
-| **P2** | 3+ 任务全部完成时验证提示 / Verification nudge when all 3+ tasks complete | Claude Code |
-| **P2** | 持久化后台任务队列 / Durable background task queue | CodeWhale |
-
----
-
-## 9. 附录：各 Agent 关键源文件索引 | Appendix: Key Source Files Index
+## 8. 附录：各 Agent 关键源文件索引 | Appendix: Key Source Files Index
 
 ### Claude Code
 - `src/tools/TodoWriteTool/TodoWriteTool.ts` — V1 TodoWrite 实现 / V1 TodoWrite implementation

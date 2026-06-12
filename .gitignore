@@ -15,6 +15,7 @@
 /src/context/__pycache__
 /src/tool/__pycache__
 /src/utility/__pycache__
+/src/agent/__pycache__
 /test/__pycache__
 /test/test_config.py
 /log/*.txt

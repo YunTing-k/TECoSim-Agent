@@ -322,11 +322,48 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `URL_CACHE_VIEW_MAX` | `8` | URL 缓存列表最大显示数 / Max displayed entries in URL cache view |
 | `URL_CACHE_CONTENT_CHAR_MAX` | `100` | URL 缓存内容预览最大字符数 / Max chars for URL cached content preview |
 
-### MCP 参数 | MCP Params
+### 子 Agent | SubAgent
+
+子 Agent 的类型标签、状态枚举、工具集常量及 TUI 显示参数 / Subagent type labels, status enums, toolset constants, and display params.
+
+#### Agent 状态与类型 | Status & Types
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
-| `MCP_TOOL_DESC_CHAR_LIMIT` | `250` | MCP 工具描述最大字符数 / MCP tool description char limit |
+| `MAIN_AGENT_ID` | `"main"` | 主 Agent 的标识 ID / Main agent identifier |
+| `AGENT_ID_LEN` | `8` | 子 Agent ID 的随机十六进制长度 / Random hex length for subagent IDs |
+| `EXPLORE_AGENT_LABEL` | `"explore"` | 探索型子 Agent 类型标签 / Explore subagent type label |
+| `GENERAL_AGENT_LABEL` | `"general"` | 通用型子 Agent 类型标签 / General subagent type label |
+| `SIMULATE_AGENT_LABEL` | `"simulate"` | 仿真型子 Agent 类型标签 / Simulate subagent type label |
+| `AGENT_PENDING_LABEL` | `"pending"` | 子 Agent 等待启动 / Subagent pending |
+| `AGENT_RUNNING_LABEL` | `"running"` | 子 Agent 运行中 / Subagent running |
+| `AGENT_TIMEOUT_LABEL` | `"timeout"` | 子 Agent 超时终止 / Subagent timed out |
+| `AGENT_ERROR_LABEL` | `"error"` | 子 Agent 异常终止 / Subagent errored |
+| `AGENT_DONE_LABEL` | `"done"` | 子 Agent 正常完成 / Subagent done |
+| `AGENT_SPAWN_TOOL_NAME` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
+
+#### 工具与配置 | Tools & Config
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `SUBAGENT_DUMP_DIR` | `"agents"` | 子 Agent 数据持久化子目录名 / Subagent dump subdirectory name |
+| `SUBAGENT_POLL_INTERVAL_S` | `0.3` | 子 Agent 进度轮询间隔（秒）/ Subagent progress poll interval |
+| `SUBAGENT_RESULT_LOG_CHAR_LIMIT` | `200` | 子 Agent 结果日志截断长度 / Subagent result log char limit |
+| `SUBAGENT_TOOL_DISPLAY_MAX_LEN` | `70` | 工具调用显示参数值最大长度 / Max len for tool display argument value |
+| `SUBAGENT_PROMPT_LOG_PREVIEW_LEN` | `80` | 初始化日志中 prompt 预览长度 / Prompt preview length in init log |
+
+#### TUI 显示 | TUI Display
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `SUBAGENT_PENDING_ICON` | `"○"` | 等待中图标 / Pending icon |
+| `SUBAGENT_IN_PROGRESS_ICON` | `"♦"` | 运行中图标 / Running icon |
+| `SUBAGENT_DONE_ICON` | `"✓"` | 完成图标 / Done icon |
+| `SUBAGENT_ERROR_ICON` | `"✗"` | 错误/超时图标 / Error/timeout icon |
+| `SUBAGENT_COLOR_START` | `"#545454"` | 子 Agent 渐变起始色 / Gradient start color |
+| `SUBAGENT_COLOR_END` | `"#DBDBDB"` | 子 Agent 渐变结束色 / Gradient end color |
+| `SUBAGENT_COLOR_GRADIENT` | `128` | 渐变阶梯数 / Gradient step count |
+| `SUBAGENT_COLOR_PERIOD` | `1.75` | 颜色循环周期（秒）/ Color cycle period (seconds) |
 
 ---
 

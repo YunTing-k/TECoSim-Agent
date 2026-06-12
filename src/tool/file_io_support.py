@@ -37,6 +37,7 @@ Revision:
 2026.6.11      Yu Huang      2.9      Move format_file_for_llm to basic_utils.py (circular import) & integrate pipe-format
                                       into read_file/read_log_impl XML-wrapped LLM output with truncation footer
 2026.6.12      Yu Huang      3.0      Always show edit preview
+2026.6.12      Yu Huang      3.1      Add subagent_mute flag for subagent coordination
 
 Details:
 ---------
@@ -1109,6 +1110,10 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
         console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines, match_mode, render_lexer))
     if ctx.args.dangerously_allow_all:
         return True, None
+    if ctx.subagent_mute:
+        if ctx.permissions[request_type]:
+            return True, None
+        return False, None
     if ctx.permissions[request_type]:
         return True, None
     while True:

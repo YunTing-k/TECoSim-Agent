@@ -48,6 +48,8 @@ Revision:
                                       integrate get_write_render into write_file permission preview & add resume-display switches
                                       for write/bash preview in print_messages
 2026.6.12      Yu Huang      4.2      Add task tool result feedback (guidance on create/update) & query_task ownership-grouped summary
+2026.6.12      Yu Huang      4.3      Basic suabgent support realization & Add bash temp script file on quoting retry
+2026.6.13      Yu Huang      4.4      Bugfix: bash temp script file leak on quoting retry (list-based cleanup)
 
 Details:
 ---------
@@ -85,6 +87,7 @@ from src.tool.web_support import web_search_top, web_search_process
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk, get_bash_render, get_bash_result_render
 from src.tool.ask_question import ask_user_question_tui, AskUserCancelled
+from src.agent.progress import SUPPORTED_TYPES_DESC
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -96,6 +99,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     prompts: list[dict[str, Any]] = [
         # basic tools
         tool_ask_user_question_def(),
+        tool_spawn_agent_def(),
         tool_create_task_def(),
         tool_update_task_def(),
         tool_query_task_def(),
@@ -156,6 +160,51 @@ def agent_version(progress: Progress) -> dict[str, Any]:
                            style="bright_black")
     return {"status": SUCCESS_LABEL,
             "version": f"{TECOSIM_AGENT_MAJOR_VERSION}.{TECOSIM_AGENT_MINOR_VERSION}.{TECOSIM_AGENT_UPDATE_VERSION}"}
+
+
+def tool_spawn_agent_def() -> dict[str, Any]:
+    """tool definition of spawning a subagent ({AGENT_SPAWN_TOOL_NAME})"""
+    type_enum = list(SUPPORTED_TYPES_DESC.keys())
+    type_desc = "  ".join(f"- {k}: {v}" for k, v in SUPPORTED_TYPES_DESC.items())
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": AGENT_SPAWN_TOOL_NAME,
+            "description": f"Launch subagents to handle tasks concurrently. Launch multiple agents in a single message "
+                           f"with parallel tool calls whenever tasks are independent.\n"
+                           f"Available agent types: \n"
+                            f"{type_desc}\n"
+                            f"Each subagent runs autonomously with its own tool set and task board. "
+                            f"Prefer `{EXPLORE_AGENT_LABEL}` for read-only search and investigation\n"
+                            f"use `{GENERAL_AGENT_LABEL}` for implementation, editing, and file modification\n"
+                            f"use `{SIMULATE_AGENT_LABEL}` for simulation workflows\n"
+                            f"Give each agent a clear, self-contained prompt describing exactly what to do.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subagent_type": {
+                        "type": "string",
+                        "enum": type_enum,
+                        "description": "Type of subagent to launch. Choose based on capabilities needed.",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Self-contained task description for the agent. Be specific about what to find, "
+                                       "build, or analyze. The agent cannot ask questions — everything it needs must be "
+                                       "in this prompt.",
+                    },
+                    "model_type": {
+                        "type": "string",
+                        "enum": ["main", "fast"],
+                        "description": "Model tier: main (powerful, slower) or fast (cheaper, quicker). Defaults to config.",
+                    },
+                },
+                "required": ["subagent_type", "prompt"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
 
 
 def tool_ask_user_question_def() -> dict[str, Any]:
@@ -299,41 +348,28 @@ def tool_create_task_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_CREATE_TASK,
-            "description": "Use this tool to create a structured task list for current session. This helps you track progress, "
-                           "organize complex tasks, cooperation in agent teams, and demonstrate thoroughness to the user.\n"
-                           "It also helps the user understand the progress of the task and overall progress of their requests.\n\n"
+            "description": "Create tasks to break work into trackable milestones.\n\n"
                            "## Task Fields\n\n"
-                           "- `subject`: A brief, actionable title in imperative form (e.g., \"Fix authentication bug "
-                           "in login flow\")\n"
-                           "- `description`: What needs to be done\n"
-                           f"All tasks are created with status `{TASK_PENDING_LABEL}` and a unique integer task id.\n\n"
-                           "## When to Use This Tool\n\n"
-                           "Use this tool proactively in these scenarios:\n\n"
-                           "- Complex multi-step tasks "
-                           "- When a task requires 3 or more distinct steps or actions\n"
-                           "- Non-trivial and complex tasks: Tasks that require careful planning or multiple operations\n"
-                           "- User explicitly requests todo list: When the user directly asks you to use the todo list\n"
-                           "- User provides multiple tasks: When user provides a list of things to be done (numbered or "
-                           "comma-separated)\n"
-                           "A good rule of thumb: each task should represent a meaningful milestone (e.g. \"Collect data\"), "
-                           "not individual tool calls (e.g. \"Read file A\").\n\n"
-                           "## Task Decomposition Rules\n\n"
-                           "You MUST create multiple tasks when:\n"
+                           "- `subject`: Brief, actionable title in imperative form.\n"
+                           "- `description`: What needs to be done.\n"
+                           f"Tasks start as `{TASK_PENDING_LABEL}` with a unique ID and NO owner. "
+                           f"Any agent can claim them via `{TOOL_NAME_UPDATE_TASK}` with `if_claim`: true.\n\n"
+                           "## When to Use\n\n"
+                           "Use proactively when:\n"
                            "- A request requires 3+ distinct actions or spans multiple logical phases\n"
-                           "- A request involves 2 or more files/directories or independent operations\n"
-                           "- The user provides a numbered or comma-separated list\n\n"
-                           "Good example for request \"add dark mode toggle and run tests\":\n"
-                           "  Task 1: Add theme state management (description: Create theme context/store)\n"
-                           "  Task 2: Build toggle UI component (description: Add theme switch to settings)\n"
-                           "  Task 3: Wire theme to existing components (description: Apply theme classes across app)\n"
-                           "  Task 4: Run tests and fix failures (description: Execute test suite, fix any issues)\n\n"
-                           "Bad example (same request - DO NOT DO THIS):\n"
-                           "  Task 1: Implement dark mode (description: Add dark mode to the app)\n\n"
-                           f"After creating tasks, use `{TOOL_NAME_UPDATE_TASK}` to set dependencies and mark progress.\n"
-                           f"When you start a task, mark it `{TASK_IN_PROGRESS_LABEL}` via `{TOOL_NAME_UPDATE_TASK}` BEFORE "
-                           f"beginning work. After completing, mark it `{TASK_COMPLETED_LABEL}` and add any follow-up tasks.\n"
-                           f"Only ONE task should be `{TASK_IN_PROGRESS_LABEL}` at a time. Do NOT batch-complete multiple "
-                           f"tasks after the fact.\n",
+                           "- The user provides a numbered/comma-separated list\n"
+                           "- Work involves 2+ independent files/directories or operations\n"
+                           "Skip for simple tasks (single file, single action, quick fix).\n\n"
+                           "## Decomposition\n\n"
+                           "Each task = a meaningful milestone (e.g. \"Analyze IR drop region A\"), NOT a single "
+                           "tool call (e.g. \"Read file A\"). Break large work into 3-7 specific, completable tasks.\n\n"
+                           "Bad: `Implement dark mode` (single catch-all)\n"
+                           f"Good: `Add theme store` → `Build toggle component` → `Wire to pages` → `Run tests`\n\n"
+                           f"## After Creating\n\n"
+                           f"- Claim a task via `{TOOL_NAME_UPDATE_TASK}` before starting work.\n"
+                           f"- Only ONE task `{TASK_IN_PROGRESS_LABEL}` at a time.\n"
+                           f"- Mark `{TASK_COMPLETED_LABEL}` immediately after finishing; do NOT batch-complete.\n"
+                           f"- Add new tasks if scope expands.\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -387,58 +423,26 @@ def tool_update_task_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_UPDATE_TASK,
-            "description": "Use this tool to update a task in the task list.\n\n"
-                           "## When to Use This Tool\n\n"
-                           "**Claim a task:**\n"
-                           "- All tasks are created without owner, claim the task with `if_claim` = true (default is false)\n"
-                           "**Mark claimed tasks as resolved:**\n"
-                           "Only task owner can mark their task as resolved when:\n"
-                           "- You have completed the work described in a task\n"
-                           "- A task is no longer needed or has been superseded\n"
-                           "- IMPORTANT: Always mark your assigned & claimed tasks as resolved when you finish them\n"
-                           f"- After resolving, call `{TOOL_NAME_QUERY_TASK}` (with no args) to get the task list and find "
-                           f"your next task\n\n"
-                           f"- ONLY mark a task as `{TASK_COMPLETED_LABEL}` when you have FULLY accomplished it\n"
-                           f"- If you encounter errors, blockers, or cannot finish, keep the task as `{TASK_IN_PROGRESS_LABEL}`\n"
-                           "- When blocked, create a new task describing what needs to be resolved\n"
-                           f"- Never mark a task as `{TASK_COMPLETED_LABEL}` if:\n"
-                           "  - Tests are failing\n"
-                           "  - Implementation is partial\n"
-                           "  - You encountered unresolved errors\n"
-                           "  - You couldn't find necessary files or dependencies\n\n"
-                           "**Delete claimed tasks:**\n"
-                           "- Only task owner can delete tasks, if you want to delete a task without owner, you must claim it first\n"
-                           f"- When a task is no longer relevant or was created in error. Setting status to `{TASK_DELETED_LABEL}`, "
-                           f"and the task will be permanently removed automatically\n\n"
-                           "**Update task details:**\n"
-                           "- When requirements change or become clearer\n"
-                           "- When establishing or updating dependencies between tasks\n\n"
-                           "## Fields You Can Update\n\n"
-                           "- **status**: The task status (claimer-only) (see Status Workflow below)\n"
-                           "- **subject**: Change the task title (claimer-only) (imperative form, e.g., \"Run tests\")\n"
-                           "- **description**: Change the task description (claimer-only)\n"
-                           "- **add_blocks**: Mark tasks that cannot start until this one completes (any agent)\n"
-                           "- **add_blocked_by**: Mark tasks that must complete before this one can start (any agent)\n\n"
-                           "## Status Workflow\n\n"
-                           f"Status progresses: `{TASK_PENDING_LABEL}` → `{TASK_IN_PROGRESS_LABEL}` → `{TASK_COMPLETED_LABEL}` "
-                           f"(can not roll back status)\n\n"
-                           f"Use `{TASK_DELETED_LABEL}` to permanently remove a task.\n\n"
-                           "## Staleness\n\n"
-                           f"Make sure to read a known task's latest state using `{TOOL_NAME_QUERY_TASK}` with its id before "
-                           f"updating it."
-                           f"If you are uncertain about the status of task list, using `{TOOL_NAME_QUERY_TASK}` without "
-                           f"args to get the full list of tasks in brief.\n\n"
+            "description": "Update a task in the task list.\n\n"
+                           f"# IMPORTANT: All tasks are created WITHOUT an owner. Any agent can claim any unowned task — "
+                           f"you do NOT need to be the task's creator. Subagent-created tasks are open for anyone.\n\n"
+                           "## Core Operations\n\n"
+                           f"Claim: `if_claim`: true — take ownership of an unowned task. Must claim before changing "
+                           f"status/subject/description.\n"
+                           f"Status: set `status` to `{TASK_IN_PROGRESS_LABEL}` when starting work, "
+                           f"`{TASK_COMPLETED_LABEL}` when fully done (cannot undo). Only the owner can change status.\n"
+                           f"Delete: set `status` to `{TASK_DELETED_LABEL}`. Only owner can delete; claim first if unowned.\n"
+                           "Dependencies: `add_blocks` / `add_blocked_by` — any agent can set these.\n"
+                           "Details: `subject`, `description` — owner-only.\n\n"
+                           f"## Tips\n\n"
+                           f"- Check task state with `{TOOL_NAME_QUERY_TASK}` before updating.\n"
+                           f"- Call `{TOOL_NAME_QUERY_TASK}` without args to get full task list.\n\n"
                            "## Examples\n\n"
-                           "Mark task as in progress when starting work:\n"
-                           f"`task_id`: 1, `status`: {TASK_IN_PROGRESS_LABEL}\n"
-                           "Mark task as completed after finishing work:\n"
-                           f"`taskId`: 1, `status`: {TASK_COMPLETED_LABEL}\n"
-                           "Delete a task:\n"
-                           f"`taskId`: 1, `status`: {TASK_DELETED_LABEL}\n"
-                           "Claim a task:\n"
-                           f"`taskId`: 1, `if_claim`: true\n"
-                           "Set up task dependencies:\n"
-                           "`taskId`: 3, `add_blocked_by`: [1, 2]\n",
+                           f"Claim: `task_id`: 1, `if_claim`: true\n"
+                           f"Claim + start: `task_id`: 1, `if_claim`: true, `status`: {TASK_IN_PROGRESS_LABEL}\n"
+                           f"Finish: `task_id`: 1, `status`: {TASK_COMPLETED_LABEL}\n"
+                           f"Delete: `task_id`: 1, `status`: {TASK_DELETED_LABEL}\n"
+                           "Block: `task_id`: 3, `add_blocked_by`: [1, 2]\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -550,11 +554,13 @@ def tool_query_task_def() -> dict[str, Any]:
                            f"`{TASK_COMPLETED_LABEL}` or `{TASK_DELETED_LABEL}`\n"
                            "  - blocks: Tasks waiting on this one to complete\n"
                            "  - blocked_by: Tasks that must complete before this one can start\n"
-                           "## Tips\n\n"
-                           "- After fetching a task, verify its `blocked_by` list is empty before beginning work.\n"
-                           "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are "
-                           "available, as earlier tasks often set up context for later ones\n"
-                           "- If you are uncertain about the task list's status, call this tool with no args",
+                            "## Tips\n\n"
+                            "- Tasks with no owner (owner: None) are available for ANY agent to claim. "
+                            f"Use `{TOOL_NAME_UPDATE_TASK}` with `if_claim`: true to take ownership.\n"
+                            "- After fetching a task, verify its `blocked_by` list is empty before beginning work.\n"
+                            "- **Prefer working on tasks in ID order** (lowest ID first) when multiple tasks are "
+                            "available, as earlier tasks often set up context for later ones\n"
+                            "- If you are uncertain about the task list's status, call this tool with no args",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -884,8 +890,9 @@ def tool_bash_def() -> dict[str, Any]:
                            "# Instructions\n"
                            " - If your command will create new directories or files, first use this tool to run `ls` to "
                            "verify the parent directory exists and is the correct location.\n"
-                           " - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "
-                           "\"path with spaces/file.txt\")\n"
+                            " - Always quote file paths that contain spaces with double quotes "
+                            "(e.g. cd \"path with spaces/file.txt\"). On Windows prefer forward slashes in paths: "
+                            "\"C:/Users/admin/file.txt\". Quoting errors are automatically retried.\n"
                            " - Try to maintain your current working directory throughout the session by using absolute "
                            "paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.\n"
                            f" - You may specify an optional timeout in milliseconds "
@@ -964,7 +971,8 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         timeout = arguments.get("timeout", BASH_TIMEOUT_MS_DEFAULT)
         sys_log.debug(f"{func_name}: {description} start")
         progress.console.print(f"{func_name}: {description} start", style="bright_black")
-        _tmp_script_path = None
+        _tmp_script_paths = []
+        _quoting_retried = False
         try:
             proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], "-c", command],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -978,8 +986,8 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
             tmp.write("#!/bin/bash\n")
             tmp.write(command)
             tmp.close()
-            _tmp_script_path = tmp.name
-            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_path],
+            _tmp_script_paths.append(tmp.name)
+            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         try:
@@ -1029,6 +1037,43 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
             progress.console.print(f"{func_name}: {description} done", style="bright_black")
             stdout_str = stdout.decode('utf-8', errors='replace')
             stderr_str = stderr.decode('utf-8', errors='replace')
+            if proc.returncode != 0 and not _quoting_retried and (
+                "No closing quotation" in stderr_str or "unexpected EOF" in stderr_str
+            ):
+                sys_log.debug(f"{func_name}: quoting error detected, retrying via temp script")
+                progress.console.print(f"{func_name}: quoting error detected, retrying via temp script", style="bright_black")
+                _quoting_retried = True
+                tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, encoding='utf-8')
+                tmp.write("#!/bin/bash\n")
+                tmp.write(command)
+                tmp.close()
+                _tmp_script_paths.append(tmp.name)
+                proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                try:
+                    stdout, stderr = proc.communicate(timeout=timeout / 1000)
+                except KeyboardInterrupt:
+                    proc.terminate()
+                    try:
+                        proc.communicate(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()
+                    return {"status": CANCELLED_LABEL, "info": "bash command is cancelled by user. Command interrupted"}
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        stdout, stderr = proc.communicate(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        stdout, stderr = proc.communicate()
+                    stdout_str = stdout.decode('utf-8', errors='replace')
+                    stderr_str = stderr.decode('utf-8', errors='replace')
+                    return {"status": TIMEOUT_LABEL, "return code": proc.returncode,
+                            "stdout": stdout_str, "stderr": stderr_str}
+                stdout_str = stdout.decode('utf-8', errors='replace')
+                stderr_str = stderr.decode('utf-8', errors='replace')
             if stdout_str.strip() or stderr_str.strip():
                 progress.console.print(get_bash_result_render(stdout_str, stderr_str))
             return {"status": DONE_LABEL,
@@ -1036,9 +1081,9 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                     "stdout": stdout_str,
                     "stderr": stderr_str}
         finally:
-            if _tmp_script_path is not None:
+            for p in _tmp_script_paths:
                 try:
-                    os.unlink(_tmp_script_path)
+                    os.unlink(p)
                 except OSError:
                     pass
     except Exception as e:

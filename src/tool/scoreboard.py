@@ -13,6 +13,7 @@ Revision:
 2026.6.9         Yu Huang       1.1      Revise the highlight of the IO console print
 2026.6.10        Yu Huang       1.2      Add reminder for LLM to manage workflow proactively
 2026.6.12        Yu Huang       1.3      Add count_by_status() & fix Status display using .value
+2026.6.12        Yu Huang       1.4      Add to_dict() snapshot & upgrade Lock to RLock for reentrant safety
 
 Details:
 ---------
@@ -103,7 +104,7 @@ class Scoreboard:
 
     def __init__(self):
         self.session_uuid = ""  # don't dump
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._tasks: dict[int, Task] = {}
         self._next_id: int = 1
 
@@ -248,7 +249,7 @@ class Scoreboard:
                             else:
                                 has_change = True
                                 self._tasks[t_id]["status"] = t_status
-                                info += f"Task (id {t_id})'s status update to {t_status} by you. "
+                                info += f"Task (id {t_id})'s status update to {t_status.value} by you. "
                                 """update the block status of all tasks"""
                                 if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
                                     self._tasks[t_id]["blocks"] = []  # clean this task's blocks
@@ -335,7 +336,7 @@ class Scoreboard:
                             info += f"Task (id {t_id}) is already claimed by you. "
                         else:
                             # update behavior for claimer and non-claimer are different, so need to fail immediately
-                            return False, f"Task (id {t_id}) is already claimed by agent (id {t_requester}), update failed."
+                            return False, f"Task (id {t_id}) is already claimed by agent (id {self._tasks[t_id]["owner"]}), update failed."
                     """
                     If a task has owner, can update subject/description when:
                     1). Requester is owner
@@ -361,13 +362,13 @@ class Scoreboard:
                     if t_status is not None:
                         if self._tasks[t_id]["owner"] == t_requester:
                             if self._tasks[t_id]["status"] == t_status:
-                                info += f"Task (id {t_id})'s status unchanged: {t_status}. "
+                                info += f"Task (id {t_id})'s status unchanged: {t_status.value}. "
                             elif TaskStatusLevel[t_status] < TaskStatusLevel[self._tasks[t_id]["status"]]:
                                 info += f"Task (id {t_id})'s status can't be rolled back. "
                             else:
                                 has_change = True
                                 self._tasks[t_id]["status"] = t_status
-                                info += f"Task (id {t_id})'s status update to {t_status} by you. "
+                                info += f"Task (id {t_id})'s status update to {t_status.value} by you. "
                                 """update the block status of all tasks"""
                                 if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
                                     self._tasks[t_id]["blocks"] = []  # clean this task's blocks
@@ -526,21 +527,22 @@ class Scoreboard:
                         self._tasks[task["task_id"]]["if_archived"] = True
 
 
+    def to_dict(self) -> dict[str, Any]:
+        """return a serializable snapshot of the scoreboard (thread-safe)"""
+        with self._lock:
+            tasks_data = [dict(task) for task in self._tasks.values()]
+            return {
+                "next_id": self._next_id,
+                "tasks": tasks_data,
+            }
+
     def save_to_file(self, console: Console, mute: bool = False):
         """save all tasks to a JSON file (this method can't be called in other threads)"""
         with self._lock:
             try:
+                data = self.to_dict()
                 uuid_obj = uuid.UUID(self.session_uuid)
                 uuid_str = uuid_obj.__str__()
-                tasks_data = []
-                for task in self._tasks.values():
-                    task_copy = dict(task)
-                    tasks_data.append(task_copy)
-
-                data = {
-                    "next_id": self._next_id,
-                    "tasks": tasks_data,
-                }
                 path = os.path.join(SESSION_PATH, uuid_str, TASKS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)

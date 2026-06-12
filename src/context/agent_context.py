@@ -23,6 +23,7 @@ Revision:
 2026.6.5       Yu Huang      2.1      Add --nosystem, --notools, --nocrons support
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator & Revise the highlight of the IO console print
 2026.6.10      Yu Huang      2.3      Add reminder for LLM to manage workflow proactively
+2026.6.12      Yu Huang      2.4      Add subagent_mute flag and agent_list registry for subagent coordination
 
 Details:
 ---------
@@ -46,6 +47,7 @@ from typing import Any, TypedDict
 from rich.console import Console
 from src.tool.mcps_support import MCPToolRouter
 from src.tool.simulator_support import DesignManager, RunManager
+from src.agent.progress import SubAgentProgress
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -89,29 +91,30 @@ class AgentContext:
     """context of TECoSim agent"""
     def __init__(self):
         # configs
-        self.args: Namespace = Namespace()  # (don't dump)
-        self.api_configs: dict[str, Any] = {"None": None}  # (don't dump)
-        self.agent_configs: dict[str, Any] = {"None": None}  # (don't dump)
-        self.mcps_configs: list[dict[str, Any]] = []  # (don't dump)
+        self.args: Namespace = Namespace()  # (don't dump, shared)
+        self.api_configs: dict[str, Any] = {"None": None}  # (don't dump, shared)
+        self.agent_configs: dict[str, Any] = {"None": None}  # (don't dump, shared)
+        self.mcps_configs: list[dict[str, Any]] = []  # (don't dump, shared)
         # prompts
         self.messages: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
         self.tools: list[dict[str, Any]] = [{"None": None}]  # (don't dump)
         self.skills: list[dict[str, str]] = []   # (don't dump)
         # objects
         self.agent_session: PromptSession | None = None  # (don't dump)
-        self.llm_client: OpenAI | None = None  # (don't dump)
+        self.llm_client: OpenAI | None = None  # (don't dump, shared)
         self.url_caches: list[URLCache] = []  # (don't dump)
-        self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump)
+        self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump, shared)
         self.durable_crons: list[CronDump] = []  # (don't dump, read-only)
         self.session_crons: list[CronDump] = []  # (don't dump, read-only)
         self.cron_tasks: list[CronTask] = []
         self.cron_ids: list[str] = []  # (don't dump)
         self.active_cron: int = 0  # (don't dump)
-        self.design_man: DesignManager = DesignManager()
-        self.run_man: RunManager = RunManager()
+        self.design_man: DesignManager = DesignManager() # (shared)
+        self.run_man: RunManager = RunManager() # (shared)
+        self.agent_list: dict[str, SubAgentProgress] = {}  # agent_id -> SubAgentProgress
         # params
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
-        self.session_uuid: str = ""  # (don't dump)
+        self.session_uuid: str = ""  # (don't dump, shared)
         self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
         self.tools_prompts: int = 0  # (don't dump)
@@ -129,12 +132,13 @@ class AgentContext:
         self.last_output_tokens: int = 0
         self.last_tokens: int = 0
         self.system_read_only_paths: list[Path] = []  # (don't dump)
-        self.task_tool_unuse: int = 0
         self.read_only_paths: list[Path] = []
+        self.task_tool_unuse: int = 0
         self.files_read: dict[str, int] = {}
         self.loaded_skills: list[dict[str, str]] = []
         # signals
         self.task_end: bool = True  # (don't dump)
+        self.subagent_mute: bool = False  # (don't dump) suppress console output and permission TUIs for subagents
         self.permissions: dict[str, bool] = {
             # basic tools
             TOOL_NAME_CREATE_CRON: False,
@@ -264,12 +268,13 @@ class AgentContext:
             "last_input_tokens": self.last_input_tokens,
             "last_output_tokens": self.last_output_tokens,
             "last_tokens": self.last_tokens,
-            "task_tool_unuse": self.task_tool_unuse,
             "read_only_paths": [str(p) for p in self.read_only_paths]
                                if len(self.read_only_paths) > 0 else [],
+            "task_tool_unuse": self.task_tool_unuse,
             "files_read": self.files_read,
             "loaded_skills": self.loaded_skills,
-            "permissions": self.permissions
+            "permissions": self.permissions,
+            "agent_list": {aid: p.to_dict() for aid, p in self.agent_list.items()},
         }
         if not mute:
             sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
@@ -295,12 +300,14 @@ class AgentContext:
             self.last_input_tokens = in_dict["last_input_tokens"]
             self.last_output_tokens = in_dict["last_output_tokens"]
             self.last_tokens = in_dict["last_tokens"]
-            self.task_tool_unuse = in_dict["task_tool_unuse"]
             self.read_only_paths = [Path(s) for s in in_dict["read_only_paths"]] \
                                    if len(in_dict["read_only_paths"]) > 0 else []
+            self.task_tool_unuse = in_dict["task_tool_unuse"]
             self.files_read = in_dict["files_read"]
             self.loaded_skills = in_dict["loaded_skills"]
             self.permissions = in_dict["permissions"]
+            if "agent_list" in in_dict:
+                self.agent_list = {aid: SubAgentProgress.from_dict(d) for aid, d in in_dict["agent_list"].items()}
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"

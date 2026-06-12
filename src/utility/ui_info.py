@@ -30,6 +30,7 @@ Revision:
 2026.6.10      Yu Huang      2.5      Revise the live TUI with the same console instance &  Revise the display cut off issue if
                                       there are multiple tool calls
 2026.6.11      Yu Huang      2.6      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py
+2026.6.12      Yu Huang      2.7      Add get_subagent_render for live agent progress display
 
 Details:
 ---------
@@ -60,6 +61,7 @@ from src.context import prompt
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
 from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list
+from src.agent.progress import SubAgentProgress
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -195,6 +197,64 @@ class GradientTextColumn(ProgressColumn):
         )
 
 
+def get_subagent_render(agent_list: dict[str, SubAgentProgress], now_time: datetime, base_time: datetime,
+                        color_list: list[str]) -> Text | None:
+    """render subagent progress, same pattern as get_tasks_render"""
+    if not agent_list:
+        return None
+
+    time_diff = (now_time - base_time).total_seconds()
+    position_in_period = time_diff % SUBAGENT_COLOR_PERIOD
+    index = int((position_in_period / SUBAGENT_COLOR_PERIOD) * len(color_list)) % len(color_list)
+    color = color_list[index]
+
+    _icon_map = {
+        AGENT_PENDING_LABEL: SUBAGENT_PENDING_ICON,
+        AGENT_RUNNING_LABEL: SUBAGENT_IN_PROGRESS_ICON,
+        AGENT_DONE_LABEL: SUBAGENT_DONE_ICON,
+        AGENT_TIMEOUT_LABEL: SUBAGENT_ERROR_ICON,
+        AGENT_ERROR_LABEL: SUBAGENT_ERROR_ICON,
+    }
+
+    lines = []
+    for aid, p in agent_list.items():
+        if p.if_archived:
+            continue
+        sv = p.status.value
+        icon = _icon_map.get(sv, SUBAGENT_PENDING_ICON)
+
+        if sv == AGENT_RUNNING_LABEL:
+            icon_style = f"bold {color}"
+            name_style = f"bold {color}"
+        elif sv == AGENT_DONE_LABEL:
+            icon_style = f"bold {TASK_COMPLETED_COLOR}"
+            name_style = "bright_black"
+        else:
+            icon_style = "bright_black"
+            name_style = "bright_black"
+
+        line = Text()
+        line.append(f"\n {icon} ", style=icon_style)
+        line.append(f"{p.subagent_type}", style=name_style)
+
+        tool_str = f": {p.current_tool}" if p.current_tool else ""
+        line.append(tool_str, style="bright_black")
+        line.append("  ", style="bright_black")
+        line.append("↑", style=f"bold {MAJOR_COLOR2}")
+        if sv == AGENT_RUNNING_LABEL:
+            line.append(f" {p.input_tokens / 1000:.1f} K", style=f"{color}")
+        else:
+            line.append(f" {p.input_tokens / 1000:.1f} K", style="bright_black")
+        line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
+        if sv == AGENT_RUNNING_LABEL:
+            line.append(f" {p.output_tokens / 1000:.1f} K", style=f"{color}")
+        else:
+            line.append(f" {p.output_tokens / 1000:.1f} K", style="bright_black")
+        lines.append(line)
+
+    return Text("").join(lines) if lines else None
+
+
 def loading_spinner(func: Callable, *args,
                     waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
                     console: Console, with_progress: bool = False,
@@ -308,7 +368,7 @@ def loading_spinner(func: Callable, *args,
 
 
 def loading_spinner_with_board(func: Callable, *args,
-                               board: Scoreboard,
+                               board: Scoreboard, agent_list: dict[str, SubAgentProgress] | None = None,
                                waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str,
                                spinner: str, out_except: Exception,
                                console: Console, with_progress: bool = False,
@@ -322,33 +382,47 @@ def loading_spinner_with_board(func: Callable, *args,
     """
     is_main_thread = threading.current_thread() is threading.main_thread()
 
-    color_list1 = grad_color_hex_list(TASK_PENDING_COLOR_START, TASK_PENDING_COLOR_END, TASK_COLOR_GRADIENT)
-    color_list1 = color_list1 + color_list1[::-1]
-    color_list2 = grad_color_hex_list(TASK_IN_PROGRESS_COLOR_START, TASK_IN_PROGRESS_COLOR_END, TASK_COLOR_GRADIENT)
-    color_list2 = color_list2 + color_list2[::-1]
+    subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT)
+    subagent_color_list = subagent_color_list + subagent_color_list[::-1]
+    task_color_list1 = grad_color_hex_list(TASK_PENDING_COLOR_START, TASK_PENDING_COLOR_END, TASK_COLOR_GRADIENT)
+    task_color_list1 = task_color_list1 + task_color_list1[::-1]
+    task_color_list2 = grad_color_hex_list(TASK_IN_PROGRESS_COLOR_START, TASK_IN_PROGRESS_COLOR_END, TASK_COLOR_GRADIENT)
+    task_color_list2 = task_color_list2 + task_color_list2[::-1]
     base_time = datetime.now()
 
-    progress = Progress(
+    columns = [
         GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
         SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
         TimeElapsedColumn(),
-        console=console,
-        transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
-    )
+    ]
+    progress = Progress(*columns, console=console, transient=False,
+                        refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE)
 
     # Store reference to the outer Live so worker thread can pause/resume it
     # during permission TUI (see pause_for_permission / resume_from_permission).
     progress._outer_live = None  # placeholder, set after Live is created
 
     def make_group() -> Group:
-        task_str = get_tasks_render(board.list_tasks(), datetime.now(), base_time, color_list1, color_list2)
+        agent_render = None
+        if agent_list is not None:
+            agent_render = get_subagent_render(agent_list, datetime.now(), base_time, subagent_color_list)
+        task_str = get_tasks_render(board.list_tasks(), datetime.now(), base_time, task_color_list1, task_color_list2)
+
+        final_str = Text("")
+
+        parts = [progress]
+        if agent_render is not None:
+            final_str.append(agent_render)
+            final_str.append(Text("\n"))
         if task_str.plain.strip():
-            tasks_render = Text("\n")
-            tasks_render.append(task_str)
-            tasks_render.append("\n")
+            final_str.append(Text("\n"))
+            final_str.append(task_str)
+            final_str.append(Text("\n"))
         else:
-            tasks_render = Text(TASK_EMPTY_TITLE, style="bright_black")
-        return Group(progress, tasks_render)
+            final_str.append(Text("\n"))
+            final_str.append(Text(TASK_EMPTY_TITLE, style="bright_black"))
+        parts.append(final_str)
+        return Group(*parts)
 
     if not is_main_thread:
         with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:

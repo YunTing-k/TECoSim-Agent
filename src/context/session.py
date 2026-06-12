@@ -22,6 +22,7 @@ Revision:
 2026.5.31      Yu Huang      2.0      Add CLI session management support & Define used file/dir. paths in constants.py
 2026.6.2       Yu Huang      2.1      Revise session list's layout and add usage info
 2026.6.3       Yu Huang      2.2      Revise session list info & Add configurable title in yes or no request TUI
+2026.6.13      Yu Huang      2.3      Bugfix: session list displays N/A instead of -0.0K when token data unavailable
 
 Details:
 ---------
@@ -283,11 +284,12 @@ def session_list_cli(console: Console):
     title = f"Available Sessions ({len(sessions_list)})"
     cmd_str = Text()
     for session in sessions_list:
+        token_str = "N/A" if session["input_tokens"] == -1 else f"{session["input_tokens"] / 1000.0:.1f} K tokens"
         cmd_str.append(f"UUID: ", style=f"white")
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f"  Title: ", style=f"white")
         cmd_str.append(f"{session["title"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
+        cmd_str.append(f" ({token_str})\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 

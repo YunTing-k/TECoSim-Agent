@@ -1,8 +1,8 @@
 """TECoSim Agent constants"""
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
-TECOSIM_AGENT_MINOR_VERSION: int = 1
-TECOSIM_AGENT_UPDATE_VERSION: int = 8
+TECOSIM_AGENT_MINOR_VERSION: int = 2
+TECOSIM_AGENT_UPDATE_VERSION: int = 0
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -22,8 +22,34 @@ CRON_NAME: str = "cron_configs.json"
 TASKS_NAME: str = "tasks.json"
 RUNS_NAME: str = "runs.json"
 DESIGNS_NAME: str = "designs.json"
-# others
+# subagent
 MAIN_AGENT_ID: str = "main"
+AGENT_ID_LEN: int = 8
+EXPLORE_AGENT_LABEL: str = "explore"
+GENERAL_AGENT_LABEL: str = "general"
+SIMULATE_AGENT_LABEL: str = "simulate"
+AGENT_PENDING_LABEL: str = "pending"
+AGENT_RUNNING_LABEL: str = "running"
+AGENT_TIMEOUT_LABEL: str = "timeout"
+AGENT_ERROR_LABEL: str = "error"
+AGENT_DONE_LABEL: str = "done"
+AGENT_SPAWN_TOOL_NAME: str = "spawn_agent"
+AGENT_ARCHIVED_LABEL: str = "archived"
+SUBAGENT_DUMP_DIR: str = "agents"
+SUBAGENT_DEFAULT_MAX_STEPS: int = 10
+SUBAGENT_POLL_INTERVAL_S: float = 0.2
+SUBAGENT_RESULT_LOG_CHAR_LIMIT: int = 200
+SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 70
+SUBAGENT_PROMPT_LOG_CHAR_LEN: int = 200
+SUBAGENT_PENDING_ICON: str = "○"
+SUBAGENT_IN_PROGRESS_ICON: str = "♦"
+SUBAGENT_DONE_ICON: str = "✓"
+SUBAGENT_ERROR_ICON: str = "✗"
+SUBAGENT_COLOR_START: str = "#545454"
+SUBAGENT_COLOR_END: str = "#949494"
+SUBAGENT_COLOR_GRADIENT: int = 128
+SUBAGENT_COLOR_PERIOD: float = 1.75
+# others
 SYS_REMINDER_START_LABEL: str = "<system_reminder>"
 SYS_REMINDER_END_LABEL: str = "</system_reminder>"
 SKILL_START_LABEL: str = "<skill_content>"
@@ -152,7 +178,7 @@ TASK_PENDING_WITHOUT_OWNER_ICON_STYLE: str = "bright_black"
 TASK_PENDING_WITHOUT_OWNER_STYLE: str = "bright_black"
 TASK_PENDING_WITH_OWNER_ICON: str = "●"
 TASK_PENDING_COLOR_START: str = "#545454"
-TASK_PENDING_COLOR_END: str = "#DBDBDB"
+TASK_PENDING_COLOR_END: str = "#949494"
 TASK_IN_PROGRESS_COLOR_START: str = MAJOR_COLOR1
 TASK_IN_PROGRESS_COLOR_END: str = MAJOR_COLOR2
 TASK_COMPLETED_ICON: str = "✓"

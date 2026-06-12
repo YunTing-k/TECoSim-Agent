@@ -113,7 +113,10 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "# Workflow Guidelines\n"
                 f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your PRIMARY "
                 f"mechanism for planning and communicating with the user.\n\n"
-                f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST "
+                f"All tasks are created without an owner. Any agent — including you — can claim any unowned task via "
+                f"`{TOOL_NAME_UPDATE_TASK}` with `if_claim`: true. Do NOT assume a task is off-limits just because a "
+                f"subagent created it. Claim it, then you own it and can change its status.\n\n"
+                f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST " 
                 f"to break work into multiple tasks BEFORE taking action. You MUST NOT create a single catch-all task like "
                 f"\"Implement the feature\". You MUST NOT begin work until tasks are created.\n\n"
                 f"Task tools are also the PRIMARY way for the user to see your progress - keep them current at all times.\n\n"
@@ -276,7 +279,7 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
                 info += (f"There are {len(unresolved_tasks)} tasks owned by you but not resolved (Task IDs: "
                          f"{[task["task_id"] for task in unresolved_tasks]})\n")
             if len(unclaimed_tasks) > 0:
-                info += (f"There are {len(unresolved_tasks)} tasks not claimed by any agent (Task IDs: "
+                info += (f"There are {len(unclaimed_tasks)} tasks not claimed by any agent (Task IDs: "
                          f"{[task["task_id"] for task in unclaimed_tasks]})\n")
     if remind_from == "user_input":
         """

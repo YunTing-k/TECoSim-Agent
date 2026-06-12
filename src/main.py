@@ -53,7 +53,7 @@ from src.utility import sys_logger, cli_args, ui_info, client, command, agent_li
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool.scoreboard import Scoreboard
-from src.tool.tool_execute import ToolCallsCancelled
+from src.tool.tool_dispatch import ToolCallsCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
 from src.utility.basic_utils import load_configs
 from src.constants import *
@@ -121,7 +121,8 @@ if __name__ == '__main__':
     """add read-only paths"""
     ctx.system_read_only_paths.append(Path(os.getcwd()) / "session")
     ctx.system_read_only_paths.append(Path(os.getcwd()) / "log")
-    ctx.system_read_only_paths.append(Path(ctx.agent_configs["SIMULATOR_PATH"]))
+    if ctx.agent_configs.get("SIMULATOR_PATH"):
+        ctx.system_read_only_paths.append(Path(ctx.agent_configs["SIMULATOR_PATH"]))
 
     """initialize builtin commands"""
     cmd_object = command.BuiltinCommands(console)  # basic commands
@@ -248,7 +249,8 @@ if __name__ == '__main__':
                     tool_execute.execute_tools,
                     assistant_tool_calls, ctx, board,
                     board=board, console=console,
-                    if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
+                    if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"],
+                    agent_list=ctx.agent_list)
                 ctx.messages.extend(tools_response)
                 ctx.tool_results_prompts += len(tools_response)
                 """check task"""

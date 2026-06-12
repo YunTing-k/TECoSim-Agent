@@ -37,10 +37,9 @@ import logging
 from openai import OpenAI
 from rich.console import Console
 from typing import Callable, Any
-from src.utility.ui_info import loading_spinner, loading_spinner_with_board
+from src.utility.ui_info import loading_spinner
 from src.context.agent_context import RequestLLMCancelled
 from src.context.agent_context import AgentContext
-from src.tool.scoreboard import Scoreboard
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -100,46 +99,6 @@ def llm_request_spinner(func: Callable, *args, console: Console,
     return result
 
 
-def llm_request_spinner_board(func: Callable, *args,
-                              board: Scoreboard, console: Console,
-                              waiting_desc: str | None = None, done_desc: str | None = None,
-                              intrp_desc: str | None = None, fail_desc: str | None = None,
-                              spinner: str | None = None, if_random: bool, **kwargs) -> Any:
-    """LLM request with spinner and scoreboard through loading_spinner_with_board"""
-    if waiting_desc is not None:
-        waiting_title = waiting_desc
-    else:
-        if if_random:
-            waiting_title = random.choice(LLM_REQUEST_TITLE_LIST)
-        else:
-            waiting_title = LLM_REQUEST_TITLE_LIST[0]
-    if done_desc is not None:
-        done_title = done_desc
-    else:
-        done_title = LLM_REQUEST_DONE_TITLE
-    if intrp_desc is not None:
-        intrp_title = intrp_desc
-    else:
-        intrp_title = LLM_REQUEST_INTRP_TITLE
-    if fail_desc is not None:
-        fail_title = fail_desc
-    else:
-        fail_title = LLM_REQUEST_FAIL_TITLE
-    if spinner is not None:
-        spinner_choice = spinner
-    else:
-        spinner_choice = LLM_REQUEST_SPINNER
-    result = loading_spinner_with_board(func, *args,
-                                        board=board,
-                                        waiting_desc=waiting_title, done_desc=done_title,
-                                        intrp_desc=intrp_title, fail_desc=fail_title,
-                                        spinner=spinner_choice,
-                                        out_except=RequestLLMCancelled("LLM request is cancelled by user"),
-                                        console=console,
-                                        **kwargs)
-    return result
-
-
 def request_loop_main(client: OpenAI, ctx: AgentContext):
     """Create main LLM model request with LLM client and AgentContext for main loop of agent"""
     params: dict[str, Any] = {
@@ -157,7 +116,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
     else:
         params["reasoning_effort"] = None
     """deepseek support"""
-    if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
+    if ctx.api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
         if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
             params["extra_body"] = {"thinking": {"type": "enabled"}}
         else:
