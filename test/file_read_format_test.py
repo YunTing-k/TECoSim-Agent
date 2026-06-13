@@ -9,14 +9,12 @@ Run:  python test/file_read_format_test.py
 """
 import sys, os, unittest
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.getcwd())
-sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logging
 logging.basicConfig(level=logging.CRITICAL)
 
-from utility.basic_utils import format_file_for_llm
+from src.utility.basic_utils import format_file_for_llm
 
 
 class TestFormatFileForLlm(unittest.TestCase):
@@ -73,7 +71,7 @@ class TestFormatFileForLlm(unittest.TestCase):
         from unittest.mock import patch
         long_line = "x" * 3000 + "\n"
         lines = [long_line]
-        with patch('utility.basic_utils.READ_FILE_LINE_CHAR_LIMIT', 100):
+        with patch('src.utility.basic_utils.READ_FILE_LINE_CHAR_LIMIT', 100):
             result = format_file_for_llm(lines, "/long.txt", 1, 1, 1, False)
         self.assertIn("... (line truncated to 100 chars)", result)
         self.assertNotIn("x" * 101, result.split("...")[0])

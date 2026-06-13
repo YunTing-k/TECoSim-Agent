@@ -18,8 +18,8 @@ import logging
 logging.basicConfig(level=logging.CRITICAL)
 
 from context.agent_context import AgentContext
-from tool.scoreboard import Scoreboard, TaskStatus
-from tool.tool_def import create_task, update_task, query_task
+from src.tool.scoreboard import Scoreboard, TaskStatus
+from src.tool.tool_def import create_task, update_task, query_task
 
 
 def make_agent_ctx(agent_id: str = "agent-1", nosystem: bool = False) -> AgentContext:

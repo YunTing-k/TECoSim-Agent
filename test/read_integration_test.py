@@ -10,9 +10,7 @@ Run:  python test/read_integration_test.py
 """
 import sys, os, unittest, io, re, tempfile, shutil
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.getcwd())
-sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logging
 logging.basicConfig(level=logging.CRITICAL)
@@ -194,7 +192,7 @@ class TestFormatFileForLlmEdgeCases(unittest.TestCase):
     """Additional edge cases for format_file_for_llm after offset fix."""
 
     def test_from_start_correct(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(30)]
         result = format_file_for_llm(lines, "/t.txt", 5, 3, 30, True)
         self.assertIn("5│L4\n", result)
@@ -203,7 +201,7 @@ class TestFormatFileForLlmEdgeCases(unittest.TestCase):
         self.assertNotIn("L7", result)
 
     def test_from_bottom_slice(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(20)]
         result = format_file_for_llm(lines, "/t.txt", 17, 4, 20, True)
         self.assertIn("17│L16\n", result)
@@ -211,19 +209,19 @@ class TestFormatFileForLlmEdgeCases(unittest.TestCase):
         self.assertNotIn("L15", result)
 
     def test_shown_count_zero(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = ["x\n"]
         result = format_file_for_llm(lines, "/t.txt", 1, 0, 1, False)
         self.assertIn('lines="0-0"', result)
 
     def test_total_line_count_in_footer(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(3)]
         result = format_file_for_llm(lines, "/t.txt", 1, 3, 3, False)
         self.assertIn("(End of file - total 3 lines)", result)
 
     def test_remaining_lines_calc(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = [f"L{i}\n" for i in range(100)]
         result = format_file_for_llm(lines, "/t.txt", 50, 10, 100, True)
         self.assertIn("(41 lines not shown, use offset=60 to continue)", result)
@@ -256,13 +254,13 @@ class TestCJKAndEncoding(unittest.TestCase):
 
     def test_pipe_in_content_not_confused(self):
         """file content containing '│' should not break the parser."""
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = ["x = \"a│b\"\n"]
         result = format_file_for_llm(lines, "/t.txt", 1, 1, 1, False)
         self.assertIn("a│b", result)
 
     def test_colon_in_content_ok(self):
-        from utility.basic_utils import format_file_for_llm
+        from src.utility.basic_utils import format_file_for_llm
         lines = ['{"key": "value"}\n']
         result = format_file_for_llm(lines, "/t.txt", 1, 1, 1, False)
         self.assertIn('"value"', result)

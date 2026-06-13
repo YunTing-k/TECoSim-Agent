@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.CRITICAL)
 from rich.text import Text
 from rich.style import Style
 
-from tool.file_io_support import (
+from src.tool.file_io_support import (
     _highlight_and_wrap_edit, _render_normal_block, _render_diff_block,
     _create_diff_styles,
 )
@@ -33,7 +33,7 @@ class TestHunkSeparator(unittest.TestCase):
         from unittest.mock import patch
         from rich.console import Console
         import io, re, os
-        from tool.file_io_support import render_preview_multi
+        from src.tool.file_io_support import render_preview_multi
 
         str_line = [
             'def foo():\n', '    return 1\n',

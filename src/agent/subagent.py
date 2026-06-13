@@ -10,6 +10,10 @@ Description: Subagent module for TECoSim agent
 Revision:
 ---------
 2026.6.12      Yu Huang      1.0      First implementation
+2026.6.13      Yu Huang      1.1      Add subject parameter for concise task title display
+2026.6.13      Yu Huang      1.2      Create _dummy_progress once per agent & API retry on transient failures support
+2026.6.13      Yu Huang      1.3      Truncate oversized tool results & Scheduler agent support of shared scoreboard
+2026.6.13      Yu Huang      1.4      Support medium model tier (main/medium/fast) via api_configs MEDIUM_MODEL_*
 
 Details:
 ---------
@@ -42,6 +46,8 @@ sys_log = logging.getLogger('logger')
 _CONFIG_KEY_MAX_STEPS = "SUBAGENT_DEFAULT_MAX_STEPS"
 _CONFIG_KEY_MODEL_TYPE = "SUBAGENT_DEFAULT_MODEL_TYPE"
 _CONFIG_KEY_TIMEOUT_S = "SUBAGENT_TIMEOUT_S"
+_CONFIG_KEY_API_RETRY = "SUBAGENT_API_RETRY_COUNT"
+_CONFIG_KEY_TOOL_RESULT_LIMIT = "SUBAGENT_TOOL_RESULT_CHAR_LIMIT"
 
 _TOOL_DISPLAY_KEYS: dict[str, str] = {
     TOOL_NAME_READ_FILE: "path",
@@ -98,6 +104,7 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     ctx.design_man = parent_ctx.design_man
     ctx.run_man = parent_ctx.run_man
     ctx.agent_list = {}
+    ctx.background_agents = []
     # params
     ctx.agent_id = agent_id
     ctx.session_uuid = agent_id
@@ -141,6 +148,7 @@ class SubAgent:
         subagent_type: str,
         prompt: str,
         agent_id: str,
+        subject: str = "",
         share_parent_board: bool = False,
         parent_board: Scoreboard | None = None,
         model_type: str | None = None,
@@ -158,16 +166,21 @@ class SubAgent:
 
         timeout_s_raw = ac.get(_CONFIG_KEY_TIMEOUT_S)
         self.timeout_s: float | None = float(timeout_s_raw) if timeout_s_raw is not None else None
+        api_retries_raw = ac.get(_CONFIG_KEY_API_RETRY, 0)
+        self._api_retries: int = int(api_retries_raw) if api_retries_raw is not None else 0
+        tool_result_limit_raw = ac.get(_CONFIG_KEY_TOOL_RESULT_LIMIT)
+        self._tool_result_limit: int = int(tool_result_limit_raw) if tool_result_limit_raw is not None else SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT
 
         if subagent_type not in SUPPORTED_TYPES:
             raise ValueError(f"Unknown subagent type: {subagent_type}. Supported: {list(SUPPORTED_TYPES.keys())}")
-        if model_type not in ("main", "fast"):
-            raise ValueError(f"Unknown model_type: {model_type}. Supported: main, fast")
+        if model_type not in ("main", "medium", "fast"):
+            raise ValueError(f"Unknown model_type: {model_type}. Supported: main, medium, fast")
         """manage input args"""
         self.ctx = clone_context(parent_ctx, agent_id, subagent_type)
         self._parent_session_uuid = parent_ctx.session_uuid
 
         self.subagent_type = subagent_type
+        self.subject = subject
         self.prompt = prompt
         self.agent_id = agent_id
         # only plan agent can manage real scoreboard (other agent's scoreboard is independent)
@@ -186,11 +199,13 @@ class SubAgent:
         self.model = self.ctx.api_configs[f"{self.model_type.upper()}_MODEL_NAME"]
         self.max_steps = max_steps
         self._parent_console = console
+        self._dummy_progress = self._make_dummy_progress()
         """inner status"""
         self._lock = threading.Lock()
         self.status = AgentStatus.PENDING
         self.result: str | None = None
         self.error: str | None = None
+        self._last_api_error: str | None = None
         self.stats: dict[str, int] = {  # for LLM statistics
             "user_prompts": 0,
             "content_prompts": 0,
@@ -207,11 +222,12 @@ class SubAgent:
         self.progress = SubAgentProgress(  # don't show tasks, because plan agent may toggle the real scoreboard but other don't
             agent_id=agent_id,
             subagent_type=subagent_type,
+            subject=subject,
             status=AgentStatus.PENDING,
             last_activity=time.time(),
         )
 
-        log_msg = f"SubAgent {agent_id} ({subagent_type}) initialized: {self.prompt[:SUBAGENT_PROMPT_LOG_CHAR_LEN]}..."
+        log_msg = f"SubAgent {agent_id} ({subagent_type}, {subject}) initialized: {self.prompt[:SUBAGENT_PROMPT_LOG_CHAR_LEN]}..."
         sys_log.debug(log_msg)
         if self._parent_console:
             self._parent_console.print(
@@ -241,9 +257,24 @@ class SubAgent:
         self.ctx.tools_prompts = len(self.ctx.tools)
 
     def build_messages(self):
+        if self._share_parent_board:
+            board_note = (
+                f"Your scoreboard is SHARED with the main agent. Tasks you create appear immediately on the "
+                f"main agent's task list.\n"
+                f"Your role is PLANNING: create UNOWNED tasks for the main agent to execute. Do NOT execute tasks yourself "
+                f"(you may claim a task only to delete it if it was created incorrectly).\n"
+                f"Use `{TOOL_NAME_CREATE_TASK}` to break work into milestones, `{TOOL_NAME_UPDATE_TASK}` for dependencies "
+                f"and corrections (claim then delete), and `{TOOL_NAME_QUERY_TASK}` to verify the task state.\n\n"
+            )
+        else:
+            board_note = (
+                f"You have your own INDEPENDENT scoreboard for tracking your workflow. Use `{TOOL_NAME_CREATE_TASK}` / "
+                f"`{TOOL_NAME_UPDATE_TASK}` / `{TOOL_NAME_QUERY_TASK}` as needed.\n\n"
+            )
         system_text = (
             f"You are a `{self.subagent_type}` subagent spawned by the main TECoSim agent.\n\n"
             f"Your task: {self.prompt}\n\n"
+            f"{board_note}"
             "Work step by step. Use tools to gather information or make changes. When you are done, provide your final answer "
             "as plain text (no tool calls). Do not ask the user questions – you are running autonomously.\n\n"
             f"Available agent types for reference:\n"
@@ -285,7 +316,8 @@ class SubAgent:
                 response = self.llm_request()
                 if response is None:
                     self.status = AgentStatus.ERROR
-                    self.error = "LLM request returned None"
+                    self.error = (f"LLM request failed after {1 + self._api_retries} attempts. Last error: "
+                                  f"{self._last_api_error or UNKNOWN_LABEL}")
                     break
 
                 tool_calls, content, reasoning = self.parse_response(response)
@@ -355,10 +387,21 @@ class SubAgent:
             return None
 
         sys_log.debug(f"SubAgent {self.agent_id} step: {msg_count} messages, model={self.model}, tools={len(self.ctx.tools)}")
-        try:
-            response = client.chat.completions.create(**params)
-        except Exception as e:
-            sys_log.error(f"SubAgent {self.agent_id} API call failed: {e}, model={self.model}, msgs={msg_count}")
+        response = None
+        total_attempts = 1 + self._api_retries
+        self._last_api_error = None
+        for attempt in range(1, total_attempts + 1):
+            try:
+                response = client.chat.completions.create(**params)
+                break
+            except Exception as e:
+                self._last_api_error = str(e)
+                sys_log.warning(f"SubAgent {self.agent_id} API call failed (attempt {attempt}/{total_attempts}): {e}")
+                if attempt < total_attempts:
+                    time.sleep(1)
+        if response is None:
+            sys_log.error(f"SubAgent {self.agent_id} API call failed after {total_attempts} attempts, "
+                          f"model={self.model}, msgs={msg_count}, last_error={self._last_api_error}")
             return None
         assert isinstance(response, ChatCompletion)
 
@@ -413,8 +456,6 @@ class SubAgent:
             return None, None, None
 
     def execute_tool_calls(self, tool_calls: list[dict[str, Any]]):
-        dummy_progress = self._make_dummy_progress()
-
         for tool_call in tool_calls:
             func_name = tool_call["function"]["name"]
             try:
@@ -431,12 +472,17 @@ class SubAgent:
             self.progress.last_activity = time.time()
 
             results, user_addons = call_tools(
-                func_name, arguments, self.ctx, self.board, dummy_progress
+                func_name, arguments, self.ctx, self.board, self._dummy_progress
             )
+            result_str = json.dumps(results, ensure_ascii=False)
+            if len(result_str) > self._tool_result_limit:
+                result_str = result_str[:self._tool_result_limit] + (
+                    f"...[{TRUNCATED_LABEL}: {len(result_str) - self._tool_result_limit} chars omitted from tool result]"
+                )
             self.ctx.messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call["id"],
-                "content": json.dumps(results, ensure_ascii=False),
+                "content": result_str,
             })
             if user_addons is not None:
                 self.ctx.messages.append({

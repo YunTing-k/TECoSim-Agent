@@ -23,6 +23,7 @@ Revision:
 2026.6.7       Yu Huang      2.1      Support of tasks query in Scoreboard
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator
 2026.6.10      Yu Huang      2.3      Manually set title support with builtin command & Add empty builtin args detection
+2026.6.13      Yu Huang      2.4      Add /agent_list command to display active and archived subagents
 
 Details:
 ---------
@@ -46,6 +47,7 @@ from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, TaskStatus
 from src.tool import summarize_support
 from src.tool.skills_support import load_skill_content, get_skill_description
+from src.agent.progress import AgentStatus
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -466,6 +468,80 @@ def cmd_skills_loaded(args: list[str], ctx: AgentContext, board: Scoreboard, con
         cmd_str.append(f": ", style=f"white")
         cmd_str.append(f" {skill["description"]}\n\n", style=f"white")
     if cmd_str.plain.endswith("\n\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
+def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query all subagents (active and archived)"""
+    active = [p for p in ctx.agent_list.values() if not p.if_archived]
+    archived = [p for p in ctx.agent_list.values() if p.if_archived]
+    title = f"Subagent List ({len(active)} active, {len(archived)} archived)"
+    cmd_str = Text()
+
+    _status_color = {
+        AgentStatus.PENDING.value: "bright_black",
+        AgentStatus.RUNNING.value: f"bold {MAJOR_COLOR2}",
+        AgentStatus.DONE.value: TASK_COMPLETED_COLOR,
+        AgentStatus.ERROR.value: "bold red",
+        AgentStatus.TIMEOUT.value: "bold yellow",
+    }
+    if active:
+        cmd_str.append(f"Active Subagents\n", style=f"bold {MAJOR_COLOR2}")
+        for p in active:
+            mode = "background" if p.if_background else "foreground"
+            cmd_str.append(f"ID: ", style=f"white")
+            cmd_str.append(f"{p.agent_id}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f" Type: ", style=f"white")
+            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
+            cmd_str.append(f" Subject: ", style=f"white")
+            cmd_str.append(f"{p.subject}\n", style="bright_black")
+            status_color = _status_color.get(p.status.value, "bright_black")
+            if p.current_tool:
+                cmd_str.append(f" ├─status: ", style="white")
+            else:
+                cmd_str.append(f" └─status: ", style="white")
+            cmd_str.append(f"{p.status.value}", style=status_color)
+            cmd_str.append(f", step: ", style="white")
+            cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
+            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            if p.current_tool:
+                cmd_str.append(f"\n └─current on: ", style="white")
+                cmd_str.append(f"{p.current_tool}", style="bright_black")
+            cmd_str.append("\n\n")
+
+    if archived:
+        cmd_str.append(f"Archived Subagents\n", style=f"bold {MAJOR_COLOR2}")
+        for p in archived:
+            mode = "background" if p.if_background else "foreground"
+            cmd_str.append(f"ID: ", style=f"white")
+            cmd_str.append(f"{p.agent_id}", style=f"bright_black")
+            cmd_str.append(f" Type: ", style=f"white")
+            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
+            cmd_str.append(f" Subject: ", style=f"white")
+            cmd_str.append(f"{p.subject}\n", style="bright_black")
+            status_color = _status_color.get(p.status.value, "bright_black")
+            if p.current_tool:
+                cmd_str.append(f" ├─status: ", style="white")
+            else:
+                cmd_str.append(f" └─status: ", style="white")
+            cmd_str.append(f"{p.status.value}", style=status_color)
+            cmd_str.append(f", step: ", style="white")
+            cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
+            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            if p.current_tool:
+                cmd_str.append(f"\n └─last on: ", style="white")
+                cmd_str.append(f"{p.current_tool}\n", style="bright_black")
+
+    if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
@@ -941,6 +1017,7 @@ class BuiltinCommands:
             "cron_remove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
             "task_list": (cmd_task_list, "list agent tasks", "list all agent tasks that are not archived"),
             "task_list_all": (cmd_task_list_all, "list all agent tasks", "list all history agent tasks"),
+            "agent_list": (cmd_agent_list, "list subagents", "list all active and archived subagents with status"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")

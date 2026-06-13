@@ -10,9 +10,7 @@ Run:  python test/resume_display_test.py
 """
 import sys, os, unittest, io, json, re
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.getcwd())
-sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import logging
 logging.basicConfig(level=logging.CRITICAL)
@@ -38,6 +36,8 @@ def _make_ctx(with_write: bool = False, with_bash: bool = False,
         "RESUME_DISPLAY_WRITE_PREVIEW": with_write,
         "RESUME_DISPLAY_BASH_PREVIEW": with_bash,
         "RESUME_DISPLAY_BASH_RESULT": with_bash_result,
+        "RESUME_DISPLAY_SUBAGENT": False,
+        "RESUME_DISPLAY_SUBAGENT_AS_MD": False,
     }
     return ctx
 

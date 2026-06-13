@@ -26,6 +26,7 @@ Agent tools and internal operations return standardized status labels for unifie
 | `TIMEOUT_LABEL` | `TIMEOUT` | 操作超时 / Operation timed out |
 | `CANCELLED_LABEL` | `CANCELLED` | 操作被用户取消（如仿真运行）/ Operation cancelled by user |
 | `DONE_LABEL` | `DONE` | 仿真运行正常完成 / Simulation run completed normally |
+| `UNKNOWN_LABEL` | `UNKNOWN` | 未知状态标记 / Unknown status marker |
 | `TASK_PENDING_LABEL` | `pending` | Scoreboard 任务待处理 / Scoreboard task is pending |
 | `TASK_IN_PROGRESS_LABEL` | `in_progress` | Scoreboard 任务进行中 / Scoreboard task is in progress |
 | `TASK_COMPLETED_LABEL` | `completed` | Scoreboard 任务已完成 / Scoreboard task is completed |
@@ -56,10 +57,11 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `SKILL_END_LABEL` | `</skill_content>` | 技能内容结束标记 / Marks the end of skill content |
 | `CRON_START_LABEL` | `<cron_tasks>` | 定时任务内容起始标记 / Marks the start of cron task content |
 | `CRON_END_LABEL` | `</cron_tasks>` | 定时任务内容结束标记 / Marks the end of cron task content |
+| `SUBAGENT_START_LABEL` | `<subagent>` | 子 Agent 记录内容起始标记 / Marks the start of subagent record content |
+| `SUBAGENT_END_LABEL` | `</subagent>` | 子 Agent 记录内容结束标记 / Marks the end of subagent record content |
 
 > **显示控制 | Display Control**
-> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出。
-> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, and `RESUME_DISPLAY_CRONS` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews.
+> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；通过 `RESUME_DISPLAY_SUBAGENT_AS_MD` 控制子 Agent 记录的 Markdown 渲染。\n> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, `RESUME_DISPLAY_CRONS`, and `RESUME_DISPLAY_SUBAGENT` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews; use `RESUME_DISPLAY_SUBAGENT_AS_MD` for subagent Markdown rendering.
 
 ---
 
@@ -334,12 +336,13 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `AGENT_ID_LEN` | `8` | 子 Agent ID 的随机十六进制长度 / Random hex length for subagent IDs |
 | `EXPLORE_AGENT_LABEL` | `"explore"` | 探索型子 Agent 类型标签 / Explore subagent type label |
 | `GENERAL_AGENT_LABEL` | `"general"` | 通用型子 Agent 类型标签 / General subagent type label |
-| `SIMULATE_AGENT_LABEL` | `"simulate"` | 仿真型子 Agent 类型标签 / Simulate subagent type label |
+| `SCHEDULER_AGENT_LABEL` | `"scheduler"` | 调度型子 Agent 类型标签（任务规划和依赖管理）/ Scheduler subagent type label (task planning & dependency management) |
 | `AGENT_PENDING_LABEL` | `"pending"` | 子 Agent 等待启动 / Subagent pending |
 | `AGENT_RUNNING_LABEL` | `"running"` | 子 Agent 运行中 / Subagent running |
 | `AGENT_TIMEOUT_LABEL` | `"timeout"` | 子 Agent 超时终止 / Subagent timed out |
 | `AGENT_ERROR_LABEL` | `"error"` | 子 Agent 异常终止 / Subagent errored |
 | `AGENT_DONE_LABEL` | `"done"` | 子 Agent 正常完成 / Subagent done |
+| `AGENT_ARCHIVED_LABEL` | `"archived"` | 子 Agent 已归档（不再显示）/ Subagent archived |
 | `AGENT_SPAWN_TOOL_NAME` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
 
 #### 工具与配置 | Tools & Config
@@ -347,10 +350,13 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `SUBAGENT_DUMP_DIR` | `"agents"` | 子 Agent 数据持久化子目录名 / Subagent dump subdirectory name |
-| `SUBAGENT_POLL_INTERVAL_S` | `0.3` | 子 Agent 进度轮询间隔（秒）/ Subagent progress poll interval |
+| `SUBAGENT_POLL_INTERVAL_S` | `0.2` | 子 Agent 进度轮询间隔（秒）/ Subagent progress poll interval |
 | `SUBAGENT_RESULT_LOG_CHAR_LIMIT` | `200` | 子 Agent 结果日志截断长度 / Subagent result log char limit |
 | `SUBAGENT_TOOL_DISPLAY_MAX_LEN` | `70` | 工具调用显示参数值最大长度 / Max len for tool display argument value |
-| `SUBAGENT_PROMPT_LOG_PREVIEW_LEN` | `80` | 初始化日志中 prompt 预览长度 / Prompt preview length in init log |
+| `SUBAGENT_PROMPT_LOG_CHAR_LEN` | `200` | 初始化日志中 prompt 预览长度 / Prompt preview length in init log |
+| `SUBAGENT_SUBJECT_CHAR_LIMIT` | `40` | 子 Agent subject 字段最大字符数 / Subagent subject field char limit |
+| `SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `50000` | 子 Agent 工具结果默认截断字符数 / Default char limit for subagent tool results |
+| `MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `10000` | 主 Agent 工具结果默认截断字符数 / Default char limit for main agent tool results |
 
 #### TUI 显示 | TUI Display
 
@@ -360,10 +366,10 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `SUBAGENT_IN_PROGRESS_ICON` | `"♦"` | 运行中图标 / Running icon |
 | `SUBAGENT_DONE_ICON` | `"✓"` | 完成图标 / Done icon |
 | `SUBAGENT_ERROR_ICON` | `"✗"` | 错误/超时图标 / Error/timeout icon |
-| `SUBAGENT_COLOR_START` | `"#545454"` | 子 Agent 渐变起始色 / Gradient start color |
-| `SUBAGENT_COLOR_END` | `"#DBDBDB"` | 子 Agent 渐变结束色 / Gradient end color |
+| `SUBAGENT_COLOR_START` | `"#202020"` | 子 Agent 渐变起始色 / Gradient start color |
+| `SUBAGENT_COLOR_END` | `"#808080"` | 子 Agent 渐变结束色 / Gradient end color |
 | `SUBAGENT_COLOR_GRADIENT` | `128` | 渐变阶梯数 / Gradient step count |
-| `SUBAGENT_COLOR_PERIOD` | `1.75` | 颜色循环周期（秒）/ Color cycle period (seconds) |
+| `SUBAGENT_COLOR_PERIOD` | `4.0` | 颜色循环周期（秒）/ Color cycle period (seconds) |
 
 ---
 
@@ -375,15 +381,15 @@ These constants control the agent's core identity and basic behavior:
 | 常量 Constant | 默认值 Default | 说明 Description |
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
-| `TECOSIM_AGENT_MINOR_VERSION` | `1` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `7` | Agent 更新版本号 / Agent update version |
-| `MAIN_AGENT_ID` | `"main"` | 主 Agent 标识 ID，用于 Scoreboard 任务认领识别 / Main agent identifier for Scoreboard task claiming |
+| `TECOSIM_AGENT_MINOR_VERSION` | `2` | Agent 次版本号 / Agent minor version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `1` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
 | `MCPS_PATH` | `"./mcps"` | MCP 根目录 / MCP root directory |
 | `SKILLS_PATH` | `"./skills"` | Skills 根目录 / Skills root directory |
 | `MCPS_CONFIGS_PATH` | `"./mcps/mcps_configs.json"` | MCP 配置文件路径 / MCP config file path |
+| `MCP_TOOL_DESC_CHAR_LIMIT` | `250` | MCP 工具描述显示截断长度 / MCP tool description display char limit |
 | `LOG_PATH` | `"./log"` | 日志文件输出目录 / Log file output directory |
 | `SESSION_PATH` | `"./session"` | 会话持久化目录（每个会话一个子文件夹）/ Session persistence directory (one subfolder per session) |
 | `CRON_CONFIGS_PATH` | `"./cron/cron_configs.json"` | 持久化定时任务配置文件路径 / Durable cron config file path |
@@ -400,6 +406,9 @@ These constants control the agent's core identity and basic behavior:
 | `ASK_USER_QUESTION_MIN_QUESTION` | `1` | 单次提问最少问题数 / Min questions per ask_user_question call |
 | `ASK_USER_QUESTION_MAX_OPTION` | `4` | 每个问题最多选项数 / Max options per question |
 | `ASK_USER_QUESTION_MIN_OPTION` | `2` | 每个问题最少选项数 / Min options per question |
+| `QUESTION_OTHER_LABEL` | `"<Other>"` | 用户自定义选项标签 / Custom option label |
+| `QUESTION_OTHER_OPTION_DESC` | `"Type your ideas"` | 自定义选项描述 / Custom option description |
+| `QUESTION_RECOMMEND_LABEL` | `"Recommended"` | 推荐选项标签 / Recommended option label |
 | `GLOB_FILE_ENTRIES_DEFAULT` | `250` | `glob_file` 默认返回条目数 / Default entries for glob_file |
 | `GREP_FILE_HEAD_LIMIT_DEFAULT` | `250` | `grep_file` 默认结果数上限 / Default head limit for grep_file |
 | `READ_FILE_ENCODING_DEFAULT` | `utf-8` | `read_file` 默认编码 / Default encoding for read_file |

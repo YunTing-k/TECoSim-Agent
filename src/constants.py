@@ -1,8 +1,28 @@
+# -*- coding: utf-8 -*-
+"""
+Header information
+---------
+Shanghai Jiao Tong University, School of Integrated Circuits, SMIL Lab
+Author: Yu Huang
+Create Date: 2026.4.14
+Description: Global constants and default parameters for TECoSim agent
+
+Revision:
+---------
+2026.4.14      Yu Huang      1.0      First implementation
+2026.6.13      Yu Huang      2.0      Subagent support: types, status, icons, colors, tool result limits & Add header
+
+Details:
+---------
+All global constants, default parameters, and tool name strings. Divided into: version, basic file paths,
+subagent constants, system labels, major colors, bash risk levels, UI display params, task management,
+MCP params, and more.
+"""
 """TECoSim Agent constants"""
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 0
+TECOSIM_AGENT_UPDATE_VERSION: int = 1
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -27,7 +47,7 @@ MAIN_AGENT_ID: str = "main"
 AGENT_ID_LEN: int = 8
 EXPLORE_AGENT_LABEL: str = "explore"
 GENERAL_AGENT_LABEL: str = "general"
-SIMULATE_AGENT_LABEL: str = "simulate"
+SCHEDULER_AGENT_LABEL: str = "scheduler"
 AGENT_PENDING_LABEL: str = "pending"
 AGENT_RUNNING_LABEL: str = "running"
 AGENT_TIMEOUT_LABEL: str = "timeout"
@@ -41,17 +61,22 @@ SUBAGENT_POLL_INTERVAL_S: float = 0.2
 SUBAGENT_RESULT_LOG_CHAR_LIMIT: int = 200
 SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 70
 SUBAGENT_PROMPT_LOG_CHAR_LEN: int = 200
+SUBAGENT_SUBJECT_CHAR_LIMIT: int = 40
+SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT: int = 50000
+MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT: int = 10000
 SUBAGENT_PENDING_ICON: str = "○"
 SUBAGENT_IN_PROGRESS_ICON: str = "♦"
 SUBAGENT_DONE_ICON: str = "✓"
 SUBAGENT_ERROR_ICON: str = "✗"
-SUBAGENT_COLOR_START: str = "#545454"
-SUBAGENT_COLOR_END: str = "#949494"
+SUBAGENT_COLOR_START: str = "#202020"
+SUBAGENT_COLOR_END: str = "#808080"
 SUBAGENT_COLOR_GRADIENT: int = 128
-SUBAGENT_COLOR_PERIOD: float = 1.75
+SUBAGENT_COLOR_PERIOD: float = 4
 # others
 SYS_REMINDER_START_LABEL: str = "<system_reminder>"
 SYS_REMINDER_END_LABEL: str = "</system_reminder>"
+SUBAGENT_START_LABEL: str = "<subagent>"
+SUBAGENT_END_LABEL: str = "</subagent>"
 SKILL_START_LABEL: str = "<skill_content>"
 SKILL_END_LABEL: str = "</skill_content>"
 CRON_START_LABEL: str = "<cron_tasks>"
@@ -59,6 +84,7 @@ CRON_END_LABEL: str = "</cron_tasks>"
 SIM_DESIGN_NAME: str = "design"
 SIM_RUN_NAME: str = "run"
 FAIL_LABEL: str = "FAIL"
+UNKNOWN_LABEL: str = "UNKNOWN"
 FALLBACK_LABEL: str = "FALLBACK"
 SUCCESS_LABEL: str = "SUCCESS"
 DONE_LABEL: str = "DONE"
@@ -177,8 +203,8 @@ TASK_PENDING_WITHOUT_OWNER_ICON: str = "○"
 TASK_PENDING_WITHOUT_OWNER_ICON_STYLE: str = "bright_black"
 TASK_PENDING_WITHOUT_OWNER_STYLE: str = "bright_black"
 TASK_PENDING_WITH_OWNER_ICON: str = "●"
-TASK_PENDING_COLOR_START: str = "#545454"
-TASK_PENDING_COLOR_END: str = "#949494"
+TASK_PENDING_COLOR_START: str = "#202020"
+TASK_PENDING_COLOR_END: str = "#808080"
 TASK_IN_PROGRESS_COLOR_START: str = MAJOR_COLOR1
 TASK_IN_PROGRESS_COLOR_END: str = MAJOR_COLOR2
 TASK_COMPLETED_ICON: str = "✓"

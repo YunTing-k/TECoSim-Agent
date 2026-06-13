@@ -14,6 +14,7 @@ Revision:
 2026.6.5       Yu Huang      1.2      Render bash command as Markdown via rich-markdown
 2026.6.11      Yu Huang      1.3      Unify as edit-view style: line-number gutter + pygments highlight-then-wrap (preserves
                                       token boundaries across continuation) + dual-BG padding with $bash/$out labels & truncation
+2026.6.13      Yu Huang      1.4      Add more safe bash commands
 
 Details:
 ---------
@@ -344,10 +345,17 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'fd':      'Find files (modern)',
         'locate':  'Find files (db)',
         'pwd':     'Print working directory',
+        'cd':      'Change directory',
+        'pushd':   'Push directory to stack',
+        'popd':    'Pop directory from stack',
+        'dirs':    'Display directory stack',
         'realpath':'Resolve path',
         'basename':'Strip directory from path',
         'dirname': 'Strip filename from path',
         'readlink':'Read symlink target',
+        # File info
+        'stat':    'File status info',
+        'file':    'Determine file type',
         # File content viewing
         'cat':     'Concatenate/display files',
         'bat':     'Cat with syntax highlighting',
@@ -361,6 +369,12 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'xxd':     'Hex dump',
         'hexdump': 'Hex dump',
         'strings': 'Extract printable strings',
+        # Checksums
+        'md5sum':  'MD5 checksum',
+        'sha1sum': 'SHA1 checksum',
+        'sha256sum':'SHA256 checksum',
+        'sha512sum':'SHA512 checksum',
+        'cksum':   'CRC checksum',
         'cut':     'Cut columns',
         'paste':   'Paste columns',
         'join':    'Join lines',
@@ -432,6 +446,10 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'tee':     'Duplicate stream',
         'tsort':   'Topological sort',
         'rev':     'Reverse lines',
+        'tac':     'Reverse concatenate',
+        'column':  'Columnate text',
+        'fmt':     'Text formatter',
+        'iconv':   'Character set conversion',
         # Compression (read-only)
         'gzip':    'Compress/decompress',
         'gunzip':  'Decompress',
@@ -486,6 +504,7 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'expr':    'Evaluate expression',
         'stdbuf':  'Buffer control',
         'timeout': 'Run with time limit',
+        'sleep':   'Pause execution',
         'git':     'Git operations (default read)',
         # Help / documentation
         'man':     'Manual pages',

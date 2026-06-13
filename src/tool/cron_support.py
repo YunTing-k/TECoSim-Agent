@@ -13,6 +13,7 @@ Revision:
 2026.6.7       Yu Huang      1.1      Remove cron listen to agent_listen.py
 2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
 2026.6.13      Yu Huang      1.3      Bugfix: one-shot cron tasks now check next_time before firing
+2026.6.13      Yu Huang      1.4      Add sys_log on cron fire (task id + type) and trigger summary
 
 Details:
 ---------
@@ -123,11 +124,13 @@ def check_cron_tasks(ctx: AgentContext) -> bool:
             if now >= cron_task["next_time"]:  # the cron task trigger or expire
                 while now >= cron_task["next_time"]:
                     cron_task["next_time"] = cron_task["cron"].get_next(datetime, update_current=True)
+                sys_log.debug(f"Cron task {cron_task['id']} fired (repeat): {cron_task['prompt'][:80]}")
                 prompt_list.append(cron_task["prompt"])
         elif now >= cron_task["next_time"] and not cron_task["if_end"]:
             cron_task["if_end"] = True
             assert ctx.active_cron >= 1
             ctx.active_cron -= 1
+            sys_log.debug(f"Cron task {cron_task['id']} fired (one-shot): {cron_task['prompt'][:80]}")
             prompt_list.append(cron_task["prompt"])
 
     if len(prompt_list) == 0:
@@ -157,6 +160,7 @@ def check_cron_tasks(ctx: AgentContext) -> bool:
                          "content": f"{CRON_START_LABEL}\n"
                                     f"{cron_prompts}\n"
                                     f"{CRON_END_LABEL}"})
+    sys_log.debug(f"check_cron_tasks: {len(prompt_list)} cron task(s) triggered, {ctx.active_cron} remaining active")
     return True
 
 

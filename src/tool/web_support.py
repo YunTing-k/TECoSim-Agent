@@ -16,7 +16,8 @@ Revision:
 2026.5.30      Yu Huang      1.4      Revise spinner logic with SIGINT pass through
 2026.6.1       Yu Huang      1.5      Define all used status labels in constants.py
 2026.6.10      Yu Huang      1.6      Main/Fast model can configure deepseek support dependently & Define all inserted message
-                                      labels in constans.py & Revise the live TUI with the same console instance
+                                       labels in constans.py & Revise the live TUI with the same console instance
+2026.6.13      Yu Huang      1.7      Switch to configurable model tier (WEB_FETCH_MODEL/WEB_SEARCH_MODEL) via select_branch_func
 
 Details:
 ---------
@@ -192,8 +193,10 @@ def create_web_fetch_prompts(in_prompt: str, content: str) -> list[dict[str, Any
 def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: Console) -> tuple[str, bool]:
     """process the Markdown content with prompt through LLM"""
     messages = create_web_fetch_prompts(in_prompt, content)
+    model_tier = ctx.agent_configs["WEB_FETCH_MODEL"]
+    branch_func, deepseek_key = client.select_branch_func(model_tier)
     try:
-        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_spinner(branch_func,
                                                               ctx.llm_client, messages, None, ctx.api_configs,
                                                               console=console, waiting_desc = "Web fetch summarizing ...",
                                                               done_desc = "LLM summary latency", intrp_desc = "Web fetch interrupted",
@@ -210,7 +213,7 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs[deepseek_key]:
             dumped_msg = prompt.deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
         limit = ctx.agent_configs["WEB_FETCH_LLM_CAHR_LIMIT"]
@@ -456,8 +459,10 @@ def create_web_search_prompts(query: str, content: list[WebSearchContent]) -> li
 def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentContext, console: Console) -> tuple[str, bool]:
     """process the web search returns content with prompt through LLM"""
     messages = create_web_search_prompts(query, content)
+    model_tier = ctx.agent_configs["WEB_SEARCH_MODEL"]
+    branch_func, deepseek_key = client.select_branch_func(model_tier)
     try:
-        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_spinner(branch_func,
                                                               ctx.llm_client, messages, None, ctx.api_configs,
                                                               console=console, waiting_desc = "Web search summarizing ...",
                                                               done_desc = "LLM summary latency", intrp_desc="Web search interrupted",
@@ -474,7 +479,7 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs[deepseek_key]:
             dumped_msg = prompt.deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
         limit = ctx.agent_configs["WEB_SEARCH_LLM_CHAR_LIMIT"]

@@ -31,6 +31,7 @@ Revision:
                                       there are multiple tool calls
 2026.6.11      Yu Huang      2.6      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py
 2026.6.12      Yu Huang      2.7      Add get_subagent_render for live agent progress display
+2026.6.13      Yu Huang      2.8      get_subagent_render: ICON TYPE SUBJECT USAGE single-line, current_tool on separate line
 
 Details:
 ---------
@@ -57,7 +58,7 @@ from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.formatted_text import ANSI
 from typing import Callable, Any
-from src.context import prompt
+from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
 from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list
@@ -226,30 +227,35 @@ def get_subagent_render(agent_list: dict[str, SubAgentProgress], now_time: datet
         if sv == AGENT_RUNNING_LABEL:
             icon_style = f"bold {color}"
             name_style = f"bold {color}"
+            usage_style = f"{color}"
         elif sv == AGENT_DONE_LABEL:
             icon_style = f"bold {TASK_COMPLETED_COLOR}"
             name_style = "bright_black"
+            usage_style = f"bright_black"
+        elif sv == AGENT_ERROR_LABEL:
+            icon_style = f"bold red"
+            name_style = "bold red"
+            usage_style = f"bright_black"
+        elif sv == AGENT_TIMEOUT_LABEL:
+            icon_style = f"bold yellow"
+            name_style = "bold yellow"
+            usage_style = f"bright_black"
         else:
             icon_style = "bright_black"
             name_style = "bright_black"
+            usage_style = f"bright_black"
 
         line = Text()
         line.append(f"\n {icon} ", style=icon_style)
-        line.append(f"{p.subagent_type}", style=name_style)
-
-        tool_str = f": {p.current_tool}" if p.current_tool else ""
-        line.append(tool_str, style="bright_black")
-        line.append("  ", style="bright_black")
+        line.append(f"{p.subagent_type} ", style=name_style)
+        subject_display = p.subject[:SUBAGENT_SUBJECT_CHAR_LIMIT] if len(p.subject) > SUBAGENT_SUBJECT_CHAR_LIMIT else p.subject
+        line.append(f"{subject_display} ", style="bright_black")
         line.append("↑", style=f"bold {MAJOR_COLOR2}")
-        if sv == AGENT_RUNNING_LABEL:
-            line.append(f" {p.input_tokens / 1000:.1f} K", style=f"{color}")
-        else:
-            line.append(f" {p.input_tokens / 1000:.1f} K", style="bright_black")
+        line.append(f" {p.input_tokens / 1000:.1f} K", style=usage_style)
         line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
-        if sv == AGENT_RUNNING_LABEL:
-            line.append(f" {p.output_tokens / 1000:.1f} K", style=f"{color}")
-        else:
-            line.append(f" {p.output_tokens / 1000:.1f} K", style="bright_black")
+        line.append(f" {p.output_tokens / 1000:.1f} K", style=usage_style)
+        if p.current_tool:
+            line.append(f"\n └─{p.current_tool}", style="bright_black")
         lines.append(line)
 
     return Text("").join(lines) if lines else None
@@ -382,7 +388,7 @@ def loading_spinner_with_board(func: Callable, *args,
     """
     is_main_thread = threading.current_thread() is threading.main_thread()
 
-    subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT)
+    subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT, "sin")
     subagent_color_list = subagent_color_list + subagent_color_list[::-1]
     task_color_list1 = grad_color_hex_list(TASK_PENDING_COLOR_START, TASK_PENDING_COLOR_END, TASK_COLOR_GRADIENT)
     task_color_list1 = task_color_list1 + task_color_list1[::-1]
@@ -722,7 +728,7 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
     token = exit_tui(ctx, console)
     if token:
         try:
-            prompt.save_messages(ctx, console)
+            save_messages(ctx, console)
             ctx.save_context(console)
             ctx.design_man.save_to_file(console)
             ctx.run_man.save_to_file(console)
@@ -742,7 +748,7 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
 def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Exception):
     """error exit of agent"""
     try:
-        prompt.save_messages(ctx, console)
+        save_messages(ctx, console)
         ctx.save_context(console)
         ctx.design_man.save_to_file(console)
         ctx.run_man.save_to_file(console)

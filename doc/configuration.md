@@ -7,15 +7,17 @@ Configuration files are located in `./config/`, containing `api_configs.json` (A
 
 ## API 连接配置 | API Connection Configuration
 
-配置文件 `api_configs.json` 定义了 LLM 的接入参数，包括主模型与快速模型的双模型配置：
-The `api_configs.json` file defines LLM connection parameters, including the dual-model setup (primary + fast model):
+配置文件 `api_configs.json` 定义了 LLM 的接入参数，包括主模型、中阶模型与快速模型的三层模型配置：
+The `api_configs.json` file defines LLM connection parameters, including the three-tier model setup (primary + medium + fast model):
 
-> **双模型架构说明 | Dual-Model Architecture**
+> **三层模型架构说明 | Three-Tier Model Architecture**
 > - **主模型（MAIN_MODEL）**：驱动 Agent 主交互循环，支持流式输出、工具调用、推理模式，处理复杂/模糊任务
 >   **Primary model**: drives the main agent loop with streaming, tool calls, reasoning — handles complex/ambiguous tasks
+> - **中阶模型（MEDIUM_MODEL）**：用于子 Agent 的默认推理配置，平衡性能与成本
+>   **Medium model**: default reasoning tier for subagents, balancing performance and cost
 > - **快速模型（FAST_MODEL）**：用于非循环的辅助任务，如网页内容总结、搜索结果摘要等；固定为非流式，降低延迟与成本
 >   **Fast model**: used for non-loop auxiliary tasks (web fetch summarization, search result summarization); non-streaming for lower latency & cost
-> - 两个模型共享同一个 `TIMEOUT_MS` 超时配置 / Both models share the same `TIMEOUT_MS`
+> - 三个模型共享同一个 `TIMEOUT_MS` 超时配置 / All three models share the same `TIMEOUT_MS`
 
 | 参数 Parameter | 说明 Description |
 |-----------|-------------|
@@ -29,6 +31,13 @@ The `api_configs.json` file defines LLM connection parameters, including the dua
 | `MAIN_MODEL_ENABLE_REASONING` | 主模型是否启用推理（如 DeepSeek R1 的 thinking 模式）/ Enable reasoning for primary model (e.g. DeepSeek R1 thinking mode) |
 | `MAIN_MODEL_REASONING_EFFORT` | 主模型推理强度（`low`/`medium`/`high`）/ Primary model reasoning effort |
 | `MAIN_MODEL_DEEPSEEK_SUPPORT` | 主模型是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support for primary model |
+| `MEDIUM_MODEL_NAME` | 中阶模型名称，用于子 Agent 等中等复杂度任务 / Medium model name, used for subagents and moderate-complexity tasks |
+| `MEDIUM_MODEL_TEMPERATURE` | 中阶模型温度参数 / Medium model temperature |
+| `MEDIUM_MODEL_MAX_TOKENS` | 中阶模型最大输出 Token 数 / Medium model max output tokens |
+| `MEDIUM_MODEL_CONTEXT` | 中阶模型上下文窗口大小 / Medium model context window size |
+| `MEDIUM_MODEL_ENABLE_REASONING` | 中阶模型是否启用推理 / Enable reasoning for medium model |
+| `MEDIUM_MODEL_REASONING_EFFORT` | 中阶模型推理强度（`low`/`medium`/`high`）/ Medium model reasoning effort |
+| `MEDIUM_MODEL_DEEPSEEK_SUPPORT` | 中阶模型是否启用 DeepSeek 格式支持 / Enable DeepSeek format support for medium model |
 | `FAST_MODEL_NAME` | 快速模型名称，用于处理简单/确定性任务 / Fast model name, used for simple/deterministic tasks |
 | `FAST_MODEL_TEMPERATURE` | 快速模型温度参数 / Fast model temperature |
 | `FAST_MODEL_MAX_TOKENS` | 快速模型最大输出 Token 数 / Fast model max output tokens |
@@ -43,8 +52,8 @@ The `api_configs.json` file defines LLM connection parameters, including the dua
 > The agent uses `MAIN_MODEL_CONTEXT` together with `CONTEXT_THRESHOLD` from `agent_configs.json`: when input tokens reach `CONTEXT × THRESHOLD`, a yellow warning is shown to prevent context overflow.
 
 > **推理模式 | Reasoning Mode**
-> `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `api_configs.json` 中对应模型的 `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` 使用。
-> These are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires the corresponding `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` in `api_configs.json`.
+> `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `api_configs.json` 中对应模型的 `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` 使用。
+> These are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires the corresponding `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` in `api_configs.json`.
 
 ---
 
@@ -67,9 +76,11 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RIPGREP_PATH` | ripgrep 可执行文件路径（用于 `grep_file` 工具）/ Path to ripgrep executable (used by `grep_file` tool) |
 | `MERGE_SYSTEM_PROMPTS` | 是否将多条系统提示词合并为单条消息发送 / Whether to merge multiple system prompts into a single message |
 | `CONTEXT_THRESHOLD` | 上下文阈值比例（如 `0.8` 表示 80%），超过时发出告警 / Context threshold ratio (e.g. `0.8` = 80%), triggers warning when exceeded |
-| `AUTO_SUMMARY_TRIGGER` | 自动摘要触发次数——用户输入达到该次数后自动总结会话 / Auto summary trigger — auto-summarizes session after this many user prompts |
+| `LLM_SUMMARY_TRIGGER` | 自动摘要触发次数——用户输入达到该次数后自动总结会话 / LLM summary trigger — auto-summarizes session after this many user prompts |
+| `LLM_SUMMARY_MODEL` | 自动摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type used for auto-summary |
 | `REMIND_TASK_TOOL_GAP` | 工具调用轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Tool call rounds before reminding LLM to use task tools |
 | `REMIND_TASK_CHAT_GAP` | 对话轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Chat rounds before reminding LLM to use task tools |
+| `MAIN_TOOL_RESULT_CHAR_LIMIT` | 主 Agent 工具结果最大字符数（超出截断）/ Main agent tool result char limit (truncated if exceeded) |
 | `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization |
 | `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`) |
 | `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown |
@@ -87,6 +98,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds) |
 | `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume |
 | `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit |
+| `WEB_FETCH_MODEL` | 网页内容总结使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web fetch summarization |
 | `WEB_FETCH_LLM_CHAR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM |
 | `WEB_SEARCH_API_MODE` | 网络搜索 API 模式（如 `deep`）/ Web search API mode |
 | `WEB_SEARCH_PROXY` | 网络搜索代理地址 / Web search proxy |
@@ -94,15 +106,20 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `WEB_SEARCH_EXCLUDE_DOMAINS` | 网络搜索排除的域名 / Web search excluded domains |
 | `WEB_SEARCH_MAX_ENTRY` | 网络搜索最大返回条目数 / Web search max entries |
 | `WEB_SEARCH_RAW_CHAR_LIMIT` | 网络搜索原始结果字符限制 / Web search raw result char limit |
+| `WEB_SEARCH_MODEL` | 网络搜索摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web search summarization |
 | `WEB_SEARCH_LLM_CHAR_LIMIT` | 网络搜索结果传给 LLM 的最大字符数 / Web search result char limit for LLM |
 | `RESUME_DISPLAY_SKILLS` | 恢复会话时是否显示已加载的技能内容 / Whether to display loaded skills content when resuming session |
 | `RESUME_DISPLAY_CRONS` | 恢复会话时是否显示定时任务内容 / Whether to display cron tasks content when resuming session |
 | `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls |
 | `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session |
 | `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session |
+| `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session |
+| `RESUME_DISPLAY_SUBAGENT_AS_MD` | 恢复会话时是否以 Markdown 格式显示子 Agent 运行记录 / Whether to display subagent records as Markdown when resuming session |
 | `SUBAGENT_DEFAULT_MAX_STEPS` | 子 Agent 默认最大步骤数（LLM 请求次数），超出后自动终止 / Default max steps for subagents |
-| `SUBAGENT_DEFAULT_MODEL_TYPE` | 子 Agent 默认模型类型：`"main"` 或 `"fast"` / Default model type for subagents |
+| `SUBAGENT_DEFAULT_MODEL_TYPE` | 子 Agent 默认模型类型：`"main"`、`"medium"` 或 `"fast"` / Default model type for subagents |
 | `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds |
+| `SUBAGENT_API_RETRY_COUNT` | 子 Agent API 临时故障重试次数 / Subagent API retry count on transient failures |
+| `SUBAGENT_TOOL_RESULT_CHAR_LIMIT` | 子 Agent 工具结果最大字符数（超出截断）/ Subagent tool result char limit (truncated if exceeded) |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）
@@ -115,7 +132,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 > **上下文与摘要 | Context & Summary**
 > - `CONTEXT_THRESHOLD`（推荐 `0.8`）：与 `api_configs.json` 中的 `MAIN_MODEL_CONTEXT` 配合使用。当 `input_tokens >= CONTEXT × THRESHOLD` 时输出黄色告警。设为 `1.0` 可关闭告警
 >   Used with `MAIN_MODEL_CONTEXT`. Warning triggers when `input_tokens >= CONTEXT × THRESHOLD`. Set to `1.0` to disable warnings
-> - `AUTO_SUMMARY_TRIGGER`（推荐 `5-10`）：用户输入达到该次数后，自动调用 LLM 总结当前会话并更新标题。设为 `0` 可关闭自动摘要
+> - `LLM_SUMMARY_TRIGGER`：用户输入达到该次数后，自动调用 LLM 总结当前会话并更新标题。设为 `0` 可关闭自动摘要
 >   After this many user prompts, the agent auto-summarizes the session and updates the title. Set to `0` to disable
 > - `FLATTEN_BEFORE_SUMMARY`：摘要前是否将多轮工具调用的嵌套消息展开为扁平结构，提高摘要质量
 >   Whether to flatten nested tool-call messages before summarization for better quality
@@ -129,7 +146,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 >   Both limits apply: `MB_LIMIT` checks total file size first, `LLM_KB_LIMIT` checks read content size second
 
 > **模型兼容性 | Model Compatibility**
-> - `MAIN_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT`（`api_configs.json`）：分别控制主模型和快速模型的 DeepSeek 格式支持。启用后 Agent 会在对应模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`
+> - `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT`（`api_configs.json`）：分别控制主模型、中阶模型和快速模型的 DeepSeek 格式支持。启用后 Agent 会在对应模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`
 >   Per-model DeepSeek format support in `api_configs.json`. When enabled, the agent handles the `thinking` field in responses, converting it to `reasoning` format. Set to `false` for non-DeepSeek models
 > - `RENDER_RESPONSE_AS_MD`：控制 LLM 响应是否用 Rich 库的 Markdown 渲染。关闭后以纯文本显示
 >   Controls whether LLM responses are rendered as Markdown via the Rich library. Disable for plain text display
@@ -161,8 +178,10 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | 子 Agent SubAgent | 子 Agent 状态、图标、色彩渐变、轮询间隔等参数 / Subagent status labels, icons, color gradients, poll intervals |
 
 > **子 Agent 参数 | SubAgent Parameters**
-> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `10`）：子 Agent 最多向 LLM 发起的请求轮数。达到上限后返回 `[steps exhausted]` 提示
-> - `SUBAGENT_DEFAULT_MODEL_TYPE`（默认 `"fast"`）：`"fast"` 使用 FAST_MODEL_* 配置，`"main"` 使用 MAIN_MODEL_* 配置
-> - `SUBAGENT_TIMEOUT_S`（默认 `300`）：子 Agent 运行时间上限。设为 `null` 则无限制
+> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `100`）：子 Agent 最多向 LLM 发起的请求轮数。达到上限后返回 `[steps exhausted]` 提示
+> - `SUBAGENT_DEFAULT_MODEL_TYPE`（默认 `"fast"`）：`"fast"` 使用 FAST_MODEL_* 配置，`"medium"` 使用 MEDIUM_MODEL_* 配置，`"main"` 使用 MAIN_MODEL_* 配置
+> - `SUBAGENT_API_RETRY_COUNT`（默认 `2`）：子 Agent 遇到 API 临时故障时的重试次数
+> - `SUBAGENT_TOOL_RESULT_CHAR_LIMIT`（默认 `50000`）：子 Agent 工具结果超过此字符数时截断，防止子 Agent 输出撑爆主上下文
+> - `SUBAGENT_TIMEOUT_S`（默认 `600`）：子 Agent 运行时间上限。
 
 > 完整参数参考（工具名称列表、Bash 风险等级、UI 主题色、图标等）请参阅 | See [constants_reference.md](./constants_reference.md) for the full parameter reference.

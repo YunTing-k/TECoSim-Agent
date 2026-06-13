@@ -35,7 +35,9 @@ Revision:
 2026.6.7       Yu Huang      3.3      Support of agent tasks display & Refactor agent listening
 2026.6.9       Yu Huang      3.4      Add design and run support for simulator
 2026.6.10      Yu Huang      3.5      Add reminder for LLM to manage workflow proactively & Revise the live TUI with the
-                                      same console instance
+                                       same console instance
+2026.6.13      Yu Huang      3.6      Subagent integration: spawn, agent_list registry, background agent orchestration,
+                                      stale agent cleanup on session resume
 
 Details:
 ---------
@@ -203,8 +205,8 @@ if __name__ == '__main__':
             if ctx.task_end:
                 """check cron tasks"""
                 ui_info.usage_bar(ctx=ctx, console=console)
-                cron_triggerd = agent_listen.listen_tui(ctx=ctx, board=board, console=console)
-                if not cron_triggerd:
+                listen_triggerd = agent_listen.listen_tui(ctx=ctx, board=board, console=console)
+                if not listen_triggerd:
                     """user prompts & request"""
                     user_input = ui_info.get_user_prompt(ctx)
                     results = session.cmd_lexer(user_input, cmd_object)
@@ -220,7 +222,7 @@ if __name__ == '__main__':
                                                                             f"{SYS_REMINDER_END_LABEL}"})
                         ctx.messages.append({"role": "user", "content": user_input})
                         ctx.user_prompts += 1
-                        if ctx.user_prompts == ctx.agent_configs["AUTO_SUMMARY_TRIGGER"]:  # summarize according to history
+                        if ctx.user_prompts == ctx.agent_configs["LLM_SUMMARY_TRIGGER"]:  # summarize according to history
                             title = summarize_support.summarize_session(ctx=ctx, console=console)
                             ctx.session_title = title if title else ERROR_SESSION_TITLE
                             ui_info.set_terminal_title(ctx.session_title)

@@ -34,6 +34,7 @@ Revision:
                                       integrate get_write_render/get_bash_render/get_bash_result_render into history replay
 2026.6.11      Yu Huang      3.0      Add tools name display with color gradient in stream mode & Add switch if displaying the reasoning content
 2026.6.12      Yu Huang      3.1      Upgrade workflow guidelines to CONSTRAINT-level mandate (3+ steps MUST create_task) with Good/Bad examples
+2026.6.13      Yu Huang      3.2      Add subagent display in print_messages + migrate save/read_messages to file_io_support
 
 Details:
 ---------
@@ -59,7 +60,7 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
 from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
-from src.tool.file_io_support import get_write_render
+from src.tool.file_io_support import read_messages, get_write_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
@@ -112,21 +113,16 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "panel visual quality, IR drop, and temperature distribution analysis under thermo-electrical coupling effects\n"
                 "# Workflow Guidelines\n"
                 f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your PRIMARY "
-                f"mechanism for planning and communicating with the user.\n\n"
+                f"mechanism for planning, communicating with the user, and showing progress — keep them current at all times.\n\n"
                 f"All tasks are created without an owner. Any agent — including you — can claim any unowned task via "
                 f"`{TOOL_NAME_UPDATE_TASK}` with `if_claim`: true. Do NOT assume a task is off-limits just because a "
-                f"subagent created it. Claim it, then you own it and can change its status.\n\n"
-                f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST " 
-                f"to break work into multiple tasks BEFORE taking action. You MUST NOT create a single catch-all task like "
-                f"\"Implement the feature\". You MUST NOT begin work until tasks are created.\n\n"
-                f"Task tools are also the PRIMARY way for the user to see your progress - keep them current at all times.\n\n"
-                f"Follow this flow for every user request:\n"
-                f"  1. Call `{TOOL_NAME_QUERY_TASK}` (no arguments) to check current task status\n"
-                f"  2. Call `{TOOL_NAME_CREATE_TASK}` to break work into meaningful milestones - each task should represent "
-                f"a logical phase (e.g. \"Set up design\", \"Run simulation\", \"Analyze results\"), NOT a single tool call "
-                f"(e.g. \"Read file A\")\n"
-                f"  3. Mark ONE task `{TASK_IN_PROGRESS_LABEL}` via `{TOOL_NAME_UPDATE_TASK}`, work on it, then mark it "
-                f"`{TASK_COMPLETED_LABEL}` before starting the next. Do NOT batch-complete multiple tasks after the fact\n"
+                f"subagent created it.\n\n"
+                f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST "
+                f"to break work into meaningful milestones BEFORE taking action. Each task = a logical phase, NOT a single "
+                f"tool call. Do NOT create a single catch-all task, and do NOT begin work until tasks are created.\n"
+                f"Then: query existing tasks → work ONE task `{TASK_IN_PROGRESS_LABEL}` "
+                f"at a time, mark it `{TASK_COMPLETED_LABEL}` before starting the next. Never batch-complete.\n\n"
+                f"Good: \"Set up design\" → \"Run simulation\" → \"Analyze results\" | Bad: \"Implement the feature\"\n"
                 "# Simulation Guidelines\n"
                 " - Before the first simulation, you should check if the simulator is available. Only recheck when needed.\n"
                 f" - A `{SIM_DESIGN_NAME}` is always needed before launching simulator for panel design or evaluation. "
@@ -143,41 +139,41 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 f"Each launch of simulator will create a `{SIM_RUN_NAME}` and each run is identified by a single integer "
                 f"id starts from 1. Each run is read-only and its id is automatically managed.\n"
                 "# User Requirements\n"
-                " - The user will primarily request you to perform display panel engineering tasks. These may include "
-                "designing a display panel from scratch with core target metrics, validating specific panel's IR drop severity "
-                "or validating specific panel's temperature distribution under certain working scenarios, and more.\n"
-                " - When given an unclear or generic instruction, consider it in the context of display panel engineering "
-                f"tasks, capability of TECoSim and other available tools. Call `{TOOL_NAME_ASK_QUESTION}` to clarify the user's "
-                f"idea if needed\n"
-                " - You are highly capable and often allow users to complete ambitious tasks that would otherwise be too "
-                "complex or take too long. You should defer to user judgement about whether a task is too large to attempt.\n"
-                " - Avoid giving time estimates or predictions for how long tasks will take, whether for your own work or "
-                "for users planning projects. Focus on what needs to be done, not how long it might take.\n"
+                " - The user primarily requests display panel engineering tasks (panel design, IR drop validation, "
+                "temperature distribution analysis). When given an unclear instruction, consider it in the context of "
+                f"TECoSim capabilities and other available tools. Call `{TOOL_NAME_ASK_QUESTION}` to clarify if needed.\n"
+                " - Avoid giving time estimates or predictions for how long tasks will take.\n"
                 "# Tone and style\n"
                 " - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\n"
                 " - Your responses should be short and concise.\n"
                 " - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text "
                 "like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.\n"
                 "# Output efficiency\n"
-                "Keep text output brief and direct. Lead with the answer or action, not the reasoning. Skip filler words, "
-                "preamble, and unnecessary transitions. Do not restate what the user said - just do it. When explaining, "
-                "include only what is necessary for the user to understand.\n"
-                "Focus text output on:\n"
-                " - Decisions that need the user's input\n"
-                " - High-level task status updates at natural milestones\n"
-                " - Errors or blockers that change the tasks or plans\n"
-                "If you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. "
-                "This does not apply to code or tool calls.\n"
+                "Lead with the answer or action, not the reasoning. Skip preamble and filler. Focus text output on "
+                "decisions the user needs to make, status updates at natural milestones, and errors or blockers. "
+                "Prefer one short sentence over three.\n"
                 "# Session-specific guidance\n"
                 " - If a user denies your tool call, they may provide a comment explaining why. If you don't understand, "
                 f"use {TOOL_NAME_ASK_QUESTION} to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
-                " - User can manually load full prompt of skill to context with /<skill-name>\n"}]
-                # " TODO:- Use the Agent tool with specialized agents when the task at hand matches the agent's description. "
-                # "Subagents are valuable for parallelizing independent queries or for protecting the main context window "
-                # "from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating "
-                # "work that subagents are already doing - if you delegate research to a subagent, do not also perform the "
-                # "same searches yourself.\n"
+                " - User can manually load full prompt of skill to context with /<skill-name>\n"
+                f"# Subagent Guidelines\n"
+                f"Use `{AGENT_SPAWN_TOOL_NAME}` to delegate work to subagents for parallel execution. Prefer `{EXPLORE_AGENT_LABEL}` "
+                f"for read-only investigation, `{GENERAL_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for "
+                f"task planning and dependency setup. Launch multiple agents per message when tasks are independent.\n"
+                f"Foreground agents (default): blocks until complete, use when results are needed for your next step. "
+                f"Background agents (`if_background`: true): runs independently, results delivered later, "
+                f"use for long standalone work.\n"
+                f"CRITICAL: Background agent results are injected into your message stream AUTOMATICALLY when "
+                f"they finish — you do NOT need to query or poll for completion. After spawning a background agent, "
+                f"move on to other work immediately. You will be notified when its results arrive.\n"
+                f"Scoreboard: `{SCHEDULER_AGENT_LABEL}` agents share your scoreboard — tasks they create appear immediately. "
+                f"Scheduler agents create UNOWNED tasks for you to claim and execute; they should not execute tasks themselves "
+                f"but may delete tasks they created incorrectly. Other agent types have independent scoreboards.\n"
+                f"IMPORTANT: `{SCHEDULER_AGENT_LABEL}` agents MUST run as foreground, not background — tasks appear "
+                f"incrementally and you may mistake partial output for completion. "
+                f"After spawning a scheduler, check `{TOOL_NAME_QUERY_TASK}` for new tasks to work on.\n"
+                f"Do NOT duplicate work a subagent is already doing.\n"}]
     return prompts
 
 
@@ -323,22 +319,6 @@ def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console)
     return messages
 
 
-def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
-    """read messages (exclude system) from persistence file with given uuid"""
-    # path = "./session/" + session_uuid + "/messages.json"
-    path = os.path.join(SESSION_PATH, session_uuid, MESSAGES_NAME)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            messages = json.load(f)
-        sys_log.debug(f"Messages of session {session_uuid} loaded")
-        console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{session_uuid}[/bright_black] loaded")
-        return messages
-    except Exception as e:
-        sys_log.error(f"Failed to load the messages of session {session_uuid} with error: {e}")
-        console.print(f"Failed to load the messages of session {session_uuid} with error: {e}", style="bold red")
-        raise RuntimeError(e)
-
-
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
@@ -352,11 +332,40 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
         display_write = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
         display_bash = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
         display_bash_result = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
+        display_subagent = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
+        display_subagent_as_md = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT_AS_MD"]
+        subagent_str = Text("<A subagent is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
+                if (SUBAGENT_START_LABEL in msg["content"]) and (SUBAGENT_END_LABEL in msg["content"]):
+                    if not display_subagent:
+                        console.print(Panel(subagent_str, box=rich.box.SQUARE))
+                        continue
+                    inner:str = msg["content"]
+                    start = inner.find(SUBAGENT_START_LABEL) + len(SUBAGENT_START_LABEL)
+                    end = inner.rfind(SUBAGENT_END_LABEL)
+                    inner = inner[start:end].strip()
+                    parts = inner.split("\n", 1)
+                    info_line = parts[0].strip()
+                    result = parts[1].strip() if len(parts) > 1 else ""
+                    t = Table(show_header=False, show_edge=False, padding=0,
+                              box=None, collapse_padding=True)
+                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+                    t.add_column(vertical="top")
+                    if as_md and display_subagent_as_md and result:
+                        render_str = Text(f" {SUBAGENT_IN_PROGRESS_ICON} ", style=f"bold {MAJOR_COLOR1}")
+                        t.add_row(render_str, Panel(ContentMD(f"{info_line}\n{result}"), box=rich.box.SQUARE))
+                    else:
+                        render_str = Text(f" {SUBAGENT_IN_PROGRESS_ICON} ", style=f"bold {MAJOR_COLOR1}")
+                        if result:
+                            t.add_row(render_str, Panel(Text(f"{info_line}\n{result}", style="white"), box=rich.box.SQUARE))
+                        else:
+                            t.add_row(render_str, Text(""))
+                    console.print(t)
+                    continue
                 if (not display_sys_reminder) and (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
                     console.print(Panel(sys_reminder_str, box=rich.box.SQUARE))
                     continue
@@ -377,8 +386,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     console.print("\n")
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
-                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
-                                  vertical="top")
+                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
                     t.add_column(vertical="top")
                     if as_md:
                         t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
@@ -395,8 +403,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         console.print("")
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
-                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True,
-                                  vertical="top")
+                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
                     t.add_column(vertical="top")
                     if as_md:
                         t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(msg["content"]))
@@ -437,36 +444,6 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
     except Exception as e:
         sys_log.error(f"Failed to print the history messages with error: {e}")
         console.print(f"Failed to print the history messages with error: {e}", style="bold red")
-        raise RuntimeError(e)
-
-
-def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
-    """save messages (exclude system) to persistence file of AgentContext"""
-    try:
-        serializable_messages = []
-        for msg in ctx.messages:
-            if msg["role"] == "system":
-                continue
-            elif hasattr(msg, "model_dump"):
-                serializable_messages.append(msg.model_dump(mode="json"))
-            elif isinstance(msg, dict):
-                serializable_messages.append(msg.copy())
-            else:
-                serializable_messages.append(dict(msg))
-        if not mute:
-            sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
-            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] converted")
-
-        # path = "./session/" + ctx.session_uuid + "/messages.json"
-        path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
-        if not mute:
-            sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
-            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] saved")
-    except Exception as e:
-        sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
-        console.print(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}", style="bold red")
         raise RuntimeError(e)
 
 

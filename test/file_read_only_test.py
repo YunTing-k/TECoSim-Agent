@@ -1,28 +1,73 @@
-from src.tool.file_io_support import AgentContext, Path, check_read_only
+# -*- coding: utf-8 -*-
+"""
+Unit tests for read-only path checking.
+Run with: python -m unittest test.file_read_only_test
+           python test/file_read_only_test.py
+"""
+import sys
+import os
+import unittest
+import tempfile
+from pathlib import Path
 
-ctx = AgentContext()
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-test_path = Path("./AABBCC")
-print(test_path.exists())
-print(test_path.resolve())
+from src.context.agent_context import AgentContext
+from src.tool.file_io_support import check_read_only
 
-test_path = Path("C:/AABBCC")
-print(test_path.exists())
-print(test_path.resolve())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-print(Path("./AABBCC/ccdd").resolve().is_relative_to(Path("./AABBCC/").resolve()))
 
-ctx.system_read_only_paths.append(Path("./"))
-ctx.system_read_only_paths.append(Path("C:/Users/admin/Desktop/C++File/Project/TECoSim"))
-ctx.read_only_paths.append(Path("../src"))
+class TestCheckReadOnly(unittest.TestCase):
+    def setUp(self):
+        self.ctx = AgentContext()
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.ro_path = os.path.join(self.tmpdir.name, "readonly")
+        os.makedirs(self.ro_path)
 
-print([c.name for c in ctx.system_read_only_paths])
-print([c.name for c in ctx.read_only_paths])
+    def tearDown(self):
+        self.tmpdir.cleanup()
 
-print(check_read_only("../", ctx))
-print(check_read_only("AABBCC", ctx))
-print(check_read_only("C:/Users/admin/Desktop/PythonFile/TECoSimAgent/Agent/src/", ctx))
-print(check_read_only("C:\\Users\\admin\\Desktop\\PythonFile\\TECoSimAgent\\Agent\\src", ctx))
-print(check_read_only("C:/Users/admin/Desktop/PythonFile/TECoSimAgent/Agent/", ctx))
-print(check_read_only("C:/Users/admin/Desktop/PythonFile/TECoSimAgent/Agent/test/file_read_only_test.py", ctx))
-print(check_read_only("C:/Users/admin/Desktop/C++File/Project/TECoSim/doc/TECoSim_Project_Summary.md", ctx))
+    def test_not_read_only(self):
+        blocked, info = check_read_only(self.ro_path, self.ctx)
+        self.assertFalse(blocked)
+
+    def test_system_read_only(self):
+        self.ctx.system_read_only_paths.append(Path(self.ro_path))
+        blocked, info = check_read_only(self.ro_path, self.ctx)
+        self.assertTrue(blocked)
+
+    def test_user_read_only(self):
+        self.ctx.read_only_paths.append(Path(self.ro_path))
+        blocked, info = check_read_only(self.ro_path, self.ctx)
+        self.assertTrue(blocked)
+
+    def test_subpath_protected(self):
+        sub = os.path.join(self.ro_path, "subdir", "file.txt")
+        self.ctx.system_read_only_paths.append(Path(self.ro_path))
+        blocked, info = check_read_only(sub, self.ctx)
+        self.assertTrue(blocked)
+
+    def test_normalized_path(self):
+        self.ctx.system_read_only_paths.append(Path(self.ro_path))
+        blocked, info = check_read_only(self.ro_path + os.sep, self.ctx)
+        self.assertTrue(blocked)
+
+    def test_resolved_path(self):
+        self.ctx.system_read_only_paths.append(Path(self.ro_path).resolve())
+        blocked, info = check_read_only(os.path.realpath(self.ro_path), self.ctx)
+        self.assertTrue(blocked)
+
+    def test_project_src_not_read_only_by_default(self):
+        blocked, info = check_read_only(os.path.join(PROJECT_ROOT, "src"), self.ctx)
+        self.assertFalse(blocked)
+
+    def test_info_string_returned(self):
+        self.ctx.read_only_paths.append(Path(self.ro_path))
+        blocked, info = check_read_only(self.ro_path, self.ctx)
+        self.assertIsInstance(info, str)
+        self.assertGreater(len(info), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

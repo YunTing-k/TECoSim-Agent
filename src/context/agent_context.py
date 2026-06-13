@@ -24,6 +24,7 @@ Revision:
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator & Revise the highlight of the IO console print
 2026.6.10      Yu Huang      2.3      Add reminder for LLM to manage workflow proactively
 2026.6.12      Yu Huang      2.4      Add subagent_mute flag and agent_list registry for subagent coordination
+2026.6.13      Yu Huang      2.5      Add background_agents registry + stale agent cleanup on session resume
 
 Details:
 ---------
@@ -36,18 +37,19 @@ import os
 import uuid
 import json
 import logging
-
+import threading
 from pathlib import Path
 from croniter import croniter
 from openai import OpenAI
 from datetime import datetime
 from argparse import Namespace
 from prompt_toolkit import PromptSession
-from typing import Any, TypedDict
+from typing import Any, TypedDict, TYPE_CHECKING
 from rich.console import Console
 from src.tool.mcps_support import MCPToolRouter
 from src.tool.simulator_support import DesignManager, RunManager
-from src.agent.progress import SubAgentProgress
+from src.agent.progress import SubAgentProgress, AgentStatus
+if TYPE_CHECKING: from src.agent.subagent import SubAgent
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -112,6 +114,7 @@ class AgentContext:
         self.design_man: DesignManager = DesignManager() # (shared)
         self.run_man: RunManager = RunManager() # (shared)
         self.agent_list: dict[str, SubAgentProgress] = {}  # agent_id -> SubAgentProgress
+        self.background_agents: list[tuple[dict[str, Any], "SubAgent", threading.Thread]] = []  # (don't dump) (tc, agent, thread)
         # params
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump, shared)
@@ -141,6 +144,7 @@ class AgentContext:
         self.subagent_mute: bool = False  # (don't dump) suppress console output and permission TUIs for subagents
         self.permissions: dict[str, bool] = {
             # basic tools
+            AGENT_SPAWN_TOOL_NAME: False,
             TOOL_NAME_CREATE_CRON: False,
             TOOL_NAME_QUERY_CRON: False,
             TOOL_NAME_REMOVE_CRON: False,
@@ -308,6 +312,10 @@ class AgentContext:
             self.permissions = in_dict["permissions"]
             if "agent_list" in in_dict:
                 self.agent_list = {aid: SubAgentProgress.from_dict(d) for aid, d in in_dict["agent_list"].items()}
+                for p in self.agent_list.values():
+                    if not p.if_archived:
+                        p.status = AgentStatus.ERROR
+                        p.if_archived = True
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"

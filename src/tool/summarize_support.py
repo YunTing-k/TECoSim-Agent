@@ -15,7 +15,8 @@ Revision:
 2026.5.30      Yu Huang      1.3      Revise spinner logic with SIGINT pass through
 2026.6.2       Yu Huang      1.4      Refactor LLM title summarize with tool call but not chat response
 2026.6.10      Yu Huang      1.5      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
-                                      the same console instance
+                                       the same console instance
+2026.6.13      Yu Huang      1.6      Switch to configurable model tier (LLM_SUMMARY_MODEL) via select_branch_func
 
 Details:
 ---------
@@ -154,7 +155,9 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
 
     """tool def"""
     tools = tool_summarize_title_def()
-    if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
+    model_tier = ctx.agent_configs["LLM_SUMMARY_MODEL"]
+    branch_func, deepseek_key = client.select_branch_func(model_tier)
+    if ctx.api_configs[deepseek_key]:
         tool_choice = None
     else:
         tool_choice = {
@@ -166,7 +169,7 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
 
     """get title"""
     try:
-        response: ChatCompletion = client.llm_request_spinner(client.request_branch_fast,
+        response: ChatCompletion = client.llm_request_spinner(branch_func,
                                                               ctx.llm_client, messages, tools, ctx.api_configs, tool_choice,
                                                               console=console, waiting_desc="Session summarizing ...",
                                                               done_desc="LLM summary latency", intrp_desc="Session summary interrupted",

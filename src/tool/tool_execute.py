@@ -28,6 +28,7 @@ Revision:
 2026.6.9       Yu Huang      2.6      Add design and run support for simulator
 2026.6.10      Yu Huang      2.7      Revise the live TUI with the same console instance
 2026.6.12      Yu Huang      2.8      Subagent spawn: classification, batch launch, poll, merge stats
+2026.6.13      Yu Huang      2.9      Background subagent support + tool result truncation + batch agent permission TUI
 
 Details:
 ---------
@@ -45,10 +46,11 @@ import threading
 from typing import Callable, Any
 from rich.console import Console
 from rich.progress import Progress
-from src.utility.ui_info import loading_spinner, loading_spinner_with_board
+from src.utility.ui_info import loading_spinner, loading_spinner_with_board, pause_for_permission, resume_from_permission
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
+from src.tool.ask_permission import ask_permission_tui
 from src.agent.subagent import SubAgent
 from src.agent.progress import AgentStatus, SubAgentProgress
 from src.constants import *
@@ -138,16 +140,22 @@ def tool_calls_spinner_board(func: Callable, *args,
 def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Scoreboard, progress: Progress) -> list[dict[str, Any]]:
     """execute the tools in the LLM tool calls with AgentContext
 
-    Phase 1: execute all non-agent tool calls sequentially (original path).
-    Phase 2: spawn all agent tool calls concurrently in threads, poll progress, merge results.
+    Phase 1: execute all non-agent tool calls sequentially.
+    Phase 2a: launch background agents concurrently in threads (non-blocking).
+    Phase 2b: launch foreground agents concurrently, poll progress, merge results (blocking).
     """
     messages = []
     normal_calls = []
-    agent_calls = []
+    bg_agent_calls = []
+    fg_agent_calls = []
 
     for tc in tool_calls:
         if tc["function"]["name"] == AGENT_SPAWN_TOOL_NAME:
-            agent_calls.append(tc)
+            args = json.loads(tc["function"]["arguments"])
+            if args.get("if_background", False):
+                bg_agent_calls.append(tc)
+            else:
+                fg_agent_calls.append(tc)
         else:
             normal_calls.append(tc)
 
@@ -158,10 +166,14 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
         if not if_tool_mute(func_name):
             progress.console.print(f"Using tool: [{MAJOR_COLOR1}]{func_name}[/{MAJOR_COLOR1}]", style="bright_black")
         results, user_addons = call_tools(func_name, arguments, ctx, board, progress)
+        result_str = json.dumps(results, ensure_ascii=False)
+        limit = ctx.agent_configs.get("MAIN_TOOL_RESULT_CHAR_LIMIT", MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT)
+        if len(result_str) > limit:
+            result_str = result_str[:limit] + f"...[{TRUNCATED_LABEL}: {len(result_str) - limit} chars omitted from tool result]"
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],
-            "content": json.dumps(results, ensure_ascii=False),
+            "content": result_str,
         })
         if user_addons is not None:
             messages.append({
@@ -169,9 +181,37 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
                 "content": json.dumps(user_addons, ensure_ascii=False),
             })
 
-    if agent_calls:
-        agent_messages = execute_subagents(agent_calls, ctx, board, progress)
-        messages.extend(agent_messages)
+    if bg_agent_calls or fg_agent_calls:
+        all_agent_calls = bg_agent_calls + fg_agent_calls
+        desc_parts = []
+        for tc in all_agent_calls:
+            args = json.loads(tc["function"]["arguments"])
+            mode = "background" if args.get("if_background") else "foreground"
+            desc_parts.append(f"  [{mode}] {args['subagent_type']}: {args.get('subject', '')}")
+        desc = f"Spawn {len(all_agent_calls)} subagent(s):\n" + "\n".join(desc_parts)
+        pause_for_permission(progress)
+        token, comment = ask_permission_tui(ctx, AGENT_SPAWN_TOOL_NAME, desc, progress.console)
+        resume_from_permission(progress)
+        if not token:
+            denied_info = f"All subagent spawns in this round of tool call are denied by user"
+            if comment:
+                denied_info += f" with comment: {comment}"
+            for i, tc in enumerate(all_agent_calls):
+                info = denied_info if i == 0 else f"Subagent spawn denied (see above)"
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": json.dumps({"status": DENIED_LABEL, "info": info}, ensure_ascii=False),
+                })
+            return messages
+
+    if bg_agent_calls:
+        bg_messages = execute_background_agents(bg_agent_calls, ctx, board, progress)
+        messages.extend(bg_messages)
+
+    if fg_agent_calls:
+        fg_messages = execute_subagents(fg_agent_calls, ctx, board, progress)
+        messages.extend(fg_messages)
 
     return messages
 
@@ -184,8 +224,142 @@ def generate_agent_id(ctx: AgentContext) -> str:
             return aid
 
 
-def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext, board: Scoreboard, progress: Progress) -> list[dict[str, Any]]:
-    """spawn subagents concurrently, poll progress, merge results and token stats"""
+def execute_background_agents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext, board: Scoreboard,
+                               progress: Progress) -> list[dict[str, Any]]:
+    """launch background agents without blocking; store in ctx.background_agents for later collection"""
+    messages = []
+    for tc in agent_calls:
+        args = json.loads(tc["function"]["arguments"])
+        agent_id = generate_agent_id(main_ctx)
+        sys_log.debug(f"Spawning background subagent: {agent_id}")
+        progress.console.print(
+            f"Spawning background subagent: [{MAJOR_COLOR1}]{agent_id}[/{MAJOR_COLOR1}]", style="bright_black")
+
+        agent_type = args["subagent_type"]
+        share_board = (agent_type == SCHEDULER_AGENT_LABEL)
+        agent = SubAgent(
+            parent_ctx=main_ctx,
+            subagent_type=agent_type,
+            subject=args["subject"],
+            prompt=args["prompt"],
+            agent_id=agent_id,
+            share_parent_board=share_board,
+            parent_board=board if share_board else None,
+            model_type=args.get("model_type"),
+            console=progress.console,
+        )
+        agent.build_tools()
+        agent.build_messages()
+        main_ctx.agent_list[agent_id] = agent.progress
+        agent.progress.if_background = True
+
+        t = threading.Thread(target=agent.run)
+        t.start()
+        main_ctx.background_agents.append((tc, agent, t))
+
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "content": json.dumps({
+                "status": DONE_LABEL,
+                "info": f"background agent {agent_id} ({agent.subagent_type}) started. "
+                        f"Results will be delivered when complete."
+            }, ensure_ascii=False),
+        })
+
+    return messages
+
+
+def check_background_agents(main_ctx: AgentContext) -> bool:
+    """check if any background agents have completed; collect results and inject into main_ctx.messages
+
+    Returns True if at least one background agent completed, False otherwise.
+    """
+    completed = []
+    for tc, agent, thread in main_ctx.background_agents:
+        if not thread.is_alive():
+            thread.join()
+            main_ctx.total_llm_requests += agent.stats["total_llm_requests"]
+            main_ctx.user_prompts += agent.stats["user_prompts"]
+            main_ctx.content_prompts += agent.stats["content_prompts"]
+            main_ctx.reasoning_prompts += agent.stats["reasoning_prompts"]
+            main_ctx.total_input_tokens += agent.stats["total_input_tokens"]
+            main_ctx.total_output_tokens += agent.stats["total_output_tokens"]
+            main_ctx.total_tokens += agent.stats["total_tokens"]
+            main_ctx.total_uncached_tokens += agent.stats["total_uncached_tokens"]
+            main_ctx.tool_calls_prompts += agent.stats["tool_calls_prompts"]
+            main_ctx.tool_results_prompts += agent.stats["tool_results_prompts"]
+
+            agent_id_str = f"{agent.agent_id} ({agent.subagent_type})"
+            if agent.status == AgentStatus.DONE:
+                if agent.result:
+                    msg_content = (
+                        f"{SUBAGENT_START_LABEL}\n"
+                        f"Background agent {agent_id_str} completed.\n"
+                        f"{agent.result}\n"
+                        f"{SUBAGENT_END_LABEL}"
+                    )
+                    sys_log.debug(f"Background agent {agent.agent_id} done, "
+                                  f"result: {agent.result[:SUBAGENT_RESULT_LOG_CHAR_LIMIT]}...")
+                else:
+                    msg_content = (
+                        f"{SUBAGENT_START_LABEL}\n"
+                        f"Background agent {agent_id_str} done, but there is no results from subagent.\n"
+                        f"{SUBAGENT_END_LABEL}"
+                    )
+                    sys_log.warning(f"Background agent {agent.agent_id} done, there is no results from subagent")
+            elif agent.status == AgentStatus.TIMEOUT:
+                msg_content = (
+                    f"{SUBAGENT_START_LABEL}\n"
+                    f"Background agent {agent_id_str} timed out ({agent.timeout_s:.0f}s). User should set `SUBAGENT_TIMEOUT_S` "
+                    f"in {AGENT_CONFIGS_PATH} to increase.\n"
+                    f"{SUBAGENT_END_LABEL}"
+                )
+                sys_log.warning(f"Background agent {agent.agent_id} timed out ({agent.timeout_s:.0f}s).. User should set "
+                                f"`SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase.")
+            elif agent.status == AgentStatus.RUNNING and agent.result is None:
+                msg_content = (
+                    f"{SUBAGENT_START_LABEL}\n"
+                    f"Background agent {agent_id_str} exhausted all {agent.max_steps} steps without completing. User should "
+                    f"set `SUBAGENT_DEFAULT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase, or you should give a more specific "
+                    f"prompt.\n"
+                    f"{SUBAGENT_END_LABEL}"
+                )
+                sys_log.warning(f"Background agent {agent.agent_id} exhausted {agent.max_steps} steps without completing. "
+                                f"User should set `SUBAGENT_DEFAULT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase.")
+            elif agent.status == AgentStatus.ERROR:
+                msg_content = (
+                    f"{SUBAGENT_START_LABEL}\n"
+                    f"Background agent {agent_id_str} failed with error: {agent.error or '(There is no error info from subagent)'}.\n"
+                    f"{SUBAGENT_END_LABEL}"
+                )
+                sys_log.error(f"Background agent {agent.agent_id} failed: {agent.error or '(There is no error info from subagent)'}")
+            else:
+                msg_content = (
+                    f"{SUBAGENT_START_LABEL}\n"
+                    f"Background agent {agent_id_str} terminated with status {agent.status.value}.\n"
+                    f"Result: {agent.result or '(There is no results from subagent)'}.\n"
+                    f"Error: {agent.error or '(There is no error info from subagent)'}.\n"
+                    f"{SUBAGENT_END_LABEL}"
+                )
+                sys_log.warning(f"Background agent {agent.agent_id} terminated with status {agent.status.value}.")
+
+            agent.progress.if_archived = True
+            main_ctx.messages.append({
+                "role": "user",
+                "content": msg_content,
+            })
+            completed.append((tc, agent, thread))
+
+    for item in completed:
+        main_ctx.background_agents.remove(item)
+
+    return len(completed) > 0
+
+
+def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext, board: Scoreboard, progress: Progress) \
+        -> list[dict[str, Any]]:
+    """spawn foreground subagents concurrently, poll progress, merge results and token stats (blocking)"""
     subagents: list[tuple[dict[str, Any], SubAgent]] = []
     for tc in agent_calls:
         args = json.loads(tc["function"]["arguments"])
@@ -194,13 +368,16 @@ def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext,
         progress.console.print(
             f"Spawning subagent: [{MAJOR_COLOR1}]{agent_id}[/{MAJOR_COLOR1}]", style="bright_black")
 
+        agent_type = args["subagent_type"]
+        share_board = (agent_type == SCHEDULER_AGENT_LABEL)
         agent = SubAgent(
             parent_ctx=main_ctx,
-            subagent_type=args["subagent_type"],
+            subagent_type=agent_type,
+            subject=args["subject"],
             prompt=args["prompt"],
             agent_id=agent_id,
-            share_parent_board= False,  # TODO some agent can use read board
-            parent_board= None,
+            share_parent_board=share_board,
+            parent_board=board if share_board else None,
             model_type=args.get("model_type"),
             console=progress.console,
         )
@@ -235,28 +412,50 @@ def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext,
     messages = []
     for tc, agent in subagents:
         if agent.status == AgentStatus.DONE:
-            result_text = agent.result or "[done] no output"
+            if agent.result:
+                result = {"status": DONE_LABEL, "result": f"{SUBAGENT_START_LABEL}\n"
+                                                          f"{agent.result}\n"
+                                                          f"{SUBAGENT_END_LABEL}"}
+                sys_log.debug(f"Subagent {agent.agent_id} done, result: {agent.result[:SUBAGENT_RESULT_LOG_CHAR_LIMIT]}...")
+            else:
+                result = {"status": DONE_LABEL, "info": f"(There is no results from subagent)"}
+                sys_log.warning(f"Subagent {agent.agent_id} done, there is no results from subagent")
         elif agent.status == AgentStatus.TIMEOUT:
-            result_text = (
-                f"[timeout] Subagent exceeded configured time limit ({agent.timeout_s:.0f}s). "
-                f"Set SUBAGENT_TIMEOUT_S in {AGENT_CONFIGS_PATH} to increase."
-            )
+            result = {"status": TIMEOUT_LABEL, "info": f"Subagent exceeded configured time limit ({agent.timeout_s:.0f}s). "
+                                                       f"User should set `SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase."}
+            sys_log.warning(f"Subagent {agent.agent_id} exceeded configured time limit ({agent.timeout_s:.0f}s). User should "
+                            f"set `SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase.")
         elif agent.status == AgentStatus.RUNNING and agent.result is None:
-            result_text = (
-                f"[steps exhausted] Subagent used all {agent.max_steps} steps without completing. "
-                f"Set SUBAGENT_DEFAULT_MAX_STEPS in {AGENT_CONFIGS_PATH} to increase, "
-                f"or give a more specific prompt."
-            )
+            result = {"status": FAIL_LABEL,
+                      "info": f"Subagent used all {agent.max_steps} steps without completing. User should set `SUBAGENT_DEFAULT_MAX_STEPS` "
+                              f"in {AGENT_CONFIGS_PATH} to increase, or you should give a more specific prompt."}
+            sys_log.warning(f"Subagent {agent.agent_id} used all {agent.max_steps} steps without completing. User should "
+                            f"set `SUBAGENT_DEFAULT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase")
+        elif agent.status == AgentStatus.PENDING:
+            result = {"status": UNKNOWN_LABEL,
+                      "info": f"Subagent terminated with {AgentStatus.PENDING.value} status with unknown reason.",
+                      "result": f"{agent.result or '(There is no results from subagent)'}",
+                      "error": f"{agent.error or '(There is no error info from subagent)'}"}
+            sys_log.warning(f"Subagent {agent.agent_id} terminated with {AgentStatus.PENDING.value} status with unknown reason.")
+        elif agent.status == AgentStatus.ERROR:
+            result = {"status": FAIL_LABEL,
+                      "info": f"Subagent failed with error. Details: {agent.error or '(There is no error info from subagent)'}"}
+            sys_log.error(f"Subagent {agent.agent_id} failed with error. Details: {agent.error or '(There is no error info from subagent)'}")
+            progress.console.print(f"Subagent {agent.agent_id} failed with error. "
+                                   f"Details: {agent.error or '(There is no error info from subagent)'}", style="bold red")
         else:
-            result_text = agent.result or f"[{agent.status.value}] {agent.error or 'no output'}"
+            result = {"status": UNKNOWN_LABEL,
+                      "info": f"Subagent terminated with {agent.status.value} status with unknown reason.",
+                      "result": f"{agent.result or '(There is no results from subagent)'}",
+                      "error": f"{agent.error or '(There is no error info from subagent)'}"}
+            sys_log.warning(f"Subagent {agent.agent_id} terminated with {agent.status.value} status with unknown reason.")
+            progress.console.print(f"Subagent {agent.agent_id} terminated with {agent.status.value} status with "
+                                   f"unknown reason.", style="bold yellow")
+        agent.progress.if_archived = True
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],
-            "content": result_text,
+            "content": json.dumps(result, ensure_ascii=False),
         })
-        sys_log.debug(f"Subagent {agent.agent_id} result: {result_text[:SUBAGENT_RESULT_LOG_CHAR_LIMIT]}...")
-
-    for _, agent in subagents:
-        agent.progress.if_archived = True
 
     return messages

@@ -10,6 +10,7 @@ Description: Agent status and progress types for TECoSim subagent coordination
 Revision:
 ---------
 2026.6.12      Yu Huang      1.0      First implementation
+2026.6.13      Yu Huang      1.1      Add if_background and subject fields, replace simulate with scheduler agent type
 
 Details:
 ---------
@@ -35,7 +36,9 @@ class AgentStatus(str, Enum):
 class SubAgentProgress:
     agent_id: str
     subagent_type: str
+    subject: str
     status: AgentStatus
+    if_background: bool = False
     if_archived: bool = False
     step: int = 0
     current_tool: str = ""
@@ -48,7 +51,9 @@ class SubAgentProgress:
         return {
             "agent_id": self.agent_id,
             "subagent_type": self.subagent_type,
+            "subject": self.subject,
             "status": self.status.value,
+            "if_background": self.if_background,
             "if_archived": self.if_archived,
             "step": self.step,
             "current_tool": self.current_tool,
@@ -63,7 +68,9 @@ class SubAgentProgress:
         return cls(
             agent_id=d["agent_id"],
             subagent_type=d["subagent_type"],
+            subject=d.get("subject", ""),
             status=AgentStatus(d["status"]),
+            if_background=d.get("if_background", False),
             if_archived=d.get("if_archived", False),
             step=d.get("step", 0),
             current_tool=d.get("current_tool", ""),
@@ -88,19 +95,13 @@ SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
         TOOL_NAME_QUERY_TASK,
     ),
     GENERAL_AGENT_LABEL: (),
-    SIMULATE_AGENT_LABEL: (
-        TOOL_NAME_CHECK_SIMULATOR,
-        TOOL_NAME_INIT_DESIGN,
-        TOOL_NAME_QUERY_DESIGN,
-        TOOL_NAME_LAUNCH_SIM,
-        TOOL_NAME_QUERY_RUN,
-        TOOL_NAME_READ_LOG,
-        TOOL_NAME_READ_FILE,
-        TOOL_NAME_WRITE_FILE,
-        TOOL_NAME_EDIT_FILE,
+    SCHEDULER_AGENT_LABEL: (
         TOOL_NAME_CREATE_TASK,
         TOOL_NAME_UPDATE_TASK,
         TOOL_NAME_QUERY_TASK,
+        TOOL_NAME_GLOB_FILE,
+        TOOL_NAME_GREP_FILE,
+        TOOL_NAME_READ_FILE,
         TOOL_NAME_BASH,
     ),
 }
@@ -135,19 +136,13 @@ PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
         BASH_NETWORK_LABEL,
         BASH_FILE_LABEL,
     ),
-    SIMULATE_AGENT_LABEL: (
-        TOOL_NAME_CHECK_SIMULATOR,
-        TOOL_NAME_INIT_DESIGN,
-        TOOL_NAME_QUERY_DESIGN,
-        TOOL_NAME_LAUNCH_SIM,
-        TOOL_NAME_QUERY_RUN,
-        TOOL_NAME_READ_LOG,
-        TOOL_NAME_READ_FILE,
-        TOOL_NAME_WRITE_FILE,
-        TOOL_NAME_EDIT_FILE,
+    SCHEDULER_AGENT_LABEL: (
         TOOL_NAME_CREATE_TASK,
         TOOL_NAME_UPDATE_TASK,
         TOOL_NAME_QUERY_TASK,
+        TOOL_NAME_GLOB_FILE,
+        TOOL_NAME_GREP_FILE,
+        TOOL_NAME_READ_FILE,
         BASH_SAFE_LABEL,
     ),
 }
@@ -162,10 +157,10 @@ SUPPORTED_TYPES_DESC: dict[str, str] = {
         "General-purpose agent for research, multi-step tasks, and implementation. Has all tools except spawning other "
         "agents and cron tasks management."
     ),
-    SIMULATE_AGENT_LABEL: (
-        f"Simulation workflow agent. Can use {TOOL_NAME_CHECK_SIMULATOR}, {TOOL_NAME_INIT_DESIGN}, "
-        f"{TOOL_NAME_QUERY_DESIGN}, {TOOL_NAME_LAUNCH_SIM}, {TOOL_NAME_QUERY_RUN}, {TOOL_NAME_READ_LOG}, "
-        f"plus file I/O ({TOOL_NAME_READ_FILE}, {TOOL_NAME_WRITE_FILE}, {TOOL_NAME_EDIT_FILE}), "
-        f"bash, and task tools for own workflow."
+    SCHEDULER_AGENT_LABEL: (
+        f"Task planning and dependency management agent with shared scoreboard access. "
+        f"Can use {TOOL_NAME_CREATE_TASK} / {TOOL_NAME_UPDATE_TASK} / {TOOL_NAME_QUERY_TASK} "
+        f"to plan and organize work, set task dependencies, delete incorrect tasks, and investigate "
+        f"the codebase with read-only tools. Tasks it creates are available for any agent to claim."
     ),
 }

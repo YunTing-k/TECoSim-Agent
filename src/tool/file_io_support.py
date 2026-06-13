@@ -38,6 +38,7 @@ Revision:
                                       into read_file/read_log_impl XML-wrapped LLM output with truncation footer
 2026.6.12      Yu Huang      3.0      Always show edit preview
 2026.6.12      Yu Huang      3.1      Add subagent_mute flag for subagent coordination
+2026.6.13      Yu Huang      3.2      Absorb read_messages/save_messages from prompt.py to break circular import
 
 Details:
 ---------
@@ -52,9 +53,11 @@ visibility; (6) read-only path checking; (7) session saving utility.
 import os
 import math
 import time
+import json
 import logging
 import unicodedata
 
+from typing import Any
 from pathlib import Path
 from rich.console import Group, Console
 from rich.panel import Panel
@@ -67,7 +70,6 @@ from pygments.styles import get_style_by_name
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.util import ClassNotFound
 from pygments import lex
-from src.context import prompt
 from src.utility.basic_utils import get_user_input
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
@@ -154,10 +156,54 @@ def _resolve_token_style(style_map: dict, token_type) -> Style | None:
     return None
 
 
+def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
+    """read messages (exclude system) from persistence file with given uuid"""
+    path = os.path.join(SESSION_PATH, session_uuid, MESSAGES_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            messages = json.load(f)
+        sys_log.debug(f"Messages of session {session_uuid} loaded")
+        console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{session_uuid}[/bright_black] loaded")
+        return messages
+    except Exception as e:
+        sys_log.error(f"Failed to load the messages of session {session_uuid} with error: {e}")
+        console.print(f"Failed to load the messages of session {session_uuid} with error: {e}", style="bold red")
+        raise RuntimeError(e)
+
+
+def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
+    """save messages (exclude system) to persistence file of AgentContext"""
+    try:
+        serializable_messages = []
+        for msg in ctx.messages:
+            if msg["role"] == "system":
+                continue
+            elif hasattr(msg, "model_dump"):
+                serializable_messages.append(msg.model_dump(mode="json"))
+            elif isinstance(msg, dict):
+                serializable_messages.append(msg.copy())
+            else:
+                serializable_messages.append(dict(msg))
+        if not mute:
+            sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
+            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] converted")
+
+        path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
+        if not mute:
+            sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
+            console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] saved")
+    except Exception as e:
+        sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")
+        console.print(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}", style="bold red")
+        raise RuntimeError(e)
+
+
 def save_sessions(ctx: AgentContext, board: Scoreboard, console: Console, mute: bool = False):
     """save all session's files"""
     try:
-        prompt.save_messages(ctx, console, mute)
+        save_messages(ctx, console, mute)
         ctx.save_context(console, mute)
         ctx.design_man.save_to_file(console, mute)
         ctx.run_man.save_to_file(console, mute)

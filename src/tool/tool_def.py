@@ -50,6 +50,8 @@ Revision:
 2026.6.12      Yu Huang      4.2      Add task tool result feedback (guidance on create/update) & query_task ownership-grouped summary
 2026.6.12      Yu Huang      4.3      Basic suabgent support realization & Add bash temp script file on quoting retry
 2026.6.13      Yu Huang      4.4      Bugfix: bash temp script file leak on quoting retry (list-based cleanup)
+2026.6.13      Yu Huang      4.5      Add if_background param to spawn_agent for background subagent support
+2026.6.13      Yu Huang      4.6      Add medium model tier to spawn_agent model_type enum
 
 Details:
 ---------
@@ -172,13 +174,16 @@ def tool_spawn_agent_def() -> dict[str, Any]:
             "name": AGENT_SPAWN_TOOL_NAME,
             "description": f"Launch subagents to handle tasks concurrently. Launch multiple agents in a single message "
                            f"with parallel tool calls whenever tasks are independent.\n"
+                           f"Background agents: set `if_background`: true for long, standalone work — results arrive "
+                           f"later while you continue. Foreground agents: default mode — runs synchronously, you wait for "
+                           f"results before proceeding.\n"
                            f"Available agent types: \n"
-                            f"{type_desc}\n"
-                            f"Each subagent runs autonomously with its own tool set and task board. "
-                            f"Prefer `{EXPLORE_AGENT_LABEL}` for read-only search and investigation\n"
-                            f"use `{GENERAL_AGENT_LABEL}` for implementation, editing, and file modification\n"
-                            f"use `{SIMULATE_AGENT_LABEL}` for simulation workflows\n"
-                            f"Give each agent a clear, self-contained prompt describing exactly what to do.",
+                           f"{type_desc}\n"
+                           f"Each subagent runs autonomously with its own tool set and task board. "
+                           f"Prefer `{EXPLORE_AGENT_LABEL}` for read-only search and investigation\n"
+                           f"use `{GENERAL_AGENT_LABEL}` for implementation, editing, and file modification\n"
+                           f"use `{SCHEDULER_AGENT_LABEL}` for task planning and dependency management\n"
+                           f"Give each agent a clear, self-contained prompt describing exactly what to do.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -186,6 +191,11 @@ def tool_spawn_agent_def() -> dict[str, Any]:
                         "type": "string",
                         "enum": type_enum,
                         "description": "Type of subagent to launch. Choose based on capabilities needed.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Concise title summarizing this subagent's task (e.g. \"Analyze IR drop in region A\", "
+                                       "\"Fix auth bug\", \"Research API options\")",
                     },
                     "prompt": {
                         "type": "string",
@@ -195,11 +205,20 @@ def tool_spawn_agent_def() -> dict[str, Any]:
                     },
                     "model_type": {
                         "type": "string",
-                        "enum": ["main", "fast"],
-                        "description": "Model tier: main (powerful, slower) or fast (cheaper, quicker). Defaults to config.",
+                        "enum": ["main", "medium", "fast"],
+                        "description": "Model tier: main (powerful, slower), medium (balanced), or fast (cheaper, quicker). "
+                                       f"Default in {AGENT_CONFIGS_PATH}",
+                    },
+                    "if_background": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "If false (default), the agent runs synchronously — you will wait for its results "
+                                       "before continuing. If true, launch as a background agent that runs independently "
+                                       "while you continue working. Results are delivered later when you're idle. Use for "
+                                       "long, standalone tasks (e.g. research, documentation, extended analysis).",
                     },
                 },
-                "required": ["subagent_type", "prompt"],
+                "required": ["subagent_type", "subject", "prompt"],
                 "additionalProperties": False,
             },
         }

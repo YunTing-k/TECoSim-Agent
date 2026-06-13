@@ -17,7 +17,8 @@ Revision:
 2026.6.9       Yu Huang      1.5      Remove read_line_with_limit to basic_utils.py
 2026.6.11      Yu Huang      1.6      Add format_file_for_llm: XML-wrapped left-aligned pipe-separated line-number output for LLM consumption
 2026.6.11      Yu Huang      1.7      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py &
-                                      Remove the space noise in readout content line prefix
+                                       Remove the space noise in readout content line prefix
+2026.6.13      Yu Huang      1.8      Add grad_type="sin" to grad_color_hex_list / grad_color_rgb_list for cosine-like smooth animation
 
 Details:
 ---------
@@ -32,6 +33,7 @@ import uuid
 import logging
 import platform
 import subprocess
+import math
 
 from prompt_toolkit import PromptSession
 from rich.console import Console
@@ -114,30 +116,34 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
         raise RuntimeError(f"Failed to convert hex color: {hex_color} to RGB tuples with error: {e}")
 
 
-def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int) -> tuple[list[int], list[int], list[int]]:
-    """get gradient color RGB list according to RGB color and gradient"""
+def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int, grad_type: str = "linear") -> tuple[list[int], list[int], list[int]]:
+    """get gradient color RGB list; grad_type: "linear" (default) or "sin" (cosine-like, smooth acceleration/deceleration)"""
     r_list: list[int] = []
     g_list: list[int] = []
     b_list: list[int] = []
     for i in range(gradient):
-        ratio = i / (gradient - 1)
-        r_list.append(int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio))
-        g_list.append(int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio))
-        b_list.append(int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))
+        t = i / (gradient - 1)
+        if grad_type == "sin":
+            t = math.sin(t * math.pi / 2)
+        r_list.append(int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t))
+        g_list.append(int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t))
+        b_list.append(int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))
     return r_list, g_list, b_list
 
 
-def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int) -> list[str]:
-    """get gradient color hex list according to hex color and gradient"""
+def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int, grad_type: str = "linear") -> list[str]:
+    """get gradient color hex list; grad_type: "linear" (default) or "sin" (cosine-like smooth ease-in/out)"""
     start_rgb = hex_to_rgb(start_hex)
     end_rgb = hex_to_rgb(end_hex)
     h_list: list[str] = []
     for i in range(gradient):
-        ratio = i / (gradient - 1)
+        t = i / (gradient - 1)
+        if grad_type == "sin":
+            t = math.sin(t * math.pi / 2)
         h_list.append(rgb_to_hex((
-            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
-            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
-            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio))))
+            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t),
+            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t),
+            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))))
     return h_list
 
 

@@ -22,13 +22,14 @@ Revision:
 2026.6.3       Yu Huang      2.0      Add tool choice in branch LLM request
 2026.6.3       Yu Huang      2.1      Support of task displays in scoreboard
 2026.6.10      Yu Huang      2.2      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
-                                      the same console instance
+                                       the same console instance
+2026.6.13      Yu Huang      2.3      Add request_branch_medium + select_branch_func for 3-tier model switching
 
 Details:
 ---------
 LLM client management: configures OpenAI client from API configs, provides `request_loop_main` (main model with streaming,
-reasoning, DeepSeek support, tool calls) and `request_branch_fast` (fast model for non-loop tasks with configurable DeepSeek
-support in api_configs, no longer depends on agent_configs). Main/fast model DeepSeek support can be configured dependently.
+reasoning, DeepSeek support, tool calls) and `request_branch_*` (main/medium/fast models for non-loop tasks with configurable
+DeepSeek support). Three-tier model switching via `select_branch_func(model_tier)`.
 Wraps requests with a spinner UI via `llm_request_with_spinner`.
 """
 import random
@@ -124,6 +125,81 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
     ctx.total_llm_requests += 1
     response = client.chat.completions.create(**params)
     return response
+
+
+def request_branch_main(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
+                          api_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
+    """Create main LLM model request with LLM client, messages, tools, configs for non-loop of agent"""
+    params: dict[str, Any] = {
+        "model": api_configs["MAIN_MODEL_NAME"],
+        "temperature": api_configs["MAIN_MODEL_TEMPERATURE"],
+        "max_tokens": api_configs["MAIN_MODEL_MAX_TOKENS"],
+        "stream": False,  # Fast model disable stream response
+        "messages": messages,
+        "timeout": api_configs["TIMEOUT_MS"] / 1000
+    }
+    """tools"""
+    if tools is not None:
+        params["tools"] = tools
+        if tool_choice is not None:
+            params["tool_choice"] = tool_choice
+    """reasoning support"""
+    if api_configs["MAIN_MODEL_ENABLE_REASONING"]:
+        params["reasoning_effort"] = api_configs["MAIN_MODEL_REASONING_EFFORT"]
+    else:
+        params["reasoning_effort"] = None
+    """deepseek support"""
+    if api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
+        if api_configs["MAIN_MODEL_ENABLE_REASONING"]:
+            params["extra_body"] = {"thinking": {"type": "enabled"}}
+        else:
+            params["extra_body"] = {"thinking": {"type": "disabled"}}
+    response = client.chat.completions.create(**params)
+    return response
+
+
+def request_branch_medium(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
+                          api_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
+    """Create medium LLM model request with LLM client, messages, tools, configs for non-loop of agent"""
+    params: dict[str, Any] = {
+        "model": api_configs["MEDIUM_MODEL_NAME"],
+        "temperature": api_configs["MEDIUM_MODEL_TEMPERATURE"],
+        "max_tokens": api_configs["MEDIUM_MODEL_MAX_TOKENS"],
+        "stream": False,  # Fast model disable stream response
+        "messages": messages,
+        "timeout": api_configs["TIMEOUT_MS"] / 1000
+    }
+    """tools"""
+    if tools is not None:
+        params["tools"] = tools
+        if tool_choice is not None:
+            params["tool_choice"] = tool_choice
+    """reasoning support"""
+    if api_configs["MEDIUM_MODEL_ENABLE_REASONING"]:
+        params["reasoning_effort"] = api_configs["MEDIUM_MODEL_REASONING_EFFORT"]
+    else:
+        params["reasoning_effort"] = None
+    """deepseek support"""
+    if api_configs["MEDIUM_MODEL_DEEPSEEK_SUPPORT"]:
+        if api_configs["MEDIUM_MODEL_ENABLE_REASONING"]:
+            params["extra_body"] = {"thinking": {"type": "enabled"}}
+        else:
+            params["extra_body"] = {"thinking": {"type": "disabled"}}
+    response = client.chat.completions.create(**params)
+    return response
+
+
+def select_branch_func(model_tier: str):
+    """return (request_function, deepseek_config_key) for a given model tier"""
+    if model_tier == "main":
+        return request_branch_main, "MAIN_MODEL_DEEPSEEK_SUPPORT"
+    elif model_tier == "medium":
+        return request_branch_medium, "MEDIUM_MODEL_DEEPSEEK_SUPPORT"
+    elif model_tier == "fast":
+        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"
+    else:  # "fast"
+        sys_log.warning(f"Unknown model tier {model_tier}")
+        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"
 
 
 def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,

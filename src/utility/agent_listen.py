@@ -10,6 +10,8 @@ Description: Agent listening TUI before user input
 Revision:
 ---------
 2026.6.7       Yu Huang      1.0      First implementation
+2026.6.13      Yu Huang      1.1      Add background agent monitoring: entry condition + check_background_agents in listen loop
+2026.6.13      Yu Huang      1.2      Add subagent progress render in listen TUI (between cron and task)
 
 Details:
 ---------
@@ -30,24 +32,32 @@ from prompt_toolkit.input import create_input
 from src.context.agent_context import AgentContext
 from src.tool.cron_support import check_cron_tasks
 from src.tool.scoreboard import Scoreboard, TaskStatus, Task, get_tasks_render
+from src.tool.tool_execute import check_background_agents
+from src.utility.ui_info import get_subagent_render
+from src.agent.progress import SubAgentProgress
 from src.constants import *
 from src.utility.basic_utils import grad_color_hex_list
 
 sys_log = logging.getLogger('logger')
 
 
-def render_listen(active_cron: int, board: Scoreboard, base_time: datetime, tui_color_list: list[str],
-                  cron_color_list: list[str], task_color_list1: list[str], task_color_list2: list[str]) -> Group:
+def render_listen(active_cron: int, agent_list: dict[str, SubAgentProgress], board: Scoreboard,
+                  base_time: datetime, tui_color_list: list[str], cron_color_list: list[str],
+                  subagent_color_list: list[str], task_color_list1: list[str], task_color_list2: list[str]) -> Group:
     """render the agent listening panel before user input"""
     panels = []
     now_time = datetime.now()
     title_str = get_listen_title(now_time, base_time, tui_color_list)
     cron_str = get_listen_cron(active_cron, now_time, base_time, cron_color_list)
+    subagent_str = get_subagent_render(agent_list, now_time, base_time, subagent_color_list)
     task_str = get_listen_task(board.list_tasks(), now_time, base_time, tui_color_list, task_color_list1, task_color_list2)
     tail_str = get_listen_tail()
     render_str = title_str
     if cron_str is not None:
         render_str.append(cron_str)
+    if subagent_str is not None:
+        render_str.append(subagent_str)
+        render_str.append("\n")
     if task_str is not None:
         render_str.append(task_str)
     # strip
@@ -120,6 +130,7 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
     display this TUI when:
     1). There is active cron task
     2). There is non-resolved task
+    3). There is running background agent
     """
     has_active_cron = (ctx.active_cron != 0)
     has_pending_task = False
@@ -127,8 +138,9 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
         if task["status"] in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS):
             has_pending_task = True
             break
+    has_background_agent = len(ctx.background_agents) > 0
 
-    if not has_active_cron and not has_pending_task:
+    if not has_active_cron and not has_pending_task and not has_background_agent:
         return False
 
     """get gradient color"""
@@ -141,23 +153,26 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
     task_color_list1 = task_color_list1 + task_color_list1[::-1]
     task_color_list2 = grad_color_hex_list(TASK_IN_PROGRESS_COLOR_START, TASK_IN_PROGRESS_COLOR_END, TASK_COLOR_GRADIENT)
     task_color_list2 = task_color_list2 + task_color_list2[::-1]
+    subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT, "sin")
+    subagent_color_list = subagent_color_list + subagent_color_list[::-1]
     while True:
         input_device = create_input()
         try:
             with input_device.raw_mode():
                 input_device.flush_keys()
-                with Live(render_listen(ctx.active_cron, board, base_time, tui_color_list,
-                                        cron_color_list, task_color_list1, task_color_list2),
+                with Live(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
+                                        cron_color_list, subagent_color_list, task_color_list1, task_color_list2),
                           console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
                     while True:
                         key_press = input_device.read_keys()
                         cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks
-                        if cron_triggerd:
+                        agent_triggerd = check_background_agents(ctx)  # listen background agents
+                        if cron_triggerd or agent_triggerd:
                             return True
                         if key_press:
                             return False
-                        live.update(render_listen(ctx.active_cron, board, base_time, tui_color_list,
-                                    cron_color_list, task_color_list1, task_color_list2))
+                        live.update(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
+                                    cron_color_list, subagent_color_list, task_color_list1, task_color_list2))
                         live.refresh()
                         time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
         finally:

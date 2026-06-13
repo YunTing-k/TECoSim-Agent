@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
 import logging
 logging.basicConfig(level=logging.CRITICAL)
 
-from tool.file_io_support import get_write_render
+from src.tool.file_io_support import get_write_render
 
 
 class TestWriteRender(unittest.TestCase):
@@ -74,7 +74,7 @@ class TestWriteRender(unittest.TestCase):
         from unittest.mock import patch
         import os as _os
         lines = "\n".join(f"line{i}" for i in range(100))
-        with patch('tool.file_io_support.WRITE_VIEW_MAX_LINES', 5):
+        with patch('src.tool.file_io_support.WRITE_VIEW_MAX_LINES', 5):
             with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
                 body = get_write_render("test.txt", lines)
         output = str(body)
@@ -87,7 +87,7 @@ class TestWriteRender(unittest.TestCase):
         from unittest.mock import patch
         import os as _os
         content = "x" * 5000
-        with patch('tool.file_io_support.WRITE_VIEW_MAX_CHARS', 100):
+        with patch('src.tool.file_io_support.WRITE_VIEW_MAX_CHARS', 100):
             with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
                 body = get_write_render("test.txt", content)
         output = str(body)
