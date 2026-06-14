@@ -15,6 +15,7 @@ Revision:
 2026.6.11      Yu Huang      1.3      Unify as edit-view style: line-number gutter + pygments highlight-then-wrap (preserves
                                       token boundaries across continuation) + dual-BG padding with $bash/$out labels & truncation
 2026.6.13      Yu Huang      1.4      Add more safe bash commands
+2026.6.14      Yu Huang      1.5      Fix: skip flags in cmd extraction, reclassify kill/sed, git/docker option parsing, guard max_width
 
 Details:
 ---------
@@ -102,7 +103,8 @@ def tokens_from_cmd(cmd: str) -> list[str]:
     """Split a command into tokens via shlex (safe fallback to str.split)."""
     try:
         return shlex.split(cmd)
-    except Exception:
+    except Exception as e:
+        sys_log.debug(f"shlex.split failed, falling back to str.split: {e}")
         return cmd.split()
 
 
@@ -122,6 +124,9 @@ def extract_base_cmd(cmd: str) -> str | None:
         'nice', 'stdbuf', 'setsid', 'chrt', 'ionice',
     })
     for tok in tokens:
+        # Skip flags
+        if tok.startswith('-'):
+            continue
         # Skip FOO=bar assignments
         if '=' in tok and not tok.startswith('-'):
             continue
@@ -189,6 +194,9 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         (r'\binsmod\b',                        'Kernel module insert'),
         (r'\bmodprobe\b',                      'Kernel module management'),
         (r'\brmmod\b',                         'Kernel module removal'),
+        (r'\bkill\b',                          'Process termination (kill)'),
+        (r'\bpkill\b',                         'Process termination by name (pkill)'),
+        (r'\bkillall\b',                       'Bulk process termination (killall)'),
     ]
 
     for pattern, reason in high_risk_patterns:
@@ -286,16 +294,25 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
 
     # Git operations
     if base_cmd == 'git':
-        # Extract git subcommand
         g_tokens = tokens_from_cmd(cmd)
-        if len(g_tokens) >= 2:
-            sub = g_tokens[1]
+        sub = None
+        i = 1
+        while i < len(g_tokens):
+            t = g_tokens[i]
+            if t.startswith('-'):
+                if t.startswith(('-C', '-c', '--git')):
+                    i += 1
+                i += 1
+                continue
+            sub = t
+            break
+        if sub is not None:
             if sub in ('push', 'pull', 'commit', 'merge', 'rebase', 'checkout', 'reset', 'fetch', 'cherry-pick', 'tag'):
                 return BASH_REPOSITORY_MODIFY_LABEL, f"Git operation '{sub}' modifies repository history/remote", 5
             if sub in ('add', 'rm', 'mv', 'restore', 'stash'):
                 return BASH_STAGE_CHANGE_LABEL, f"Git operation '{sub}' stages changes", 6
-            # Other git commands are "safe"
             return BASH_SAFE_LABEL, f"Git operation '{sub}' (read-only)", 8
+        return BASH_SAFE_LABEL, f"Git command (read-only)", 8
 
     # Docker / Podman
     docker_read = frozenset({'ps', 'images', 'logs', 'info', 'version', 'inspect',
@@ -309,12 +326,23 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
                                 'container run', 'container start', 'container stop'})
     if base_cmd in ('docker', 'podman'):
         d_tokens = tokens_from_cmd(cmd)
-        if len(d_tokens) >= 2:
-            sub = d_tokens[1]
+        sub = None
+        i = 1
+        while i < len(d_tokens):
+            t = d_tokens[i]
+            if t.startswith('-'):
+                if t.startswith(('-H', '--config', '--context', '--host', '--tls')):
+                    i += 1
+                i += 1
+                continue
+            sub = t
+            break
+        if sub is not None:
             if sub in docker_read:
                 return BASH_SAFE_LABEL, f"Container read-only command: {cmd}", 8
             if sub in docker_modify:
                 return BASH_FILE_LABEL, f"Container modification command: {cmd}", 4
+        return BASH_SAFE_LABEL, f"Container command (read-only): {cmd}", 8
 
     # Make / build systems
     build_cmds = {'make', 'cmake', 'ninja', 'meson', 'gcc', 'g++', 'clang', 'clang++',
@@ -427,9 +455,6 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'btm':     'Bottom process viewer',
         'pidof':   'Find PID',
         'pgrep':   'Find process',
-        'pkill':   'Signal process',
-        'kill':    'Send signal',
-        'killall': 'Kill processes by name',
         'nice':    'Run with priority',
         'renice':  'Change priority',
         'nohup':   'Run immune to hup',
@@ -438,7 +463,6 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'uniq':    'Unique lines',
         'shuf':    'Shuffle lines',
         'tr':      'Translate characters',
-        'sed':     'Stream editor',
         'awk':     'Pattern scanning',
         'jq':      'JSON processor',
         'yq':      'YAML/JSON processor',
@@ -514,6 +538,13 @@ def get_bash_risk(cmd: str) -> tuple[str, str, int]:
         'apropos': 'Search manual',
     }
 
+    # sed -- in-place editing is a file operation
+    if base_cmd == 'sed':
+        s_tokens = tokens_from_cmd(cmd)
+        if any(t.startswith('-i') or t.startswith('--in-place') for t in s_tokens[1:]):
+            return BASH_FILE_LABEL, "In-place file modification (sed -i)", 4
+        return BASH_SAFE_LABEL, "Stream editing without file modification", 8
+
     if base_cmd in safe_commands:
         return BASH_SAFE_LABEL, f"Safe command: {safe_commands[base_cmd]}", 8
 
@@ -541,7 +572,7 @@ def evaluate_bash_risk(commands: str, ctx: AgentContext) -> tuple[str, str, int]
             if ctx.permissions[risk]:
                 continue
         else:
-            raise RuntimeError(f"Unknown bash command risk: {risk}")
+            sys_log.warning(f"Unknown bash command risk: {risk}, reason: {reason}, level: {level}")
 
         cmd_risk_list.append(risk)
         cmd_reason_list.append(reason)
@@ -615,6 +646,8 @@ def get_bash_render(commands: str) -> Text:
     budget = math.floor(math.log10(max(len(lines), 1))) + 1
     gutter_width = EDIT_VIEW_LEFT_SPACE_MARGIN + budget + EDIT_VIEW_LINE_SPACE_MARGIN + 1
     max_width = os.get_terminal_size().columns - gutter_width - 1
+    if max_width < 1:
+        max_width = 1
     _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
     gutter_nbsp = "\u00a0" * gutter_width
 

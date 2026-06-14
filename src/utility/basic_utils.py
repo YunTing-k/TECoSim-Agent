@@ -19,6 +19,7 @@ Revision:
 2026.6.11      Yu Huang      1.7      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py &
                                        Remove the space noise in readout content line prefix
 2026.6.13      Yu Huang      1.8      Add grad_type="sin" to grad_color_hex_list / grad_color_rgb_list for cosine-like smooth animation
+2026.6.14      Yu Huang      1.9      Fix: grad_color zero div guard, bash version check, UUID validation log, file format offset
 
 Details:
 ---------
@@ -121,6 +122,8 @@ def grad_color_rgb_list(start_rgb: tuple, end_rgb: tuple, gradient: int, grad_ty
     r_list: list[int] = []
     g_list: list[int] = []
     b_list: list[int] = []
+    if gradient <= 1:
+        return [start_rgb[0]], [start_rgb[1]], [start_rgb[2]]
     for i in range(gradient):
         t = i / (gradient - 1)
         if grad_type == "sin":
@@ -136,6 +139,8 @@ def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int, grad_type: 
     start_rgb = hex_to_rgb(start_hex)
     end_rgb = hex_to_rgb(end_hex)
     h_list: list[str] = []
+    if gradient <= 1:
+        return [start_hex]
     for i in range(gradient):
         t = i / (gradient - 1)
         if grad_type == "sin":
@@ -217,7 +222,7 @@ def is_bash_available(path: str) -> bool:
     """check if bash is available"""
     try:
         result = subprocess.run(
-            [path, "-c", "bash --version"],
+            [path, "--version"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=5
@@ -317,7 +322,8 @@ def is_valid_uuid(uuid_str: str) -> bool:
     try:
         uuid.UUID(uuid_str)
         return True
-    except Exception:
+    except Exception as e:
+        sys_log.error(f"UUID validation failed with error: {e}")
         return False
 
 

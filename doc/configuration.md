@@ -68,58 +68,58 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 > - `SIMULATOR_PATH` — 指向无效路径会导致仿真功能完全不可用
 > - `READ_FILE_MB_LIMIT` — 设置过大可能导致 OOM 或 LLM 上下文溢出
 
-| 参数 Parameter | 说明 Description |
-|-----------|-------------|
-| `SIMULATOR_PATH` | TECoSim 仿真器路径（空则不启用仿真功能）/ Path to TECoSim simulator (leave empty to disable simulation) |
-| `SIMULATOR_TIMEOUT_S` | 仿真超时时间（秒）/ Simulation timeout (seconds) |
-| `BASH_PATH` | **GNU Bash** 路径，Agent 通过 `bash -c` 执行命令，不支持 cmd/pwsh / Path to **GNU Bash** — agent uses `bash -c`; cmd/pwsh not supported |
-| `RIPGREP_PATH` | ripgrep 可执行文件路径（用于 `grep_file` 工具）/ Path to ripgrep executable (used by `grep_file` tool) |
-| `MERGE_SYSTEM_PROMPTS` | 是否将多条系统提示词合并为单条消息发送 / Whether to merge multiple system prompts into a single message |
-| `CONTEXT_THRESHOLD` | 上下文阈值比例（如 `0.8` 表示 80%），超过时发出告警 / Context threshold ratio (e.g. `0.8` = 80%), triggers warning when exceeded |
-| `LLM_SUMMARY_TRIGGER` | 自动摘要触发次数——用户输入达到该次数后自动总结会话 / LLM summary trigger — auto-summarizes session after this many user prompts |
-| `LLM_SUMMARY_MODEL` | 自动摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type used for auto-summary |
-| `REMIND_TASK_TOOL_GAP` | 工具调用轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Tool call rounds before reminding LLM to use task tools |
-| `REMIND_TASK_CHAT_GAP` | 对话轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Chat rounds before reminding LLM to use task tools |
-| `MAIN_TOOL_RESULT_CHAR_LIMIT` | 主 Agent 工具结果最大字符数（超出截断）/ Main agent tool result char limit (truncated if exceeded) |
-| `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization |
-| `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`) |
-| `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown |
+| 参数 Parameter | 说明 Description                                                                                                                       |
+|-----------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `SIMULATOR_PATH` | TECoSim 仿真器路径（空则不启用仿真功能）/ Path to TECoSim simulator (leave empty to disable simulation)                                              |
+| `SIMULATOR_TIMEOUT_S` | 仿真超时时间（秒）/ Simulation timeout (seconds)                                                                                              |
+| `BASH_PATH` | **GNU Bash** 路径，Agent 通过 `bash -c` 执行命令，不支持 cmd/pwsh / Path to **GNU Bash** — agent uses `bash -c`; cmd/pwsh not supported           |
+| `RIPGREP_PATH` | ripgrep 可执行文件路径（用于 `grep_file` 工具）/ Path to ripgrep executable (used by `grep_file` tool)                                            |
+| `MERGE_SYSTEM_PROMPTS` | 是否将多条系统提示词合并为单条消息发送 / Whether to merge multiple system prompts into a single message                                                 |
+| `CONTEXT_THRESHOLD` | 上下文阈值比例（如 `0.8` 表示 80%），超过时发出告警 / Context threshold ratio (e.g. `0.8` = 80%), triggers warning when exceeded                         |
+| `LLM_SUMMARY_TRIGGER` | 自动摘要触发次数——用户输入达到该次数后自动总结会话 / LLM summary trigger — auto-summarizes session after this many user prompts                              |
+| `LLM_SUMMARY_MODEL` | 自动摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type used for auto-summary                                                        |
+| `REMIND_TASK_TOOL_GAP` | 工具调用轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Tool call rounds before reminding LLM to use task tools                                            |
+| `REMIND_TASK_CHAT_GAP` | 对话轮次提醒阈值——超过此轮数未使用任务工具则插入系统提醒 / Chat rounds before reminding LLM to use task tools                                                   |
+| `MAIN_TOOL_RESULT_CHAR_LIMIT` | 主 Agent 工具结果最大字符数（超出截断）/ Main agent tool result char limit (truncated if exceeded)                                                   |
+| `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization                                                      |
+| `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`)                             |
+| `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown                                                                          |
 | `DISPLAY_RESPONSE_REASON` | 是否显示 LLM 的推理过程内容（关闭则显示 "Thinking ..." 占位）/ Whether to display LLM reasoning content (shows "Thinking ..." placeholder when disabled) |
-| `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session |
-| `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected |
-| `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated |
-| `URL_TIMEOUT_S` | 网页获取超时（秒）/ Web fetch timeout (seconds) |
-| `URL_CACHE_TIME_S` | URL 缓存时间（秒）/ URL cache time (seconds) |
-| `WEB_SEARCH_BACKEND` | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Web search backend |
-| `WEB_SEARCH_API_KEY` | 网络搜索 API Key / Web search API key |
-| `WEB_SEARCH_TIMEOUT_S` | 网络搜索超时（秒）/ Web search timeout (seconds) |
-| `RIPGREP_TIMEOUT_S` | 文件搜索超时（秒）/ File search (ripgrep) timeout (seconds) |
-| `MCP_INIT_TIMEOUT_S` | MCP 初始化超时（秒）/ MCP init timeout (seconds) |
-| `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds) |
-| `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume |
-| `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit |
-| `WEB_FETCH_MODEL` | 网页内容总结使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web fetch summarization |
-| `WEB_FETCH_LLM_CHAR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM |
-| `WEB_SEARCH_API_MODE` | 网络搜索 API 模式（如 `deep`）/ Web search API mode |
-| `WEB_SEARCH_PROXY` | 网络搜索代理地址 / Web search proxy |
-| `WEB_SEARCH_INCLUDE_DOMAINS` | 网络搜索限定包含的域名 / Web search included domains |
-| `WEB_SEARCH_EXCLUDE_DOMAINS` | 网络搜索排除的域名 / Web search excluded domains |
-| `WEB_SEARCH_MAX_ENTRY` | 网络搜索最大返回条目数 / Web search max entries |
-| `WEB_SEARCH_RAW_CHAR_LIMIT` | 网络搜索原始结果字符限制 / Web search raw result char limit |
-| `WEB_SEARCH_MODEL` | 网络搜索摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web search summarization |
-| `WEB_SEARCH_LLM_CHAR_LIMIT` | 网络搜索结果传给 LLM 的最大字符数 / Web search result char limit for LLM |
-| `RESUME_DISPLAY_SKILLS` | 恢复会话时是否显示已加载的技能内容 / Whether to display loaded skills content when resuming session |
-| `RESUME_DISPLAY_CRONS` | 恢复会话时是否显示定时任务内容 / Whether to display cron tasks content when resuming session |
-| `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls |
-| `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session |
-| `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session |
-| `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session |
-| `RESUME_DISPLAY_SUBAGENT_AS_MD` | 恢复会话时是否以 Markdown 格式显示子 Agent 运行记录 / Whether to display subagent records as Markdown when resuming session |
-| `SUBAGENT_DEFAULT_MAX_STEPS` | 子 Agent 默认最大步骤数（LLM 请求次数），超出后自动终止 / Default max steps for subagents |
-| `SUBAGENT_DEFAULT_MODEL_TYPE` | 子 Agent 默认模型类型：`"main"`、`"medium"` 或 `"fast"` / Default model type for subagents |
-| `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds |
-| `SUBAGENT_API_RETRY_COUNT` | 子 Agent API 临时故障重试次数 / Subagent API retry count on transient failures |
-| `SUBAGENT_TOOL_RESULT_CHAR_LIMIT` | 子 Agent 工具结果最大字符数（超出截断）/ Subagent tool result char limit (truncated if exceeded) |
+| `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session                                                   |
+| `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected                                                   |
+| `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated                                     |
+| `URL_TIMEOUT_S` | 网页获取超时（秒）/ Web fetch timeout (seconds)                                                                                               |
+| `URL_CACHE_TIME_S` | URL 缓存时间（秒）/ URL cache time (seconds)                                                                                                |
+| `WEB_SEARCH_BACKEND` | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Web search backend                                                                        |
+| `WEB_SEARCH_API_KEY` | 网络搜索 API Key / Web search API key                                                                                                    |
+| `WEB_SEARCH_TIMEOUT_S` | 网络搜索超时（秒）/ Web search timeout (seconds)                                                                                              |
+| `RIPGREP_TIMEOUT_S` | 文件搜索超时（秒）/ File search (ripgrep) timeout (seconds)                                                                                   |
+| `MCP_INIT_TIMEOUT_S` | MCP 初始化超时（秒）/ MCP init timeout (seconds)                                                                                             |
+| `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds)                                                                                              |
+| `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume                                                               |
+| `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit                                                                                             |
+| `WEB_FETCH_MODEL` | 网页内容总结使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web fetch summarization                                                |
+| `WEB_FETCH_LLM_CHAR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM                                                                           |
+| `WEB_SEARCH_API_MODE` | 网络搜索 API 模式（如 `deep`）/ Web search API mode                                                                                           |
+| `WEB_SEARCH_PROXY` | 网络搜索代理地址 / Web search proxy                                                                                                          |
+| `WEB_SEARCH_INCLUDE_DOMAINS` | 网络搜索限定包含的域名 / Web search included domains                                                                                            |
+| `WEB_SEARCH_EXCLUDE_DOMAINS` | 网络搜索排除的域名 / Web search excluded domains                                                                                              |
+| `WEB_SEARCH_MAX_ENTRY` | 网络搜索最大返回条目数 / Web search max entries                                                                                                 |
+| `WEB_SEARCH_RAW_CHAR_LIMIT` | 网络搜索原始结果字符限制 / Web search raw result char limit                                                                                      |
+| `WEB_SEARCH_MODEL` | 网络搜索摘要使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web search summarization                                               |
+| `WEB_SEARCH_LLM_CHAR_LIMIT` | 网络搜索结果传给 LLM 的最大字符数 / Web search result char limit for LLM                                                                           |
+| `RESUME_DISPLAY_SKILLS` | 恢复会话时是否显示已加载的技能内容 / Whether to display loaded skills content when resuming session                                                   |
+| `RESUME_DISPLAY_CRONS` | 恢复会话时是否显示定时任务内容 / Whether to display cron tasks content when resuming session                                                        |
+| `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls                                             |
+| `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session                                                        |
+| `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session                                               |
+| `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session                                                |
+| `RESUME_DISPLAY_SUBAGENT_AS_MD` | 恢复会话时是否以 Markdown 格式显示子 Agent 运行记录 / Whether to display subagent records as Markdown when resuming session                           |
+| `SUBAGENT_MAX_STEPS` | 子 Agent 最大步骤数（LLM 请求次数），超出后自动终止 / Max steps for subagents                                                                            |
+| `SUBAGENT_MODEL_TYPE` | 子 Agent 模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for subagents                                                               |
+| `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds                                                                                |
+| `SUBAGENT_API_RETRY_COUNT` | 子 Agent API 临时故障重试次数 / Subagent API retry count on transient failures                                                                |
+| `SUBAGENT_TOOL_RESULT_CHAR_LIMIT` | 子 Agent 工具结果最大字符数（超出截断）/ Subagent tool result char limit (truncated if exceeded)                                                     |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）

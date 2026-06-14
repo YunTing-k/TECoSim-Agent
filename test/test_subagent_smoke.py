@@ -191,7 +191,7 @@ def test_background_agent_launch():
     assert "started" in content["info"], f"Expected 'started' in info: {content['info']}"
 
     assert len(ctx.background_agents) == bg_initial_count + 1
-    bg_tc, bg_agent, bg_thread = ctx.background_agents[-1]
+    bg_tc, bg_agent, bg_thread, _ = ctx.background_agents[-1]
     assert bg_tc is tc
     assert bg_agent.subagent_type == "explore"
     assert bg_thread.is_alive() or bg_agent.status != AgentStatus.PENDING

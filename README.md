@@ -51,7 +51,7 @@ Traditional design requires experts to **manually translate** design intent into
 |---|-------------|------------------|
 | 1 | **自然语言驱动** Natural language driven | 描述目标，智能体自动完成设计、仿真、验证全流程 / Describe goals, the agent handles the full workflow |
 | 2 | **TECoSim 无缝集成** Seamless integration | 自动配置仿真参数、调用仿真器、解析输出结果 / Auto-configures params, invokes simulator, parses results |
-| 3 | **子Agent协作** Subagent | 并发启动 explore/general/scheduler 类型子Agent，支持前台阻塞/后台异步模式，共享任务看板 / Parallel subagents with foreground/background modes and shared scoreboard |
+| 3 | **子Agent协作** Subagent | 并发启动 explorer/worker/scheduler 类型子Agent，支持前台阻塞/后台异步模式，共享任务看板 / Parallel subagents with foreground/background modes and shared scoreboard |
 | 5 | **任务看板** Scoreboard | 线程安全的任务系统，依赖管理与状态流转，子Agent任务可被主Agent认领 / Thread-safe tasks with dependency tracking, subagent-created tasks claimable by main agent |
 | 6 | **内置工具与权限** Tools & permissions | 文件I/O、Shell、网页获取/搜索、定时任务；所有敏感操作需用户TUI确认 / File I/O, bash, web fetch/search, cron; TUI permission for all sensitive ops |
 | 7 | **MCP 与技能** MCP & skills | stdio/http/sse MCP 服务器接入，Anthropic 式技能框架按需加载 / MCP server integration + Anthropic-style skill framework with on-demand loading |
@@ -100,8 +100,8 @@ The agent supports concurrent subagent spawning via `spawn_agent` for parallel t
 
 | Agent 类型 Type | 能力 Capability |
 |----------------|---------------|
-| `explore` | 只读代码探索、文件搜索、网页获取 / Read-only exploration & search |
-| `general` | 完整工具集的通用任务执行 / General-purpose with full toolset |
+| `explorer` | 只读代码探索、文件搜索、网页获取 / Read-only exploration & search |
+| `worker` | 完整工具集的通用任务执行 / General-purpose with full toolset |
 | `scheduler` | 共享任务看板，负责任务分解与依赖规划 / Shares scoreboard for task planning |
 
 子Agent 支持**前台**（阻塞等待结果）和**后台**（异步运行，完成时自动通知）两种模式。后台 Agent 在 REPL 空闲时通过监听 TUI 自动递交结果。主Agent可自动调用，或者用户显式要求。
@@ -238,6 +238,7 @@ All commands start with `/` in the agent interaction interface:
 | `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
 | `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
 | `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
+| `/agent_list` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
 | `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
 | `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
 

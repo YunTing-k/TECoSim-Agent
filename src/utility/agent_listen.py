@@ -155,25 +155,25 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
     task_color_list2 = task_color_list2 + task_color_list2[::-1]
     subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT, "sin")
     subagent_color_list = subagent_color_list + subagent_color_list[::-1]
-    while True:
-        input_device = create_input()
-        try:
-            with input_device.raw_mode():
-                input_device.flush_keys()
-                with Live(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
-                                        cron_color_list, subagent_color_list, task_color_list1, task_color_list2),
-                          console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
-                    while True:
-                        key_press = input_device.read_keys()
-                        cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks
-                        agent_triggerd = check_background_agents(ctx)  # listen background agents
-                        if cron_triggerd or agent_triggerd:
-                            return True
-                        if key_press:
-                            return False
-                        live.update(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
-                                    cron_color_list, subagent_color_list, task_color_list1, task_color_list2))
-                        live.refresh()
-                        time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
-        finally:
-            input_device.close()
+    """TUI"""
+    input_device = create_input()
+    try:
+        with input_device.raw_mode():
+            input_device.flush_keys()
+            with Live(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
+                                    cron_color_list, subagent_color_list, task_color_list1, task_color_list2),
+                      console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
+                while True:
+                    key_press = input_device.read_keys()
+                    cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks
+                    agent_triggerd = check_background_agents(ctx)  # listen background agents
+                    if cron_triggerd or agent_triggerd:
+                        return True
+                    if key_press:
+                        return False
+                    live.update(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
+                                cron_color_list, subagent_color_list, task_color_list1, task_color_list2))
+                    live.refresh()
+                    time.sleep(KEY_LISTEN_SLEEP_TIME_MS / 1000.0)
+    finally:
+        input_device.close()

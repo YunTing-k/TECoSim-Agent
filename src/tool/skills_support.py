@@ -44,9 +44,11 @@ def load_all_skill_metas(skills_root: str, console: Console) -> list[dict[str, s
             if content.startswith("---"):
                 _, fm, _ = content.split("---", 2)
                 data = yaml.safe_load(fm)
+                name = str(data["name"])
+                description = str(data["description"])
                 metas.append({
-                    "name": str(data["name"]),
-                    "description": str(data["description"]),
+                    "name": name,
+                    "description": description,
                 })
             else:
                 sys_log.warning(f"Fail to load skill {md_file} from {skills_root} with error: No yaml header found")

@@ -13,6 +13,7 @@ Revision:
 2026.6.8       Yu Huang      1.1      Remove simulator params to simulator_param.py & Simulator run management support
 2026.6.9       Yu Huang      1.2      Add design and run support for simulator & Revise the highlight of the IO console print
 2026.6.11      Yu Huang      1.3      Adopt XML-wrapped pipe-format in read_log_impl via format_file_for_llm
+2026.6.14      Yu Huang      1.4      Fix: decode with errors=replace, timeout default guard
 
 Details:
 ---------
@@ -384,7 +385,8 @@ class RunManager:
 
     def get_num(self):
         """get the number of runs"""
-        return len(self._runs)
+        with self._lock:
+            return len(self._runs)
 
 
     def get_run(self, run_id: int) -> tuple[bool, Run | None, str]:
@@ -515,13 +517,13 @@ def init_design_impl(arguments: dict[str, Any], design_man: DesignManager, conso
 
 def save_simulator_logs(run_path: str, stdout: bytes, stderr: bytes):
     """save stdout and stderr logs of simulator"""
-    stdout_str = stdout.decode('utf-8')
+    stdout_str = stdout.decode('utf-8', errors='replace')
     with open(run_path + "/stdout.log", "w", encoding="utf-8", newline='') as f:
         if stdout_str is not None and stdout_str.strip():
             f.write(stdout_str)
         else:
             f.write("(stdout is empty)")
-    stderr_str = stderr.decode('utf-8')
+    stderr_str = stderr.decode('utf-8', errors='replace')
     with open(run_path + "/stderr.log", "w", encoding="utf-8", newline='') as f:
         if stderr_str is not None and stderr_str.strip():
             f.write(stderr_str)
@@ -576,7 +578,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
             configs = design_path + "/"
         proc = subprocess.Popen([run_man.simulator_path + '/TECoSim.exe', configs], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            stdout, stderr = proc.communicate(timeout=run_man.time_out)
+            stdout, stderr = proc.communicate(timeout=run_man.time_out if run_man.time_out > 0 else SIMULATOR_TIMEOUT_DEFAULT_S)
             sim_re = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
         # user cancel simulation
         # only dump the log (if insert run succeed)

@@ -1261,4 +1261,4 @@ def check_read_only(in_path: str, ctx: AgentContext) -> tuple[bool, str]:
 
         return False, ""
     except Exception as e:
-        return False, f"Check read-only list failed with error {e}"
+        return True, f"Check read-only list failed with error {e}"

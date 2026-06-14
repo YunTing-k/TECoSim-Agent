@@ -117,12 +117,12 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
             user_addons = None
         else:
             sys_log.warning(f"Tool: {func_name} is undefined")
-            progress.console.print(f"Tool: {func_name} is undefined\r", style="bold yellow")
+            progress.console.print(f"Tool: {func_name} is undefined", style="bold yellow")
             results = {"status": FAIL_LABEL, "info": f"Tool: {func_name} is undefined"}
             user_addons = None
         return results, user_addons
     except Exception as e:
         sys_log.error(f"Tool {func_name} execution failed with error: {e}")
-        progress.console.print(f"Tool {func_name} execution failed with error: {e}\r", style="bold red")
+        progress.console.print(f"Tool {func_name} execution failed with error: {e}", style="bold red")
         results = {"status": FAIL_LABEL, "info": f"Tool {func_name} execution failed with error: {e}"}
         return results, None

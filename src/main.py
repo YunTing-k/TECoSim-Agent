@@ -37,6 +37,7 @@ Revision:
 2026.6.10      Yu Huang      3.5      Add reminder for LLM to manage workflow proactively & Revise the live TUI with the
                                        same console instance
 2026.6.13      Yu Huang      3.6      Subagent integration: spawn, agent_list registry, background agent orchestration,
+2026.6.14      Yu Huang      3.7      Fix: summary trigger >= with if_summarized guard, tool calls spinner board pass args
                                       stale agent cleanup on session resume
 
 Details:
@@ -203,8 +204,17 @@ if __name__ == '__main__':
 
             """user input or tool results"""
             if ctx.task_end:
-                """check cron tasks"""
                 ui_info.usage_bar(ctx=ctx, console=console)
+                """
+                Listen agent when there are active cron tasks, pending tasks, foreground subagents 
+                1). check cron tasks
+                    if cron tasks triggered, append messages and exits (else exits if user press any key)
+                2). display agent tasks
+                    (just display, exits if user press any key)
+                3). check foreground subagents,
+                    if any subagent stopped, append messages and exits (else exits if user press any key)
+                    reason of listening here but not in top of loop is to avoid subagent to interrupt the main agent
+                """
                 listen_triggerd = agent_listen.listen_tui(ctx=ctx, board=board, console=console)
                 if not listen_triggerd:
                     """user prompts & request"""
@@ -222,7 +232,8 @@ if __name__ == '__main__':
                                                                             f"{SYS_REMINDER_END_LABEL}"})
                         ctx.messages.append({"role": "user", "content": user_input})
                         ctx.user_prompts += 1
-                        if ctx.user_prompts == ctx.agent_configs["LLM_SUMMARY_TRIGGER"]:  # summarize according to history
+                        if not ctx.if_summarized and ctx.user_prompts >= ctx.agent_configs["LLM_SUMMARY_TRIGGER"]:
+                            ctx.if_summarized = True
                             title = summarize_support.summarize_session(ctx=ctx, console=console)
                             ctx.session_title = title if title else ERROR_SESSION_TITLE
                             ui_info.set_terminal_title(ctx.session_title)

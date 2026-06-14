@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.4.14      Yu Huang      1.0      First implementation
 2026.6.13      Yu Huang      2.0      Subagent support: types, status, icons, colors, tool result limits & Add header
+2026.6.14      Yu Huang      2.1      Add: simulator timeout default, agent label renames, subagent step/warn defaults
 
 Details:
 ---------
@@ -22,7 +23,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 1
+TECOSIM_AGENT_UPDATE_VERSION: int = 2
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -45,8 +46,8 @@ DESIGNS_NAME: str = "designs.json"
 # subagent
 MAIN_AGENT_ID: str = "main"
 AGENT_ID_LEN: int = 8
-EXPLORE_AGENT_LABEL: str = "explore"
-GENERAL_AGENT_LABEL: str = "general"
+EXPLORER_AGENT_LABEL: str = "explorer"
+WORKER_AGENT_LABEL: str = "worker"
 SCHEDULER_AGENT_LABEL: str = "scheduler"
 AGENT_PENDING_LABEL: str = "pending"
 AGENT_RUNNING_LABEL: str = "running"
@@ -56,7 +57,10 @@ AGENT_DONE_LABEL: str = "done"
 AGENT_SPAWN_TOOL_NAME: str = "spawn_agent"
 AGENT_ARCHIVED_LABEL: str = "archived"
 SUBAGENT_DUMP_DIR: str = "agents"
-SUBAGENT_DEFAULT_MAX_STEPS: int = 10
+SUBAGENT_DEFAULT_MAX_STEPS: int = 30
+SUBAGENT_DEFAULT_WARN_STEPS: int = 2
+SUBAGENT_DEFAULT_TIMEOUT_S: int = 600
+SUBAGENT_DEFAULT_MODEL_TYPE: str = "fast"
 SUBAGENT_POLL_INTERVAL_S: float = 0.2
 SUBAGENT_RESULT_LOG_CHAR_LIMIT: int = 200
 SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 70
@@ -73,6 +77,7 @@ SUBAGENT_COLOR_END: str = "#808080"
 SUBAGENT_COLOR_GRADIENT: int = 128
 SUBAGENT_COLOR_PERIOD: float = 4
 # others
+DEFAULT_TIMEOUT_MS: int = 1000000
 SYS_REMINDER_START_LABEL: str = "<system_reminder>"
 SYS_REMINDER_END_LABEL: str = "</system_reminder>"
 SUBAGENT_START_LABEL: str = "<subagent>"
@@ -141,6 +146,7 @@ QUESTION_OTHER_OPTION_DESC = "Type your ideas"
 QUESTION_RECOMMEND_LABEL = "Recommended"
 BASH_TIMEOUT_MS_MAX: int = 600000
 BASH_TIMEOUT_MS_DEFAULT: int = 120000
+SIMULATOR_TIMEOUT_DEFAULT_S: int = 3600
 GLOB_FILE_ENTRIES_DEFAULT: int = 250
 GREP_FILE_HEAD_LIMIT_DEFAULT: int = 250
 READ_FILE_MAX_LINE: int = 10000

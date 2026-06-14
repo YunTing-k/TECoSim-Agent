@@ -16,6 +16,7 @@ Revision:
 2026.5.31      Yu Huang      1.4      Define used file/dir. paths in constants.py
 2026.6.2       Yu Huang      1.5      Refactor logger with composition + explicit delegation + monkey-patch
 2026.6.7       Yu Huang      1.6      Fix the bug of logging error of emoji
+2026.6.14      Yu Huang      1.7      Fix: auto-create log directory on init
 
 Details:
 ---------
@@ -58,6 +59,7 @@ class Logger:
             datefmt='%H:%M:%S',
             log_colors=self.config
         )
+        os.makedirs(LOG_PATH, exist_ok=True)
         if self.dev_log:
             sh = logging.StreamHandler()
             sh.setLevel(logging.DEBUG)

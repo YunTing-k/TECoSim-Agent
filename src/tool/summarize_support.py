@@ -155,7 +155,7 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
 
     """tool def"""
     tools = tool_summarize_title_def()
-    model_tier = ctx.agent_configs["LLM_SUMMARY_MODEL"]
+    model_tier: str = ctx.agent_configs["LLM_SUMMARY_MODEL"]
     branch_func, deepseek_key = client.select_branch_func(model_tier)
     if ctx.api_configs[deepseek_key]:
         tool_choice = None
@@ -181,12 +181,12 @@ def summarize_session(ctx: AgentContext, console: Console) -> str | None:
             ctx.total_output_tokens += usage.completion_tokens
             ctx.total_tokens += usage.total_tokens
             if usage.prompt_tokens_details is not None:
-                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                cached_tokens = usage.prompt_tokens_details.cached_tokens or 0
                 uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
                 ctx.total_uncached_tokens += uncached_tokens
 
         dumped_msg = response.choices[0].message.model_dump(mode="json")
-        if ctx.api_configs["FAST_MODEL_DEEPSEEK_SUPPORT"]:
+        if ctx.api_configs[deepseek_key]:
             dumped_msg = deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
 

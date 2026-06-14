@@ -24,6 +24,7 @@ Revision:
 2026.6.9       Yu Huang      2.2      Add design and run support for simulator
 2026.6.10      Yu Huang      2.3      Manually set title support with builtin command & Add empty builtin args detection
 2026.6.13      Yu Huang      2.4      Add /agent_list command to display active and archived subagents
+2026.6.14      Yu Huang      2.5      Fix: readonly remove dedup + error log, session list N/A tokens, skill load guard
 
 Details:
 ---------
@@ -334,7 +335,8 @@ def cmd_readonly_remove(args: list[str], ctx: AgentContext, board: Scoreboard, c
     for idx, arg in enumerate(args):
         try:
             index = int(arg)
-        except Exception:
+        except Exception as e:
+            sys_log.warning(f"Failed to parse readonly index {arg}: {e}")
             skipped_list.append(idx)
             continue
 
@@ -344,6 +346,7 @@ def cmd_readonly_remove(args: list[str], ctx: AgentContext, board: Scoreboard, c
 
         del_list.append(index)
 
+    del_list = list(set(del_list))  # id must be unique
     for idx in sorted(del_list, reverse=True):
         del ctx.read_only_paths[idx]
 
@@ -562,20 +565,24 @@ def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: 
         if content is None:
             sys_log.warning(f"Load skill {skill_name} manually failed")
             console.print(f"Load skill {skill_name} manually failed", style=f"bold yellow")
-            ctx.messages.append(
-                {"role": "user", "content": f"<Load skill {skill_name} manually by user failed>"})
+            ctx.messages.append({"role": "user",
+                                 "content": f"{SKILL_START_LABEL}\n"
+                                            f"(Load skill {skill_name} manually by user failed, content is NONE)\n"
+                                            f"{SKILL_END_LABEL}"})
         else:
             ctx.messages.append({"role": "user", "content": json.dumps(content)})
-        if not any(item.get("name") == skill_name for item in ctx.loaded_skills):  # registered skills must be available
-            ctx.loaded_skills.append({
-                "name": skill_name,
-                "description": str(get_skill_description(skill_name, ctx.skills)),
-            })
+            if not any(item.get("name") == skill_name for item in ctx.loaded_skills):  # registered skills must be available
+                ctx.loaded_skills.append({
+                    "name": skill_name,
+                    "description": str(get_skill_description(skill_name, ctx.skills)),
+                })
     except Exception as e:
         sys_log.warning(f"Load skill {skill_name} manually failed with error {e}")
         console.print(f"Load skill {skill_name} manually failed with error {e}", style=f"bold yellow")
-        ctx.messages.append(
-            {"role": "user", "content": f"<Load skill {skill_name} manually by user failed with error {e}>"})
+        ctx.messages.append({"role": "user",
+                             "content": f"{SKILL_START_LABEL}\n"
+                                        f"(Load skill {skill_name} manually by user failed with error {e})\n"
+                                        f"{SKILL_END_LABEL}"})
 
 
 def cmd_url_caches(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
@@ -713,7 +720,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
             if item != current_uuid:
                 sessions_list.append({"uuid": item,
                                       "title": context.get("session_title", UNKNOWN_SESSION_TITLE),
-                                      "input_tokens": context.get("last_input_tokens", "N/A")})
+                                      "input_tokens": context.get("last_input_tokens")})
         except Exception as e:
             sys_log.error(f"Failed to load session {item}'s context with error {e}")
             console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
@@ -731,7 +738,10 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f"  Title: ", style=f"white")
         cmd_str.append(f"{session["title"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
+        if isinstance(session["input_tokens"], int):
+            cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
+        else:
+            cmd_str.append(f" (N/A K tokens)\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 

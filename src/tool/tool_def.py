@@ -52,6 +52,7 @@ Revision:
 2026.6.13      Yu Huang      4.4      Bugfix: bash temp script file leak on quoting retry (list-based cleanup)
 2026.6.13      Yu Huang      4.5      Add if_background param to spawn_agent for background subagent support
 2026.6.13      Yu Huang      4.6      Add medium model tier to spawn_agent model_type enum
+2026.6.14      Yu Huang      4.7      Fix: check_simulator returncode, bash temp file cleanup, _tmp_script_paths scope
 
 Details:
 ---------
@@ -172,18 +173,19 @@ def tool_spawn_agent_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": AGENT_SPAWN_TOOL_NAME,
-            "description": f"Launch subagents to handle tasks concurrently. Launch multiple agents in a single message "
-                           f"with parallel tool calls whenever tasks are independent.\n"
+            "description": f"Use this tool when tasks are complex and would consume too many turns in the main loop, or "
+                           f"independent of each other and can run in parallel. Spawn multiple agents in a single message "
+                           f"with concurrent tool calls when tasks are independent.\n"
                            f"Background agents: set `if_background`: true for long, standalone work — results arrive "
                            f"later while you continue. Foreground agents: default mode — runs synchronously, you wait for "
                            f"results before proceeding.\n"
                            f"Available agent types: \n"
                            f"{type_desc}\n"
-                           f"Each subagent runs autonomously with its own tool set and task board. "
-                           f"Prefer `{EXPLORE_AGENT_LABEL}` for read-only search and investigation\n"
-                           f"use `{GENERAL_AGENT_LABEL}` for implementation, editing, and file modification\n"
-                           f"use `{SCHEDULER_AGENT_LABEL}` for task planning and dependency management\n"
-                           f"Give each agent a clear, self-contained prompt describing exactly what to do.",
+                           f"Each subagent runs autonomously with its own tool set and task board. \n"
+                           f"Prefer `{EXPLORER_AGENT_LABEL}` for read-only search and investigation\n"
+                           f"Prefer `{WORKER_AGENT_LABEL}` for general task implementation, editing, and file modification\n"
+                           f"Prefer `{SCHEDULER_AGENT_LABEL}` for task planning and dependency management\n"
+                           f"Give each agent a clear, self-contained prompt describing exactly what to do.\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -969,6 +971,8 @@ def tool_bash_def() -> dict[str, Any]:
 def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of bash command execution with arguments and AgentContext"""
     func_name = TOOL_NAME_BASH
+    _tmp_script_paths: list[str] = []
+    _quoting_retried = False
     try:
         """evaluate the risk of bash command"""
         risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
@@ -990,13 +994,11 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         timeout = arguments.get("timeout", BASH_TIMEOUT_MS_DEFAULT)
         sys_log.debug(f"{func_name}: {description} start")
         progress.console.print(f"{func_name}: {description} start", style="bright_black")
-        _tmp_script_paths = []
-        _quoting_retried = False
         try:
             proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], "-c", command],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-        except (UnicodeEncodeError, OSError):
+        except UnicodeEncodeError:
             # Windows gbk codec can't encode non-gbk chars (emoji, etc.) in command line.
             # Fallback: write command to a temp script and run `bash script.sh`.
             sys_log.debug(f"{func_name}: fallback to temp script for command containing non-gbk characters")
@@ -1108,6 +1110,11 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Command execute with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Command execute with error: {e}", style="bold red")
+        for p in _tmp_script_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
         return {"status": FAIL_LABEL, "info": f"Command execute with error: {e}"}
 
 
@@ -2314,7 +2321,7 @@ def check_simulator(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
         """check the executable"""
         results = subprocess.run([ctx.agent_configs["SIMULATOR_PATH"] + '/TECoSim.exe'],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if results.returncode != 0 and results.stdout is not None:
+        if results.returncode == 0 and results.stdout is not None:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Simulator is available")
             progress.console.print(f"{func_name} {SUCCESS_LABEL}: Simulator is available", style="bright_black")
             return {"status": SUCCESS_LABEL, "info": "Simulator is available"}

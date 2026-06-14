@@ -208,7 +208,7 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
             ctx.total_output_tokens += usage.completion_tokens
             ctx.total_tokens += usage.total_tokens
             if usage.prompt_tokens_details is not None:
-                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                cached_tokens = usage.prompt_tokens_details.cached_tokens or 0
                 uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
                 ctx.total_uncached_tokens += uncached_tokens
 
@@ -216,7 +216,7 @@ def web_fetch_process(in_prompt: str, content: str, ctx: AgentContext, console: 
         if ctx.api_configs[deepseek_key]:
             dumped_msg = prompt.deepseek_support(dumped_msg)
         assistant_chat = str(dumped_msg["content"])
-        limit = ctx.agent_configs["WEB_FETCH_LLM_CAHR_LIMIT"]
+        limit = ctx.agent_configs["WEB_FETCH_LLM_CHAR_LIMIT"]
         if len(assistant_chat) > limit:
             assistant_chat = assistant_chat[:limit] + f"...(content is longer than {limit} chars, truncated)"
         return assistant_chat, True
@@ -474,7 +474,7 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
             ctx.total_output_tokens += usage.completion_tokens
             ctx.total_tokens += usage.total_tokens
             if usage.prompt_tokens_details is not None:
-                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                cached_tokens = usage.prompt_tokens_details.cached_tokens or 0
                 uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
                 ctx.total_uncached_tokens += uncached_tokens
 

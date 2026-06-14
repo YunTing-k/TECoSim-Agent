@@ -82,7 +82,7 @@ class SubAgentProgress:
 
 
 SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
-    EXPLORE_AGENT_LABEL: (
+    EXPLORER_AGENT_LABEL: (
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
@@ -94,7 +94,7 @@ SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
         TOOL_NAME_UPDATE_TASK,
         TOOL_NAME_QUERY_TASK,
     ),
-    GENERAL_AGENT_LABEL: (),
+    WORKER_AGENT_LABEL: (),
     SCHEDULER_AGENT_LABEL: (
         TOOL_NAME_CREATE_TASK,
         TOOL_NAME_UPDATE_TASK,
@@ -102,12 +102,14 @@ SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
+        TOOL_NAME_WEB_FETCH,
+        TOOL_NAME_WEB_SEARCH,
         TOOL_NAME_BASH,
     ),
 }
 
 PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
-    EXPLORE_AGENT_LABEL: (
+    EXPLORER_AGENT_LABEL: (
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
@@ -120,7 +122,7 @@ PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
         BASH_SAFE_LABEL,
         BASH_NETWORK_LABEL,
     ),
-    GENERAL_AGENT_LABEL: (
+    WORKER_AGENT_LABEL: (
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
@@ -143,24 +145,27 @@ PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
+        TOOL_NAME_WEB_FETCH,
+        TOOL_NAME_WEB_SEARCH,
         BASH_SAFE_LABEL,
     ),
 }
 
 SUPPORTED_TYPES_DESC: dict[str, str] = {
-    EXPLORE_AGENT_LABEL: (
-        f"Read-only codebase explorer. Can use {TOOL_NAME_GLOB_FILE}, `{TOOL_NAME_GREP_FILE}`, `{TOOL_NAME_READ_FILE}`, "
+    EXPLORER_AGENT_LABEL: (
+        f"Read-only explorer. Can use {TOOL_NAME_GLOB_FILE}, `{TOOL_NAME_GREP_FILE}`, `{TOOL_NAME_READ_FILE}`, "
         f"`{TOOL_NAME_WEB_FETCH}`, `{TOOL_NAME_WEB_SEARCH}`, `{TOOL_NAME_BASH}`, `{TOOL_NAME_READ_LOG}`, plus task tools "
-        f"(`{TOOL_NAME_CREATE_TASK}` / `{TOOL_NAME_UPDATE_TASK}` / `{TOOL_NAME_QUERY_TASK}`) for own workflow."
+        f"(`{TOOL_NAME_CREATE_TASK}` / `{TOOL_NAME_UPDATE_TASK}` / `{TOOL_NAME_QUERY_TASK}`) for own workflow (independent "
+        f"scoreboard)."
     ),
-    GENERAL_AGENT_LABEL: (
-        "General-purpose agent for research, multi-step tasks, and implementation. Has all tools except spawning other "
-        "agents and cron tasks management."
+    WORKER_AGENT_LABEL: (
+        "General-purpose worker agent for research, multi-step tasks, and implementation. Has all tools except spawning other "
+        "agents and cron tasks management. Can use task tools for their own workflow (independent scoreboard)."
     ),
     SCHEDULER_AGENT_LABEL: (
-        f"Task planning and dependency management agent with shared scoreboard access. "
-        f"Can use {TOOL_NAME_CREATE_TASK} / {TOOL_NAME_UPDATE_TASK} / {TOOL_NAME_QUERY_TASK} "
-        f"to plan and organize work, set task dependencies, delete incorrect tasks, and investigate "
-        f"the codebase with read-only tools. Tasks it creates are available for any agent to claim."
+        f"Task planning and dependency management agent with shared scoreboard access. Can use {TOOL_NAME_CREATE_TASK} / "
+        f"{TOOL_NAME_UPDATE_TASK} / {TOOL_NAME_QUERY_TASK} to plan and organize work, set task dependencies, delete incorrect "
+        f"tasks, and can access read-only tools. Tasks it creates are available for main-agent and subagent that have shared "
+        f"scoreboard access."
     ),
 }

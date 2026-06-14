@@ -25,6 +25,7 @@ Revision:
 2026.6.10      Yu Huang      2.3      Add reminder for LLM to manage workflow proactively
 2026.6.12      Yu Huang      2.4      Add subagent_mute flag and agent_list registry for subagent coordination
 2026.6.13      Yu Huang      2.5      Add background_agents registry + stale agent cleanup on session resume
+2026.6.14      Yu Huang      2.6      Fix: file_read_log path key, bg timeout tracking, if_summarized, cron file guard
 
 Details:
 ---------
@@ -114,10 +115,11 @@ class AgentContext:
         self.design_man: DesignManager = DesignManager() # (shared)
         self.run_man: RunManager = RunManager() # (shared)
         self.agent_list: dict[str, SubAgentProgress] = {}  # agent_id -> SubAgentProgress
-        self.background_agents: list[tuple[dict[str, Any], "SubAgent", threading.Thread]] = []  # (don't dump) (tc, agent, thread)
+        self.background_agents: list[tuple[dict[str, Any], "SubAgent", threading.Thread, float]] = []  # (don't dump) (tc, agent, thread, start_time)
         # params
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump, shared)
+        self.if_summarized: bool = False
         self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
         self.tools_prompts: int = 0  # (don't dump)
@@ -181,7 +183,7 @@ class AgentContext:
     def file_read_log(self, path: str):
         """read-in file log, convert input path into absolute path"""
         file_path = os.path.abspath(path)
-        if path not in self.files_read.keys():
+        if file_path not in self.files_read.keys():
             self.files_read[file_path] = 1
         else:
             self.files_read[file_path] += 1
@@ -258,6 +260,7 @@ class AgentContext:
     def to_dict(self, console: Console, mute: bool = False) -> dict:
         """convert class to dict"""
         out_dict = {
+            "if_summarized": self.if_summarized,
             "session_title": self.session_title,
             "user_prompts": self.user_prompts,
             "content_prompts": self.content_prompts,
@@ -290,6 +293,7 @@ class AgentContext:
     def from_dict(self, in_dict: dict[str, Any], console: Console, mute: bool = False):
         """convert dict to class"""
         try:
+            self.if_summarized = in_dict["if_summarized"]
             self.session_title = in_dict["session_title"]
             self.user_prompts = in_dict["user_prompts"]
             self.content_prompts = in_dict["content_prompts"]
@@ -358,8 +362,11 @@ class AgentContext:
             """session cron tasks load"""
             if not self.args.nocrons:
                 path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
-                with open(path, "r", encoding="utf-8") as f:
-                    self.session_crons = json.load(f)  # durable cron task need manually load
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        self.session_crons = json.load(f)
+                else:
+                    self.session_crons = []
             if not mute:
                 sys_log.debug(f"Context of session {self.session_uuid} loaded")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] loaded")

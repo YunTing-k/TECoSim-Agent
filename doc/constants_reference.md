@@ -330,19 +330,19 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 
 #### Agent 状态与类型 | Status & Types
 
-| 常量 Constant | 默认值 Default | 用途 Purpose |
-|----------|---------|---------|
-| `MAIN_AGENT_ID` | `"main"` | 主 Agent 的标识 ID / Main agent identifier |
-| `AGENT_ID_LEN` | `8` | 子 Agent ID 的随机十六进制长度 / Random hex length for subagent IDs |
-| `EXPLORE_AGENT_LABEL` | `"explore"` | 探索型子 Agent 类型标签 / Explore subagent type label |
-| `GENERAL_AGENT_LABEL` | `"general"` | 通用型子 Agent 类型标签 / General subagent type label |
-| `SCHEDULER_AGENT_LABEL` | `"scheduler"` | 调度型子 Agent 类型标签（任务规划和依赖管理）/ Scheduler subagent type label (task planning & dependency management) |
-| `AGENT_PENDING_LABEL` | `"pending"` | 子 Agent 等待启动 / Subagent pending |
-| `AGENT_RUNNING_LABEL` | `"running"` | 子 Agent 运行中 / Subagent running |
-| `AGENT_TIMEOUT_LABEL` | `"timeout"` | 子 Agent 超时终止 / Subagent timed out |
-| `AGENT_ERROR_LABEL` | `"error"` | 子 Agent 异常终止 / Subagent errored |
-| `AGENT_DONE_LABEL` | `"done"` | 子 Agent 正常完成 / Subagent done |
-| `AGENT_ARCHIVED_LABEL` | `"archived"` | 子 Agent 已归档（不再显示）/ Subagent archived |
+| 常量 Constant             | 默认值 Default     | 用途 Purpose |
+|-------------------------|-----------------|---------|
+| `MAIN_AGENT_ID`         | `"main"`        | 主 Agent 的标识 ID / Main agent identifier |
+| `AGENT_ID_LEN`          | `8`             | 子 Agent ID 的随机十六进制长度 / Random hex length for subagent IDs |
+| `EXPLORER_AGENT_LABEL`  | `"explorer"`    | 探索型子 Agent 类型标签 / Explore subagent type label |
+| `WORKER_AGENT_LABEL`    | `"worker"`      | 通用型子 Agent 类型标签 / General subagent type label |
+| `SCHEDULER_AGENT_LABEL` | `"scheduler"`   | 调度型子 Agent 类型标签（任务规划和依赖管理）/ Scheduler subagent type label (task planning & dependency management) |
+| `AGENT_PENDING_LABEL`   | `"pending"`     | 子 Agent 等待启动 / Subagent pending |
+| `AGENT_RUNNING_LABEL`   | `"running"`     | 子 Agent 运行中 / Subagent running |
+| `AGENT_TIMEOUT_LABEL`   | `"timeout"`     | 子 Agent 超时终止 / Subagent timed out |
+| `AGENT_ERROR_LABEL`     | `"error"`       | 子 Agent 异常终止 / Subagent errored |
+| `AGENT_DONE_LABEL`      | `"done"`        | 子 Agent 正常完成 / Subagent done |
+| `AGENT_ARCHIVED_LABEL`  | `"archived"`    | 子 Agent 已归档（不再显示）/ Subagent archived |
 | `AGENT_SPAWN_TOOL_NAME` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
 
 #### 工具与配置 | Tools & Config

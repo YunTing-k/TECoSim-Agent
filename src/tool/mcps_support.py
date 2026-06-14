@@ -315,8 +315,8 @@ def mcp_add_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console: Co
         else:
             raise RuntimeError(f"Unknown MCP type: {mcp_type}")
         """update config file"""
-        mcps_configs.append(params)
         write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+        mcps_configs.append(params)
         sys_log.debug(f"MCP: {name} with type: {mcp_type} configuration added")
         console.print(
             f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] with type: [{MAJOR_COLOR2}]{mcp_type}[/{MAJOR_COLOR2}] configuration added")
@@ -360,8 +360,8 @@ def mcp_toggle_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
                 sys_log.warning(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is disabled")
                 console.print(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is disabled",style="bold yellow")
     except Exception as e:
-        sys_log.error(f"Remove MCP configuration with args: {args} failed with error: {e}")
-        console.print(f"Remove MCP configuration with args: {args} failed with error: {e}", style="bold red")
+        sys_log.error(f"Toggle MCP configuration with args: {args} failed with error: {e}")
+        console.print(f"Toggle MCP configuration with args: {args} failed with error: {e}", style="bold red")
 
 
 def mcp_remove_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console: Console):

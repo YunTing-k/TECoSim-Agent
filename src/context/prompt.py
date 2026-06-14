@@ -35,6 +35,7 @@ Revision:
 2026.6.11      Yu Huang      3.0      Add tools name display with color gradient in stream mode & Add switch if displaying the reasoning content
 2026.6.12      Yu Huang      3.1      Upgrade workflow guidelines to CONSTRAINT-level mandate (3+ steps MUST create_task) with Good/Bad examples
 2026.6.13      Yu Huang      3.2      Add subagent display in print_messages + migrate save/read_messages to file_io_support
+2026.6.14      Yu Huang      3.3      Fix: skill description None guard, cached_tokens None guard
 
 Details:
 ---------
@@ -158,12 +159,13 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"
                 f"# Subagent Guidelines\n"
-                f"Use `{AGENT_SPAWN_TOOL_NAME}` to delegate work to subagents for parallel execution. Prefer `{EXPLORE_AGENT_LABEL}` "
-                f"for read-only investigation, `{GENERAL_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for "
-                f"task planning and dependency setup. Launch multiple agents per message when tasks are independent.\n"
+                f"Use `{AGENT_SPAWN_TOOL_NAME}` when tasks are complex and would consume too many turns in the main loop, "
+                f"or independent of each other and can run in parallel. Prefer `{EXPLORER_AGENT_LABEL}` for read-only "
+                f"investigation, `{WORKER_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for task planning "
+                f"and dependency setup. Launch multiple agents per message when tasks are independent.\n"
                 f"Foreground agents (default): blocks until complete, use when results are needed for your next step. "
-                f"Background agents (`if_background`: true): runs independently, results delivered later, "
-                f"use for long standalone work.\n"
+                f"Background agents (`if_background`: true): runs independently, results delivered later, use for long "
+                f"standalone work.\n"
                 f"CRITICAL: Background agent results are injected into your message stream AUTOMATICALLY when "
                 f"they finish — you do NOT need to query or poll for completion. After spawning a background agent, "
                 f"move on to other work immediately. You will be notified when its results arrive.\n"
@@ -220,10 +222,13 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     limit = ctx.agent_configs["SKILL_DESC_CHAR_LIMIT"]
     skill_list_str = ""
     for skill in ctx.skills:
-        if len(skill['description']) > limit:
-            skill_list_str += f" - {skill["name"]}: {skill['description'][:limit]}...\n"
+        desc = skill.get('description')
+        if desc is None:
+            desc = ""
+        if len(desc) > limit:
+            skill_list_str += f" - {skill["name"]}: {desc[:limit]}...\n"
         else:
-            skill_list_str += f" - {skill["name"]}: {skill['description']}\n"
+            skill_list_str += f" - {skill["name"]}: {desc}\n"
     if len(ctx.skills) > 0:
         prompts = [{"role": "system", "content":
                     f"The following skills are user-invocable with the `{TOOL_NAME_SKILL}` tool:\n"
@@ -530,7 +535,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
         ctx.total_tokens += usage.total_tokens
         ctx.last_tokens = usage.total_tokens
         if usage.prompt_tokens_details is not None:
-            cached_tokens = usage.prompt_tokens_details.cached_tokens
+            cached_tokens = usage.prompt_tokens_details.cached_tokens or 0
             uncached_tokens = usage.prompt_tokens - cached_tokens  # uncached input tokens
             ctx.total_uncached_tokens += uncached_tokens
         else:

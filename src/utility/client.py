@@ -109,7 +109,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
         "stream": ctx.api_configs["MAIN_MODEL_STREAM"],
         "messages": ctx.messages,
         "tools": ctx.tools,
-        "timeout": ctx.api_configs["TIMEOUT_MS"] / 1000
+        "timeout": ctx.api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
     }
     """reasoning support"""
     if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
@@ -136,7 +136,7 @@ def request_branch_main(client: OpenAI, messages: list[dict[str, Any]], tools: l
         "max_tokens": api_configs["MAIN_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs["TIMEOUT_MS"] / 1000
+        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:
@@ -167,7 +167,7 @@ def request_branch_medium(client: OpenAI, messages: list[dict[str, Any]], tools:
         "max_tokens": api_configs["MEDIUM_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs["TIMEOUT_MS"] / 1000
+        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:
@@ -211,7 +211,7 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
         "max_tokens": api_configs["FAST_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs["TIMEOUT_MS"] / 1000
+        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:

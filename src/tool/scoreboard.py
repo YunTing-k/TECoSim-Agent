@@ -14,6 +14,7 @@ Revision:
 2026.6.10        Yu Huang       1.2      Add reminder for LLM to manage workflow proactively
 2026.6.12        Yu Huang       1.3      Add count_by_status() & fix Status display using .value
 2026.6.12        Yu Huang       1.4      Add to_dict() snapshot & upgrade Lock to RLock for reentrant safety
+2026.6.14        Yu Huang       1.5      Fix: nonexistent task existence check in deps, has_change gated on validated only
 
 Details:
 ---------
@@ -274,10 +275,12 @@ class Scoreboard:
                             info += f"Task (id {t_id}) is already resolved, you can't modify its dependency. "
                     else:
                         if t_add_blocks is not None and t_add_blocks:
-                            has_change = True
                             clean_add_blocks = list(set(t_add_blocks) - set(self._tasks[t_id]["blocks"]))
                             validated_new_blocks: list[int] = []
                             for task_id in clean_add_blocks:
+                                if task_id not in self._tasks:
+                                    info += f"Referenced task (id {task_id}) does not exist, ignored. "
+                                    continue
                                 # block itself
                                 if task_id == self._tasks[t_id]["task_id"]:
                                     info += f"Task (id {t_id}) can't block itself, self block dependency ignored. "
@@ -291,17 +294,23 @@ class Scoreboard:
                                     info += f"Task (id {t_id}) blocking task (id {task_id}) would create a circular dependency, ignored. "
                                     continue
                                 validated_new_blocks.append(task_id)
+                            if validated_new_blocks:
+                                has_change = True
                             # merge blocks
                             new_blocks = list(set(self._tasks[t_id]["blocks"]) | set(validated_new_blocks))
                             self._tasks[t_id]["blocks"] = new_blocks
                             # synchronize all tasks' blocked_by
                             for blocked_id in validated_new_blocks:  # always not a resolved task
                                 self._tasks[blocked_id]["blocked_by"] = list(set(self._tasks[blocked_id]["blocked_by"]) | {t_id})
+                            if has_change:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}"
                         if t_add_blocked_by is not None and t_add_blocked_by:
-                            has_change = True
                             clean_blocked_by = list(set(t_add_blocked_by) - set(self._tasks[t_id]["blocked_by"]))
                             validated_new_blocked_by: list[int] = []
                             for task_id in clean_blocked_by:
+                                if task_id not in self._tasks:
+                                    info += f"Referenced task (id {task_id}) does not exist, ignored. "
+                                    continue
                                 # block itself
                                 if task_id == self._tasks[t_id]["task_id"]:
                                     info += f"Task (id {t_id}) can't block itself, self block dependency ignored. "
@@ -315,11 +324,15 @@ class Scoreboard:
                                     info += f"Task (id {t_id}) being blocked by task (id {task_id}) would create a circular dependency, ignored. "
                                     continue
                                 validated_new_blocked_by.append(task_id)
+                            if validated_new_blocked_by:
+                                has_change = True
                             # merge blocked_by
                             new_blocked_by = list(set(self._tasks[t_id]["blocked_by"]) | set(validated_new_blocked_by))
                             self._tasks[t_id]["blocked_by"] = new_blocked_by
                             for blocker_id in validated_new_blocked_by:  # always not a resolved task
                                 self._tasks[blocker_id]["blocks"] = list(set(self._tasks[blocker_id]["blocks"]) | {t_id})
+                            if has_change:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}"
                     if has_change:
                         return True, info
                     if info.strip():
@@ -357,10 +370,12 @@ class Scoreboard:
                             info += f"Task (id {t_id})'s description unchanged (description of task can only be updated by owner)"
                     """
                     If a task has owner, can update status:
-                    1). Requester is owner and the direction of status is forward
+                    1). Requester is owner and the direction of status is forward and task is not resolved
                     """
                     if t_status is not None:
-                        if self._tasks[t_id]["owner"] == t_requester:
+                        if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
+                            info += f"Task (id {t_id}) is already resolved, status can't be changed. "
+                        elif self._tasks[t_id]["owner"] == t_requester:
                             if self._tasks[t_id]["status"] == t_status:
                                 info += f"Task (id {t_id})'s status unchanged: {t_status.value}. "
                             elif TaskStatusLevel[t_status] < TaskStatusLevel[self._tasks[t_id]["status"]]:
@@ -388,10 +403,12 @@ class Scoreboard:
                             info += f"Task (id {t_id}) is already resolved, you can't modify its dependency. "
                     else:
                         if t_add_blocks is not None and t_add_blocks:
-                            has_change = True
                             clean_add_blocks = list(set(t_add_blocks) - set(self._tasks[t_id]["blocks"]))
                             validated_new_blocks: list[int] = []
                             for task_id in clean_add_blocks:
+                                if task_id not in self._tasks:
+                                    info += f"Referenced task (id {task_id}) does not exist, ignored. "
+                                    continue
                                 # block itself
                                 if task_id == self._tasks[t_id]["task_id"]:
                                     info += f"Task (id {t_id}) can't block itself, self block dependency ignored. "
@@ -405,17 +422,23 @@ class Scoreboard:
                                     info += f"Task (id {t_id}) blocking task (id {task_id}) would create a circular dependency, ignored. "
                                     continue
                                 validated_new_blocks.append(task_id)
+                            if validated_new_blocks:
+                                has_change = True
                             # merge blocks
                             new_blocks = list(set(self._tasks[t_id]["blocks"]) | set(validated_new_blocks))
                             self._tasks[t_id]["blocks"] = new_blocks
                             # synchronize all tasks' blocked_by
                             for blocked_id in validated_new_blocks:  # always not a resolved task
                                 self._tasks[blocked_id]["blocked_by"] = list(set(self._tasks[blocked_id]["blocked_by"]) | {t_id})
+                            if has_change:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}"
                         if t_add_blocked_by is not None and t_add_blocked_by:
-                            has_change = True
                             clean_blocked_by = list(set(t_add_blocked_by) - set(self._tasks[t_id]["blocked_by"]))
                             validated_new_blocked_by: list[int] = []
                             for task_id in clean_blocked_by:
+                                if task_id not in self._tasks:
+                                    info += f"Referenced task (id {task_id}) does not exist, ignored. "
+                                    continue
                                 # block itself
                                 if task_id == self._tasks[t_id]["task_id"]:
                                     info += f"Task (id {t_id}) can't block itself, self block dependency ignored. "
@@ -429,15 +452,19 @@ class Scoreboard:
                                     info += f"Task (id {t_id}) being blocked by task (id {task_id}) would create a circular dependency, ignored. "
                                     continue
                                 validated_new_blocked_by.append(task_id)
+                            if validated_new_blocked_by:
+                                has_change = True
                             # merge blocked_by
                             new_blocked_by = list(set(self._tasks[t_id]["blocked_by"]) | set(validated_new_blocked_by))
                             self._tasks[t_id]["blocked_by"] = new_blocked_by
                             for blocker_id in validated_new_blocked_by:  # always not a resolved task
                                 self._tasks[blocker_id]["blocks"] = list(set(self._tasks[blocker_id]["blocks"]) | {t_id})
+                            if has_change:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}"
                     if has_change:
                         return True, info
                     if info.strip():
-                        return False, f"Nothing changes in target task, details: {info}"
+                        return False, f"Nothing changes in target task, details: {info}, please check your params"
                     else:
                         return False, f"Nothing changes in target task, please check your params"
             except Exception as e:
@@ -491,6 +518,7 @@ class Scoreboard:
         """list all unclaimed tasks in the scoreboard"""
         with self._lock:
             return [task for task in self._tasks.values() if task["owner"] is None]
+
 
     def count_by_status(self) -> dict[TaskStatus, int]:
         """return count of non-archived tasks grouped by status"""

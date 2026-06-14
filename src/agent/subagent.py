@@ -14,6 +14,8 @@ Revision:
 2026.6.13      Yu Huang      1.2      Create _dummy_progress once per agent & API retry on transient failures support
 2026.6.13      Yu Huang      1.3      Truncate oversized tool results & Scheduler agent support of shared scoreboard
 2026.6.13      Yu Huang      1.4      Support medium model tier (main/medium/fast) via api_configs MEDIUM_MODEL_*
+2026.6.14      Yu Huang      1.5      Add warning to subagent when they are about to run out of step budget
+2026.6.14      Yu Huang      1.6      Fix: remove unused lock/threading, parse_response propagate, cached_tokens None guard
 
 Details:
 ---------
@@ -25,7 +27,6 @@ import os
 import json
 import time
 import logging
-import threading
 
 from typing import Any
 from openai import OpenAI
@@ -43,8 +44,9 @@ from src.constants import *
 sys_log = logging.getLogger('logger')
 
 # subagent config keys read from ctx.agent_configs at init time
-_CONFIG_KEY_MAX_STEPS = "SUBAGENT_DEFAULT_MAX_STEPS"
-_CONFIG_KEY_MODEL_TYPE = "SUBAGENT_DEFAULT_MODEL_TYPE"
+_CONFIG_KEY_MAX_STEPS = "SUBAGENT_MAX_STEPS"
+_CONFIG_KEY_WARN_STEPS = "SUBAGENT_WARN_STEPS"
+_CONFIG_KEY_MODEL_TYPE = "SUBAGENT_MODEL_TYPE"
 _CONFIG_KEY_TIMEOUT_S = "SUBAGENT_TIMEOUT_S"
 _CONFIG_KEY_API_RETRY = "SUBAGENT_API_RETRY_COUNT"
 _CONFIG_KEY_TOOL_RESULT_LIMIT = "SUBAGENT_TOOL_RESULT_CHAR_LIMIT"
@@ -153,18 +155,25 @@ class SubAgent:
         parent_board: Scoreboard | None = None,
         model_type: str | None = None,
         max_steps: int | None = None,
+        warn_steps: int | None = None,
         console: Console | None = None,
     ):
         ac = parent_ctx.agent_configs
 
         if model_type is None:
-            model_type = ac.get(_CONFIG_KEY_MODEL_TYPE)
+            model_type = ac.get(_CONFIG_KEY_MODEL_TYPE, SUBAGENT_DEFAULT_MODEL_TYPE)
         if max_steps is None:
             max_steps = ac.get(_CONFIG_KEY_MAX_STEPS, SUBAGENT_DEFAULT_MAX_STEPS)
         if not isinstance(max_steps, int):
             max_steps = SUBAGENT_DEFAULT_MAX_STEPS
+        if warn_steps is None:
+            warn_steps = ac.get(_CONFIG_KEY_WARN_STEPS, SUBAGENT_DEFAULT_WARN_STEPS)
+        if not isinstance(warn_steps, int):
+            warn_steps = SUBAGENT_DEFAULT_WARN_STEPS
 
         timeout_s_raw = ac.get(_CONFIG_KEY_TIMEOUT_S)
+        if not isinstance(timeout_s_raw, int):
+            timeout_s_raw = SUBAGENT_DEFAULT_TIMEOUT_S
         self.timeout_s: float | None = float(timeout_s_raw) if timeout_s_raw is not None else None
         api_retries_raw = ac.get(_CONFIG_KEY_API_RETRY, 0)
         self._api_retries: int = int(api_retries_raw) if api_retries_raw is not None else 0
@@ -198,10 +207,10 @@ class SubAgent:
         self.model_type = model_type
         self.model = self.ctx.api_configs[f"{self.model_type.upper()}_MODEL_NAME"]
         self.max_steps = max_steps
+        self.warn_steps = warn_steps
         self._parent_console = console
         self._dummy_progress = self._make_dummy_progress()
         """inner status"""
-        self._lock = threading.Lock()
         self.status = AgentStatus.PENDING
         self.result: str | None = None
         self.error: str | None = None
@@ -293,10 +302,8 @@ class SubAgent:
                       f"prompt={self.prompt[:SUBAGENT_PROMPT_LOG_CHAR_LEN]}...")
 
     def run(self) -> str | None:
-        with self._lock:
-            if self.status != AgentStatus.PENDING:
-                return self.result
-
+        if self.status != AgentStatus.PENDING:
+            return self.result
         self.status = AgentStatus.RUNNING
         self.progress.status = AgentStatus.RUNNING
         _start_time = time.time()
@@ -304,10 +311,30 @@ class SubAgent:
         try:
             assert self.max_steps is not None
             for step in range(1, self.max_steps + 1):
+                """check if timeout"""
                 if self.timeout_s is not None and time.time() - _start_time > self.timeout_s:
                     self.status = AgentStatus.TIMEOUT
                     self.error = f"Timeout after {self.timeout_s:.0f}s"
                     break
+                """check step budget"""
+                if (self.max_steps - step) <= self.warn_steps:
+                    if step == self.max_steps:
+                        info = (f"{SYS_REMINDER_START_LABEL}\n"
+                                f"CRITICAL — This is your final step ({step}/{self.max_steps}) to gather the final results. "
+                                f"From now on, NEVER EVER make any tool calls (including workflow tools)! If you call tools "
+                                f"in your following content, the agent will be force-exited on the next round without returning "
+                                f"any of your result to the main agent. Reply with your final results as plain text IMMEDIATELY!\n"
+                                f"(If your step budget is too small to finish your tasks, ALWAYS report this warning in your "
+                                f"final results)\n"
+                                f"{SYS_REMINDER_END_LABEL}")
+                        self.ctx.messages.append({"role": "user", "content": info})
+                    else:
+                        info = (f"{SYS_REMINDER_START_LABEL}\n"
+                                f"WARNING — You have ONLY {self.max_steps - step + 1} steps left (step {step}/{self.max_steps}). "
+                                f"Begin wrapping up. Avoid non-essential tool calls and prepare your final results. You "
+                                f"will be force-exited when steps run out, losing all unsaved work.\n"
+                                f"{SYS_REMINDER_END_LABEL}")
+                        self.ctx.messages.append({"role": "user", "content": info})
 
                 self.progress.step = step
                 self.progress.status = AgentStatus.RUNNING
@@ -366,7 +393,7 @@ class SubAgent:
             "stream": False,
             "messages": self.ctx.messages,
             "tools": self.ctx.tools,
-            "timeout": self.ctx.api_configs.get("TIMEOUT_MS") / 1000,
+            "timeout": self.ctx.api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
         }
 
         if self.ctx.api_configs.get(f"{prefix}ENABLE_REASONING"):
@@ -414,7 +441,7 @@ class SubAgent:
             self.ctx.total_tokens += usage.total_tokens
             self.ctx.last_tokens = usage.total_tokens
             if usage.prompt_tokens_details is not None:
-                cached_tokens = usage.prompt_tokens_details.cached_tokens
+                cached_tokens = usage.prompt_tokens_details.cached_tokens or 0
                 uncached_tokens = usage.prompt_tokens - cached_tokens
                 self.ctx.total_uncached_tokens += uncached_tokens
                 self.stats["total_uncached_tokens"] += uncached_tokens
@@ -427,33 +454,29 @@ class SubAgent:
         return response
 
     def parse_response(self, response) -> tuple[list[dict[str, Any]] | None, str | None, str | None]:
-        try:
-            choice = response.choices[0]
-            message = choice.message
+        choice = response.choices[0]
+        message = choice.message
 
-            dumped_msg = message.model_dump(mode="json")
-            if self.ctx.api_configs.get(f"{self.model_type.upper()}_MODEL_DEEPSEEK_SUPPORT"):
-                dumped_msg = deepseek_support(dumped_msg)
-            self.ctx.messages.append(dumped_msg)
+        dumped_msg = message.model_dump(mode="json")
+        if self.ctx.api_configs.get(f"{self.model_type.upper()}_MODEL_DEEPSEEK_SUPPORT"):
+            dumped_msg = deepseek_support(dumped_msg)
+        self.ctx.messages.append(dumped_msg)
 
-            assistant_reasoning = get_reasoning(dumped_msg)
-            content: str | None = dumped_msg.get("content", None)
-            tool_calls: list[dict[str, Any]] | None = dumped_msg.get("tool_calls", None)
+        assistant_reasoning = get_reasoning(dumped_msg)
+        content: str | None = dumped_msg.get("content", None)
+        tool_calls: list[dict[str, Any]] | None = dumped_msg.get("tool_calls", None)
 
-            if content is not None and len(content.strip()) == 0:
-                content = None
+        if content is not None and len(content.strip()) == 0:
+            content = None
 
-            if assistant_reasoning is not None:
-                self.ctx.reasoning_prompts += 1
-                self.stats["reasoning_prompts"] += 1
-            if content is not None:
-                self.ctx.content_prompts += 1
-                self.stats["content_prompts"] += 1
+        if assistant_reasoning is not None:
+            self.ctx.reasoning_prompts += 1
+            self.stats["reasoning_prompts"] += 1
+        if content is not None:
+            self.ctx.content_prompts += 1
+            self.stats["content_prompts"] += 1
 
-            return tool_calls, content, assistant_reasoning
-        except Exception as e:
-            sys_log.error(f"SubAgent {self.agent_id} parse response failed: {e}")
-            return None, None, None
+        return tool_calls, content, assistant_reasoning
 
     def execute_tool_calls(self, tool_calls: list[dict[str, Any]]):
         for tool_call in tool_calls:
