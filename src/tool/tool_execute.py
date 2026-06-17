@@ -30,6 +30,7 @@ Revision:
 2026.6.12      Yu Huang      2.8      Subagent spawn: classification, batch launch, poll, merge stats
 2026.6.13      Yu Huang      2.9      Background subagent support + tool result truncation + batch agent permission TUI
 2026.6.14      Yu Huang      3.0      Fix: foreground/background subagent timeout, tool call arg error handling
+2026.6.17      Yu Huang      3.1      Support inserting messages during tool calls
 
 Details:
 ---------
@@ -102,7 +103,8 @@ def tool_calls_spinner_board(func: Callable, *args,
                              waiting_desc: str | None = None, done_desc: str | None = None,
                              intrp_desc: str | None = None, fail_desc: str | None = None,
                              spinner: str | None = None, if_random: bool,
-                             agent_list: dict[str, SubAgentProgress] | None = None, **kwargs) -> Any:
+                             agent_list: dict[str, SubAgentProgress] | None = None,
+                             input_queue = None, **kwargs) -> Any:
     """Tool calls with spinner and scoreboard through loading_spinner_with_board"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
@@ -134,6 +136,7 @@ def tool_calls_spinner_board(func: Callable, *args,
                                         spinner=spinner_choice,
                                         out_except=ToolCallsCancelled("Tool call is cancelled by user"),
                                         console=console, with_progress=True,
+                                        input_queue=input_queue,
                                         **kwargs)
     return result
 

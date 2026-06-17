@@ -15,6 +15,7 @@
     "REMIND_TASK_TOOL_GAP": 5,
     "REMIND_TASK_CHAT_GAP": 5,
     "FLATTEN_BEFORE_SUMMARY": true,
+    "ENABLE_MESSAGE_QUEUE": true,
 
     "BASH_PATH": "bash",
     "RIPGREP_PATH": "rg",

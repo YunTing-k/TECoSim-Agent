@@ -26,6 +26,7 @@ Revision:
 2026.6.12      Yu Huang      2.4      Add subagent_mute flag and agent_list registry for subagent coordination
 2026.6.13      Yu Huang      2.5      Add background_agents registry + stale agent cleanup on session resume
 2026.6.14      Yu Huang      2.6      Fix: file_read_log path key, bg timeout tracking, if_summarized, cron file guard
+2026.6.17      Yu Huang      2.7      Support inserting messages during tool calls
 
 Details:
 ---------
@@ -144,6 +145,7 @@ class AgentContext:
         # signals
         self.task_end: bool = True  # (don't dump)
         self.subagent_mute: bool = False  # (don't dump) suppress console output and permission TUIs for subagents
+        self.input_queue = None  # (don't dump) InputQueue | None, set by main loop after console is ready
         self.permissions: dict[str, bool] = {
             # basic tools
             AGENT_SPAWN_TOOL_NAME: False,

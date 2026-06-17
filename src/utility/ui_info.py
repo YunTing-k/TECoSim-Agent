@@ -32,6 +32,7 @@ Revision:
 2026.6.11      Yu Huang      2.6      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py
 2026.6.12      Yu Huang      2.7      Add get_subagent_render for live agent progress display
 2026.6.13      Yu Huang      2.8      get_subagent_render: ICON TYPE SUBJECT USAGE single-line, current_tool on separate line
+2026.6.17      Yu Huang      2.9      Support inserting messages during tool calls
 
 Details:
 ---------
@@ -378,6 +379,7 @@ def loading_spinner_with_board(func: Callable, *args,
                                waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str,
                                spinner: str, out_except: Exception,
                                console: Console, with_progress: bool = False,
+                               input_queue = None,  # InputQueue | None for type-ahead status display
                                **kwargs) -> Any:
     """Spinner with a live scoreboard text below, for any time-consuming operation.
 
@@ -407,6 +409,8 @@ def loading_spinner_with_board(func: Callable, *args,
     # Store reference to the outer Live so worker thread can pause/resume it
     # during permission TUI (see pause_for_permission / resume_from_permission).
     progress._outer_live = None  # placeholder, set after Live is created
+    # Store input_queue so pause_for_permission / resume_from_permission can pause it
+    progress._input_queue = input_queue
 
     def make_group() -> Group:
         agent_render = None
@@ -427,6 +431,11 @@ def loading_spinner_with_board(func: Callable, *args,
         else:
             final_str.append(Text("\n"))
             final_str.append(Text(TASK_EMPTY_TITLE, style="bright_black"))
+        # input queue status line
+        if input_queue is not None:
+            iq_render = input_queue.render_status()
+            if iq_render is not None:
+                final_str.append(iq_render)
         parts.append(final_str)
         return Group(*parts)
 
@@ -488,6 +497,21 @@ def loading_spinner_with_board(func: Callable, *args,
             while t.is_alive() and not stop_event.is_set():
                 t.join(SPINNER_LIVE_CHECK_GAP_MS / 1000.0)
                 live.update(make_group())
+                # input queue: check hotkey and collect message
+                if input_queue is not None and input_queue.check_trigger():
+                    live.transient = True
+                    live.stop()
+                    try:
+                        input_queue.pause()
+                        msg = input_queue.collect_input(console)
+                        if msg:
+                            input_queue.enqueue(msg)
+                    finally:
+                        input_queue.resume()
+                        for _ in range(3):
+                            console.print()
+                        live.transient = False
+                        live.start()
             if stop_event.is_set():
                 t.join(SPINNER_TERMINATE_WAIT_S)
                 if t.is_alive():
@@ -519,6 +543,9 @@ def pause_for_permission(progress):
     `progress.live` is never started by `Progress.start()` when Progress
     is used inside an outer `Live` (as in `loading_spinner_with_board`).
     Instead, operates on the outer Live stored at `progress._outer_live`.
+
+    Also pauses the InputQueue background listener so its raw-mode input
+    device does not steal keystrokes from the permission TUI.
     """
     outer_live = getattr(progress, '_outer_live', None)
     if outer_live is not None:
@@ -531,6 +558,10 @@ def pause_for_permission(progress):
         outer_live.stop()
         outer_live.transient = original_transient
 
+    iq = getattr(progress, '_input_queue', None)
+    if iq is not None:
+        iq.pause()
+
 
 def resume_from_permission(progress):
     """Resume the outer Live after a permission TUI has finished.
@@ -542,6 +573,8 @@ def resume_from_permission(progress):
     so that the Live's `position_cursor()` on next auto-refresh only
     erases empty lines and does not overwrite content printed in a
     previous tool cycle (e.g. bash previews, SUCCESS messages).
+
+    Also resumes the InputQueue background listener.
     """
     outer_live = getattr(progress, '_outer_live', None)
     if outer_live is not None:
@@ -549,6 +582,10 @@ def resume_from_permission(progress):
         for _ in range(last_height):
             progress.console.print()
         outer_live.start()
+
+    iq = getattr(progress, '_input_queue', None)
+    if iq is not None:
+        iq.resume()
 
 
 def get_user_prompt(ctx: AgentContext) -> str:

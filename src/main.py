@@ -39,6 +39,7 @@ Revision:
 2026.6.13      Yu Huang      3.6      Subagent integration: spawn, agent_list registry, background agent orchestration,
 2026.6.14      Yu Huang      3.7      Fix: summary trigger >= with if_summarized guard, tool calls spinner board pass args
                                       stale agent cleanup on session resume
+2026.6.17      Yu Huang      3.8      Support inserting messages during tool calls
 
 Details:
 ---------
@@ -59,6 +60,7 @@ from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
 from src.utility.basic_utils import load_configs
+from src.utility.input_queue import InputQueue, create_queue_session
 from src.constants import *
 
 """program's parser"""
@@ -196,14 +198,32 @@ if __name__ == '__main__':
     """set the terminal title"""
     ui_info.set_terminal_title(ctx.session_title)
 
+    """create input queue for type-ahead message queuing"""
+    if ctx.agent_configs["ENABLE_MESSAGE_QUEUE"]:
+        ctx.input_queue = InputQueue(ctx, console)
+        ctx.input_queue.set_queue_session(create_queue_session())
+        sys_log.debug("InputQueue of this TECoSim Agent session created")
+        console.print(f"[{MAJOR_COLOR2}]InputQueue[/{MAJOR_COLOR2}] of this TECoSim Agent session created")
+
     """core agent loop"""
     while True:
         try:
             """save messages, context and scoreboard"""
             file_io_support.save_sessions(ctx, board, console, True)
 
+            """drain queued type-ahead messages from previous busy phase"""
+            queued_msgs: list[str] = []
+            if ctx.input_queue:
+                queued_msgs = ctx.input_queue.drain()
+                msg_str = ""
+                for idx, msg in enumerate(queued_msgs):
+                    msg_str += f"entry {idx + 1}: {msg}\n"
+                ctx.messages.append({"role": "user", "content": f"User insert {len(queued_msgs)} entries of messages during "
+                                                                f"tool call:\n{msg_str}"})
+                ctx.user_prompts += 1
+
             """user input or tool results"""
-            if ctx.task_end:
+            if ctx.task_end and len(queued_msgs) == 0:
                 ui_info.usage_bar(ctx=ctx, console=console)
                 """
                 Listen agent when there are active cron tasks, pending tasks, foreground subagents 
@@ -238,10 +258,13 @@ if __name__ == '__main__':
                             ctx.session_title = title if title else ERROR_SESSION_TITLE
                             ui_info.set_terminal_title(ctx.session_title)
                 else:
-                    """pass cron prompts to LLM"""
+                    """pass agent listen prompts to LLM"""
                     pass
+                """start input queue listener for the upcoming busy phase"""
+                if ctx.input_queue:
+                    ctx.input_queue.start()
             else:
-                """second response with previous loop's tool results or reminder"""
+                """second response with previous loop's tool results or reminder or user input queued messages"""
                 pass
 
             """send LLM request"""
@@ -263,7 +286,8 @@ if __name__ == '__main__':
                     assistant_tool_calls, ctx, board,
                     board=board, console=console,
                     if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"],
-                    agent_list=ctx.agent_list)
+                    agent_list=ctx.agent_list,
+                    input_queue=ctx.input_queue)
                 ctx.messages.extend(tools_response)
                 ctx.tool_results_prompts += len(tools_response)
                 """check task"""
@@ -275,7 +299,10 @@ if __name__ == '__main__':
                                                                     f"{SYS_REMINDER_END_LABEL}"})
             else:
                 ctx.task_end = True
-                """check task"""
+                # stop input queue listener when returning to idle
+                if ctx.input_queue:
+                    ctx.input_queue.stop()
+                # check task
                 # remind from chat is equivalent to remind from user input, so only update usage
                 prompt.update_task_usage(ctx, None, "chat")
 
@@ -287,6 +314,8 @@ if __name__ == '__main__':
                     ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
+            if ctx.input_queue:
+                ctx.input_queue.stop()
             sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
             console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
             continue
@@ -298,18 +327,26 @@ if __name__ == '__main__':
                     ctx.user_prompts -= 1
             else:  # if send tool calls' results, do noting
                 pass
+            if ctx.input_queue:
+                ctx.input_queue.stop()
             sys_log.warning(f"LLM request canceled, but the connection is not killed, token consumption can't be avoided")
             console.print(f"LLM request canceled, but the connection is not killed, token consumption can't be avoided",
                           style="bold yellow")
             ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with RequestLLMCancelled")
         except ToolCallsCancelled:
             """Tool calls are cancelled and doesn't handle properly"""
+            if ctx.input_queue:
+                ctx.input_queue.stop()
             sys_log.error(f"Tool calls are cancelled, but the interrupt is not handled properly")
             console.print(f"Tool calls are cancelled, but the interrupt is not handled properly", style="bold red")
             ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")
         except KeyboardInterrupt:
             """User interrupt"""
+            if ctx.input_queue:
+                ctx.input_queue.stop()
             ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")
         except Exception as e:
             """Unexpected error"""
+            if ctx.input_queue:
+                ctx.input_queue.stop()
             ui_info.error_exit(ctx, board, console, e)

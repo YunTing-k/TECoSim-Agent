@@ -225,8 +225,14 @@ OPTIONS_TO_SELECT_PREFIX: str = "❯ "
 OPTIONS_UN_SELECT_PREFIX: str = "  "
 OPTIONS_SELECTED_PREFIX: str = " ✓"
 OPTIONS_UNSELECTED_PREFIX: str = ""
-KEY_LISTEN_SLEEP_TIME_MS: int = 100
+KEY_LISTEN_SLEEP_TIME_MS: int = 30
 SPINNER_LIVE_CHECK_GAP_MS: int = 200
+# input queue (type-ahead message queuing during agent busy phases)
+INPUT_QUEUE_HOTKEY: str = "c-m"  # Enter — triggers prompt; Enter also submits inside prompt
+INPUT_QUEUE_PROMPT_PREFIX: str = "[Queued Message]"
+INPUT_QUEUE_STATUS_COLOR: str = MAJOR_COLOR2
+INPUT_QUEUE_HINT: str = "Press Enter to queue a message"
+INPUT_QUEUE_FIXED_PREFIX: str = "(Shift+Tab: New line, Enter: Submit, Esc: Cancel)"
 SPINNER_TERMINATE_WAIT_S: int = 10
 REASONING_COLOR: str = "#54A0FF"
 REASON_STYLE: str = f"italic {REASONING_COLOR}"
