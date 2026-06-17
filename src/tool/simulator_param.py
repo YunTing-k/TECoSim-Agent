@@ -189,6 +189,7 @@ class SimulationParamConfig(TypedDict):
     tran_method: int
     tran_itr_steps: int
     ini_temp: float
+    find_duplicate_omp: bool
     te_eval_loss: bool
     te_solver_type: int
     te_order_type: int

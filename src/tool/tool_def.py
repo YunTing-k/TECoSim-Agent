@@ -1131,8 +1131,6 @@ def tool_glob_file_def() -> dict[str, Any]:
                            f"`{TOOL_NAME_GLOB_FILE}` tool has been optimized for correct permissions and access\n"
                            "- Supports glob patterns like \"**/*.js\" or \"src/**/*.py\"\n"
                            "- Returns matching file paths sorted by modification time\n",
-                           # "- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, "
-                           # "use the Agent tool instead"
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1223,7 +1221,6 @@ def tool_grep_file_def() -> dict[str, Any]:
                            "to narrow down the search scope\n"
                            "Prefer `type` for standard file types as it's more efficient.\n"
                            "- Use `context` only with output_mode=\"content\" to see lines before and after each match\n",
-                           # "- Use Agent tool for open-ended searches requiring multiple rounds\n"
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2050,7 +2047,7 @@ def tool_web_fetch_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_WEB_FETCH,
-            "description": "Use this tool when you need to retrieve and analyze web content. `{TOOL_NAME_WEB_FETCH}` WILL FAIL for "
+            "description": f"Use this tool when you need to retrieve and analyze web content. `{TOOL_NAME_WEB_FETCH}` WILL FAIL for "
                            "authenticated or private URLs. Before using this tool, check if the URL points to an authenticated "
                            "service (e.g. Google Docs, Confluence, Jira, GitHub). If so, look for a specialized MCP tool "
                            "that provides authenticated access.\n"

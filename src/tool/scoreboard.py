@@ -15,6 +15,7 @@ Revision:
 2026.6.12        Yu Huang       1.3      Add count_by_status() & fix Status display using .value
 2026.6.12        Yu Huang       1.4      Add to_dict() snapshot & upgrade Lock to RLock for reentrant safety
 2026.6.14        Yu Huang       1.5      Fix: nonexistent task existence check in deps, has_change gated on validated only
+2026.6.15        Yu Huang       1.6      Revise the task updating order with status-oriented
 
 Details:
 ---------
@@ -211,35 +212,11 @@ class Scoreboard:
                             self._tasks[t_id]["owner"] = t_requester
                             info += f"Task (id {t_id}) claimed by you. "
                         else:
-                            return False, f"Task (id {t_id}) is blocked by following list of tasks: {self._tasks[t_id]["blocked_by"]}. Claim failed."
-                    """
-                    If a task has no owner, can update subject/description when:
-                    1). Requester try to claim
-                    
-                    If requester do not claim but modified it, dependency chain is dependent on subject/description, so it is 
-                    hard to synchronize among agents. Therefore, requester try to claim task is also reponsibe for updateing 
-                    blocks and blocked_by when they modified the subject and description
-                    """
-                    if t_subject is not None:
-                        if t_claim:
-                            has_change = True
-                            self._tasks[t_id]["subject"] = t_subject
-                            info += f"Task (id {t_id})'s subject updated by you. "
-                        else:
-                            info += (f"Task (id {t_id})'s subject unchanged (subject of task without owner can't be updated by "
-                                     f"a non-claimer). ")
-                    if t_description is not None:
-                        if t_claim:
-                            has_change = True
-                            self._tasks[t_id]["description"] = t_description
-                            info += f"Task (id {t_id})'s description updated by you. "
-                        else:
-                            info += (f"Task (id {t_id})'s description unchanged (description of task without owner can't be "
-                                     f"updated by a non-claimer). ")
+                            return False, f"Task (id {t_id}) is blocked by following tasks: {self._tasks[t_id]["blocked_by"]}. Claim failed."
                     """
                     If a task has no owner, can update status:
                     1). Requester try to claim
-                    
+
                     Since status of task also effects dependency chain, non-claimer can't modify the task's status
                     """
                     if t_status is not None:
@@ -259,8 +236,39 @@ class Scoreboard:
                                             blocked_by = list(set(task["blocked_by"]) - {self._tasks[t_id]["task_id"]})
                                             self._tasks[task["task_id"]]["blocked_by"] = blocked_by
                         else:
-                            info += (f"Task (id {t_id})'s status unchanged (status of task without owner can't be updated by a "
-                                     f"non-claimer). ")
+                            info += (
+                                f"Task (id {t_id})'s status unchanged (status of task without owner can't be updated by a "
+                                f"non-claimer). ")
+                    """
+                    If a task has no owner, can update subject/description when:
+                    1). Requester try to claim and task is not resolved
+                    
+                    If requester do not claim but modified it, dependency chain is dependent on subject/description, so it is 
+                    hard to synchronize among agents. Therefore, requester try to claim task is also reponsibe for updateing 
+                    blocks and blocked_by when they modified the subject and description
+                    """
+                    if t_subject is not None:
+                        if t_claim:
+                            if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
+                                info += f"Task (id {t_id}) is already resolved, subject can't be changed. "
+                            else:
+                                has_change = True
+                                self._tasks[t_id]["subject"] = t_subject
+                                info += f"Task (id {t_id})'s subject updated by you. "
+                        else:
+                            info += (f"Task (id {t_id})'s subject unchanged (subject of task without owner can't be updated by "
+                                     f"a non-claimer). ")
+                    if t_description is not None:
+                        if t_claim:
+                            if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
+                                info += f"Task (id {t_id}) is already resolved, description can't be changed. "
+                            else:
+                                has_change = True
+                                self._tasks[t_id]["description"] = t_description
+                                info += f"Task (id {t_id})'s description updated by you. "
+                        else:
+                            info += (f"Task (id {t_id})'s description unchanged (description of task without owner can't be "
+                                     f"updated by a non-claimer). ")
                     """
                     If a task has no owner, can update blocks when:
                     1). Task is non-resolved and requester do not try to claim
@@ -272,7 +280,7 @@ class Scoreboard:
                     """
                     if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
                         if (t_add_blocks is not None and t_add_blocks) or (t_add_blocked_by is not None and t_add_blocked_by):
-                            info += f"Task (id {t_id}) is already resolved, you can't modify its dependency. "
+                            info += f"Task (id {t_id}) is already resolved, can't modify its dependency. "
                     else:
                         if t_add_blocks is not None and t_add_blocks:
                             clean_add_blocks = list(set(t_add_blocks) - set(self._tasks[t_id]["blocks"]))
@@ -302,8 +310,8 @@ class Scoreboard:
                             # synchronize all tasks' blocked_by
                             for blocked_id in validated_new_blocks:  # always not a resolved task
                                 self._tasks[blocked_id]["blocked_by"] = list(set(self._tasks[blocked_id]["blocked_by"]) | {t_id})
-                            if has_change:
-                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}"
+                            if validated_new_blocks:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}. "
                         if t_add_blocked_by is not None and t_add_blocked_by:
                             clean_blocked_by = list(set(t_add_blocked_by) - set(self._tasks[t_id]["blocked_by"]))
                             validated_new_blocked_by: list[int] = []
@@ -331,12 +339,12 @@ class Scoreboard:
                             self._tasks[t_id]["blocked_by"] = new_blocked_by
                             for blocker_id in validated_new_blocked_by:  # always not a resolved task
                                 self._tasks[blocker_id]["blocks"] = list(set(self._tasks[blocker_id]["blocks"]) | {t_id})
-                            if has_change:
-                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}"
+                            if validated_new_blocked_by:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}. "
                     if has_change:
                         return True, info
                     if info.strip():
-                        return False, f"Nothing changes in target task, details: {info}"
+                        return False, f"Nothing changes in target task, details: {info}, please check your params"
                     else:
                         return False, f"Nothing changes in target task, please check your params"
 
@@ -350,24 +358,6 @@ class Scoreboard:
                         else:
                             # update behavior for claimer and non-claimer are different, so need to fail immediately
                             return False, f"Task (id {t_id}) is already claimed by agent (id {self._tasks[t_id]["owner"]}), update failed."
-                    """
-                    If a task has owner, can update subject/description when:
-                    1). Requester is owner
-                    """
-                    if t_subject is not None:
-                        if self._tasks[t_id]["owner"] == t_requester:
-                            has_change = True
-                            self._tasks[t_id]["subject"] = t_subject
-                            info += f"Task (id {t_id})'s subject updated by you. "
-                        else:
-                            info += f"Task (id {t_id})'s subject unchanged (subject of task can only be updated by owner)"
-                    if t_description is not None:
-                        if self._tasks[t_id]["owner"] == t_requester:
-                            has_change = True
-                            self._tasks[t_id]["description"] = t_description
-                            info += f"Task (id {t_id})'s description updated by you. "
-                        else:
-                            info += f"Task (id {t_id})'s description unchanged (description of task can only be updated by owner)"
                     """
                     If a task has owner, can update status:
                     1). Requester is owner and the direction of status is forward and task is not resolved
@@ -394,13 +384,37 @@ class Scoreboard:
                         else:
                             info += f"Task (id {t_id})'s status unchanged (status of task can only be updated by owner)"
                     """
+                    If a task has owner, can update subject/description when:
+                    1). Requester is owner and task is not resolved
+                    """
+                    if t_subject is not None:
+                        if self._tasks[t_id]["owner"] == t_requester:
+                            if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
+                                info += f"Task (id {t_id}) is already resolved, subject can't be changed. "
+                            else:
+                                has_change = True
+                                self._tasks[t_id]["subject"] = t_subject
+                                info += f"Task (id {t_id})'s subject updated by you. "
+                        else:
+                            info += f"Task (id {t_id})'s subject unchanged (subject of task can only be updated by owner)"
+                    if t_description is not None:
+                        if self._tasks[t_id]["owner"] == t_requester:
+                            if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
+                                info += f"Task (id {t_id}) is already resolved, description can't be changed. "
+                            else:
+                                has_change = True
+                                self._tasks[t_id]["description"] = t_description
+                                info += f"Task (id {t_id})'s description updated by you. "
+                        else:
+                            info += f"Task (id {t_id})'s description unchanged (description of task can only be updated by owner)"
+                    """
                     If a task has owner, can update blocks when:
                     1). Task is non-resolved and requester do not try to claim
                     2). Task is non-resolved and owner try to claim (non-owner case is blocked)
                     """
                     if self._tasks[t_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
                         if (t_add_blocks is not None and t_add_blocks) or (t_add_blocked_by is not None and t_add_blocked_by):
-                            info += f"Task (id {t_id}) is already resolved, you can't modify its dependency. "
+                            info += f"Task (id {t_id}) is already resolved, can't modify its dependency. "
                     else:
                         if t_add_blocks is not None and t_add_blocks:
                             clean_add_blocks = list(set(t_add_blocks) - set(self._tasks[t_id]["blocks"]))
@@ -430,8 +444,8 @@ class Scoreboard:
                             # synchronize all tasks' blocked_by
                             for blocked_id in validated_new_blocks:  # always not a resolved task
                                 self._tasks[blocked_id]["blocked_by"] = list(set(self._tasks[blocked_id]["blocked_by"]) | {t_id})
-                            if has_change:
-                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}"
+                            if validated_new_blocks:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it blocks tasks: {new_blocks}. "
                         if t_add_blocked_by is not None and t_add_blocked_by:
                             clean_blocked_by = list(set(t_add_blocked_by) - set(self._tasks[t_id]["blocked_by"]))
                             validated_new_blocked_by: list[int] = []
@@ -459,8 +473,8 @@ class Scoreboard:
                             self._tasks[t_id]["blocked_by"] = new_blocked_by
                             for blocker_id in validated_new_blocked_by:  # always not a resolved task
                                 self._tasks[blocker_id]["blocks"] = list(set(self._tasks[blocker_id]["blocks"]) | {t_id})
-                            if has_change:
-                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}"
+                            if validated_new_blocked_by:
+                                info += f"Task (id {t_id})'s dependency updated by you, now it is blocked by tasks: {new_blocked_by}. "
                     if has_change:
                         return True, info
                     if info.strip():

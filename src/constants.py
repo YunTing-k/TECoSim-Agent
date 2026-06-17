@@ -23,7 +23,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 2
+TECOSIM_AGENT_UPDATE_VERSION: int = 3
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
