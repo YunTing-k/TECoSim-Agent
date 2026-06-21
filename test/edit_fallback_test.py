@@ -80,6 +80,55 @@ class TestUnescapeLiterals(unittest.TestCase):
         result = _unescape_literals(r'a\nb\tc\\d')
         self.assertEqual(result, 'a\nb\tc\\d')
 
+    # --- triple-quote edge cases (regression: escaped quotes in new_string) ---
+    def test_triple_quotes_plain(self):
+        """plain triple quotes should pass through unchanged"""
+        self.assertEqual(_unescape_literals('"""hello"""'), '"""hello"""')
+
+    def test_triple_quotes_escaped(self):
+        """each \" becomes " — triple escaped quotes become triple quotes"""
+        self.assertEqual(_unescape_literals(r'\"\"\"hello\"\"\"'), '"""hello"""')
+
+    def test_triple_quotes_mixed_backslash_quote(self):
+        r"""\\" (backslash-backslash-quote) → \" (backslash-quote preserved)"""
+        self.assertEqual(_unescape_literals(r'\\"hello\\"'), r'\"hello\"')
+
+    def test_triple_quotes_double_escaped_json(self):
+        """simulate LLM double-escaping quotes in JSON: \\\" → \" after json.loads,
+        then _unescape_literals converts \" → " for matching"""
+        # After json.loads of {"new_string": "\\\"\\\"\\\"target\\\"\\\"\\\""}
+        # the value is: \"\"\"target\"\"\"
+        double_escaped = r'\"\"\"modified target\"\"\"'
+        result = _unescape_literals(double_escaped)
+        self.assertEqual(result, '"""modified target"""')
+
+
+class TestMatchEscapeLiteralTripleQuotes(unittest.TestCase):
+    """regression: match_escape_literal with triple-quoted strings"""
+
+    def test_escaped_triple_quotes_old_string(self):
+        raw = '"""target function without progress"""\ndef foo():\n    pass\n'
+        llm = r'\"\"\"target function without progress\"\"\"'
+        lines, actual = match_escape_literal(raw, llm)
+        self.assertEqual(lines, [(1, 1)])
+        self.assertEqual(actual, '"""target function without progress"""')
+
+    def test_plain_triple_quotes_no_match(self):
+        """plain triple quotes: _unescape_literals returns same string,
+        so match_escape_literal should return no match (unescaped == target)"""
+        raw = '"""target function without progress"""\n'
+        llm = '"""target function without progress"""'
+        lines, actual = match_escape_literal(raw, llm)
+        self.assertEqual(lines, [])
+
+    def test_partial_escaped_triple_quotes(self):
+        raw = '"""target"""\n'
+        llm = r'\"\"target\"\"'
+        lines, actual = match_escape_literal(raw, llm)
+        self.assertEqual(lines, [(1, 1)])
+        # unescaped \"\"target\"\" → ""target"" matches substring of """target"""
+        self.assertEqual(actual, '""target""')
+
 
 class TestStripCommonIndent(unittest.TestCase):
     def test_uniform_indent(self):

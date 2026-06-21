@@ -46,81 +46,81 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
     try:
         if func_name == TOOL_NAME_VERSION:
             results = tool_def.agent_version(progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_ASK_QUESTION:
             results = tool_def.ask_user_question(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_CREATE_TASK:
             results = tool_def.create_task(arguments, board, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_UPDATE_TASK:
             results = tool_def.update_task(arguments, ctx, board, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_QUERY_TASK:
             results = tool_def.query_task(arguments, ctx, board, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_CREATE_CRON:
             results = tool_def.create_cron(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_QUERY_CRON:
             results = tool_def.query_cron(ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_REMOVE_CRON:
             results = tool_def.remove_cron(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_BASH:
             results = tool_def.bash(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_GLOB_FILE:
             results = tool_def.glob_file(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_GREP_FILE:
             results = tool_def.grep_file(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_READ_FILE:
             results = tool_def.read_file(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_WRITE_FILE:
             results = tool_def.write_file(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_EDIT_FILE:
             results = tool_def.edit_file(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_SKILL:
-            results, user_addons = tool_def.skill(arguments, ctx, progress)
+            results, user_addon = tool_def.skill(arguments, ctx, progress)
         elif func_name == TOOL_NAME_WEB_FETCH:
             results = tool_def.web_fetch(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_WEB_SEARCH:
             results = tool_def.web_search(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_CHECK_SIMULATOR:
             results = tool_def.check_simulator(ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_INIT_DESIGN:
             results = tool_def.init_design(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_QUERY_DESIGN:
             results = tool_def.query_design(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_LAUNCH_SIM:
             results = tool_def.launch_sim(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_QUERY_RUN:
             results = tool_def.query_run(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name == TOOL_NAME_READ_LOG:
             results = tool_def.read_log(arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         elif func_name in ctx.mcp_router.tool_registry:
             results = tool_def.call_mcp(func_name, arguments, ctx, progress)
-            user_addons = None
+            user_addon = None
         else:
             sys_log.warning(f"Tool: {func_name} is undefined")
             progress.console.print(f"Tool: {func_name} is undefined", style="bold yellow")
             results = {"status": FAIL_LABEL, "info": f"Tool: {func_name} is undefined"}
-            user_addons = None
-        return results, user_addons
+            user_addon = None
+        return results, user_addon
     except Exception as e:
         sys_log.error(f"Tool {func_name} execution failed with error: {e}")
         progress.console.print(f"Tool {func_name} execution failed with error: {e}", style="bold red")

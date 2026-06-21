@@ -2,6 +2,7 @@
 /.vscode
 /.idea
 /gateway.bat
+/run.bat
 /update_requirements.bat
 /clean.bat
 /session/**/*.json

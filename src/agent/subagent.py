@@ -16,6 +16,7 @@ Revision:
 2026.6.13      Yu Huang      1.4      Support medium model tier (main/medium/fast) via api_configs MEDIUM_MODEL_*
 2026.6.14      Yu Huang      1.5      Add warning to subagent when they are about to run out of step budget
 2026.6.14      Yu Huang      1.6      Fix: remove unused lock/threading, parse_response propagate, cached_tokens None guard
+2026.6.21      Yu Huang      1.7      Fix: User addons cannot be inserted between tool results when LLM is deepseek
 
 Details:
 ---------
@@ -479,6 +480,7 @@ class SubAgent:
         return tool_calls, content, assistant_reasoning
 
     def execute_tool_calls(self, tool_calls: list[dict[str, Any]]):
+        user_addons: list[dict[str, Any]] = []
         for tool_call in tool_calls:
             func_name = tool_call["function"]["name"]
             try:
@@ -494,7 +496,7 @@ class SubAgent:
             self.progress.current_tool = format_tool_display(func_name, arguments)
             self.progress.last_activity = time.time()
 
-            results, user_addons = call_tools(
+            results, user_addon = call_tools(
                 func_name, arguments, self.ctx, self.board, self._dummy_progress
             )
             result_str = json.dumps(results, ensure_ascii=False)
@@ -507,10 +509,21 @@ class SubAgent:
                 "tool_call_id": tool_call["id"],
                 "content": result_str,
             })
-            if user_addons is not None:
+            if self.ctx.api_configs.get(f"{self.model_type.upper()}_MODEL_DEEPSEEK_SUPPORT"):
+                if user_addon is not None:
+                    user_addons.append(user_addon)
+            else:
+                if user_addon is not None:
+                    self.ctx.messages.append({
+                        "role": "user",
+                        "content": json.dumps(user_addon, ensure_ascii=False),
+                    })
+
+        if self.ctx.api_configs.get(f"{self.model_type.upper()}_MODEL_DEEPSEEK_SUPPORT"):
+            for addon in user_addons:
                 self.ctx.messages.append({
                     "role": "user",
-                    "content": json.dumps(user_addons, ensure_ascii=False),
+                    "content": json.dumps(addon, ensure_ascii=False),
                 })
 
         self.ctx.tool_results_prompts += len(tool_calls)

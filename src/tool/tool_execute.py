@@ -30,6 +30,7 @@ Revision:
 2026.6.12      Yu Huang      2.8      Subagent spawn: classification, batch launch, poll, merge stats
 2026.6.13      Yu Huang      2.9      Background subagent support + tool result truncation + batch agent permission TUI
 2026.6.14      Yu Huang      3.0      Fix: foreground/background subagent timeout, tool call arg error handling
+2026.6.21      Yu Huang      3.1      Fix: User addons cannot be inserted between tool results when LLM is deepseek
 
 Details:
 ---------
@@ -176,6 +177,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
             normal_calls.append(tc)
 
     limit = ctx.agent_configs.get("MAIN_TOOL_RESULT_CHAR_LIMIT", MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT)
+    user_addons: list[dict[str, Any]] = []
     for tc in normal_calls:
         try:
             func_name = tc["function"]["name"]
@@ -194,7 +196,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
         sys_log.debug(f"Using tool: {func_name}")
         if not if_tool_mute(func_name):
             progress.console.print(f"Using tool: [{MAJOR_COLOR1}]{func_name}[/{MAJOR_COLOR1}]", style="bright_black")
-        results, user_addons = call_tools(func_name, arguments, ctx, board, progress)
+        results, user_addon = call_tools(func_name, arguments, ctx, board, progress)
         result_str = json.dumps(results, ensure_ascii=False)
         if len(result_str) > limit:
             result_str = result_str[:limit] + f"...[{TRUNCATED_LABEL}: {len(result_str) - limit} chars omitted from tool result]"
@@ -203,11 +205,15 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
             "tool_call_id": tc["id"],
             "content": result_str,
         })
-        if user_addons is not None:
-            messages.append({
-                "role": "user",
-                "content": json.dumps(user_addons, ensure_ascii=False),
-            })
+        if ctx.api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
+            if user_addon is not None:
+                user_addons.append(user_addon)
+        else:
+            if user_addon is not None:
+                messages.append({
+                    "role": "user",
+                    "content": json.dumps(user_addon, ensure_ascii=False),
+                })
 
     if bg_agent_calls or fg_agent_calls:
         all_agent_calls = bg_agent_calls + fg_agent_calls
@@ -240,6 +246,13 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
     if fg_agent_calls:
         fg_messages = execute_subagents(fg_agent_calls, ctx, board, progress)
         messages.extend(fg_messages)
+
+    if ctx.api_configs["MAIN_MODEL_DEEPSEEK_SUPPORT"]:
+        for addon in user_addons:
+            messages.append({
+                "role": "user",
+                "content": json.dumps(addon, ensure_ascii=False),
+            })
 
     return messages
 

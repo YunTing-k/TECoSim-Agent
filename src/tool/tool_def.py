@@ -53,6 +53,7 @@ Revision:
 2026.6.13      Yu Huang      4.5      Add if_background param to spawn_agent for background subagent support
 2026.6.13      Yu Huang      4.6      Add medium model tier to spawn_agent model_type enum
 2026.6.14      Yu Huang      4.7      Fix: check_simulator returncode, bash temp file cleanup, _tmp_script_paths scope
+2026.6.17      Yu Huang      4.8      Revise the fallback behavior of file edit tool
 
 Details:
 ---------
@@ -81,7 +82,7 @@ from src.tool.file_io_support import (
     match_line_ranges, find_actual_string, ask_edit_tui, check_read_only,
     match_line_trimmed, match_flexible_indent, get_enhanced_debug_info,
     match_escape_literal, match_trimmed_boundary, match_unicode_escape,
-    get_write_render)
+    _unescape_literals, _unescape_unicode, get_write_render)
 from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
@@ -1829,6 +1830,8 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 match_lines = ue_lines
                 count = len(match_lines)
                 match_mode = MATCH_MODE_UNICODE_ESCAPE
+                # also unescape new_string to match the old_string normalization
+                new_string_norm = _unescape_unicode(new_string_norm)
                 sys_log.debug(f"{func_name}: matched via unicode escape: "
                               f"actual(repr)={repr(actual_old)}")
                 progress.console.print(f"{func_name}: matched via unicode escape", style="bright_black")
@@ -1871,6 +1874,8 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 match_lines = escape_lines
                 count = len(match_lines)
                 match_mode = MATCH_MODE_ESCAPE_LITERAL
+                # also unescape new_string to match the old_string normalization
+                new_string_norm = _unescape_literals(new_string_norm)
                 sys_log.debug(f"{func_name}: matched via escape literal: "
                               f"actual(repr)={repr(actual_old)}")
                 progress.console.print(f"{func_name}: matched via escape literal", style="bright_black")

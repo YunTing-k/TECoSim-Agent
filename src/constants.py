@@ -10,8 +10,8 @@ Description: Global constants and default parameters for TECoSim agent
 Revision:
 ---------
 2026.4.14      Yu Huang      1.0      First implementation
-2026.6.13      Yu Huang      2.0      Subagent support: types, status, icons, colors, tool result limits & Add header
-2026.6.14      Yu Huang      2.1      Add: simulator timeout default, agent label renames, subagent step/warn defaults
+2026.6.13      Yu Huang      1.1      Subagent support: types, status, icons, colors, tool result limits & Add header
+2026.6.14      Yu Huang      1.2      Add: simulator timeout default, agent label renames, subagent step/warn defaults
 
 Details:
 ---------
@@ -23,7 +23,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 3
+TECOSIM_AGENT_UPDATE_VERSION: int = 4
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -225,7 +225,7 @@ OPTIONS_TO_SELECT_PREFIX: str = "❯ "
 OPTIONS_UN_SELECT_PREFIX: str = "  "
 OPTIONS_SELECTED_PREFIX: str = " ✓"
 OPTIONS_UNSELECTED_PREFIX: str = ""
-KEY_LISTEN_SLEEP_TIME_MS: int = 100
+KEY_LISTEN_SLEEP_TIME_MS: int = 30
 SPINNER_LIVE_CHECK_GAP_MS: int = 200
 SPINNER_TERMINATE_WAIT_S: int = 10
 REASONING_COLOR: str = "#54A0FF"
