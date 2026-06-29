@@ -31,6 +31,7 @@ Revision:
 2026.6.13      Yu Huang      2.9      Background subagent support + tool result truncation + batch agent permission TUI
 2026.6.14      Yu Huang      3.0      Fix: foreground/background subagent timeout, tool call arg error handling
 2026.6.21      Yu Huang      3.1      Fix: User addons cannot be inserted between tool results when LLM is deepseek
+2026.6.29      Yu Huang      3.2      Subagent summary: summaries.json for foreground + background resume display
 
 Details:
 ---------
@@ -39,6 +40,7 @@ spawn calls, runs normal tools sequentially, then spawns agents concurrently in 
 Spinner wrappers integrate with Rich display. `call_tools` dispatch lives in `tool_dispatch.py`.
 """
 import json
+import os
 import uuid
 import time
 import random
@@ -48,7 +50,8 @@ import threading
 from typing import Callable, Any
 from rich.console import Console
 from rich.progress import Progress
-from src.utility.ui_info import loading_spinner, loading_spinner_with_board, pause_for_permission, resume_from_permission
+from src.utility.ui_info import (
+    loading_spinner, loading_spinner_with_board, pause_for_permission, resume_from_permission, render_subagent_line)
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
@@ -64,7 +67,7 @@ def tool_calls_spinner(func: Callable, *args, console: Console,
                        waiting_desc: str | None = None, done_desc: str | None = None,
                        intrp_desc: str | None = None, fail_desc: str | None = None,
                        spinner: str | None = None, if_random: bool, **kwargs) -> Any:
-    """Tool calls with spinner through loading_spinner"""
+    """Tool calls with spinner through loading_spinner (for main agent)"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
     else:
@@ -104,7 +107,7 @@ def tool_calls_spinner_board(func: Callable, *args,
                              intrp_desc: str | None = None, fail_desc: str | None = None,
                              spinner: str | None = None, if_random: bool,
                              agent_list: dict[str, SubAgentProgress] | None = None, **kwargs) -> Any:
-    """Tool calls with spinner and scoreboard through loading_spinner_with_board"""
+    """Tool calls with spinner and scoreboard through loading_spinner_with_board (for main agent)"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
     else:
@@ -140,7 +143,7 @@ def tool_calls_spinner_board(func: Callable, *args,
 
 
 def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Scoreboard, progress: Progress) -> list[dict[str, Any]]:
-    """execute the tools in the LLM tool calls with AgentContext
+    """execute the tools in the LLM tool calls with AgentContext (for main agent)
 
     Phase 1: execute all non-agent tool calls sequentially.
     Phase 2a: launch background agents concurrently in threads (non-blocking).
@@ -267,7 +270,7 @@ def generate_agent_id(ctx: AgentContext) -> str:
 
 def execute_background_agents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext, board: Scoreboard,
                                progress: Progress) -> list[dict[str, Any]]:
-    """launch background agents without blocking; store in ctx.background_agents for later collection"""
+    """launch background agents without blocking; store in ctx.background_agents for later collection (for main agent)"""
     messages = []
     for tc in agent_calls:
         args = json.loads(tc["function"]["arguments"])
@@ -309,6 +312,23 @@ def execute_background_agents(agent_calls: list[dict[str, Any]], main_ctx: Agent
         })
 
     return messages
+
+
+def _save_subagent_summaries(session_uuid: str, entries: dict[str, dict]) -> None:
+    """persist subagent summaries keyed by tool_call_id to summaries.json (read-merge-write)"""
+    path = os.path.join(SESSION_PATH, session_uuid, SUBAGENT_DUMP_DIR, SUBAGENT_SUMMARIES_NAME)
+    try:
+        summaries: dict[str, dict] = {}
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                summaries = json.load(f)
+        summaries.update(entries)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(summaries, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Subagent summaries saved: {list(entries.keys())}")
+    except Exception as e:
+        sys_log.error(f"Failed to save subagent summaries: {e}")
 
 
 def check_background_agents(main_ctx: AgentContext) -> bool:
@@ -401,11 +421,29 @@ def check_background_agents(main_ctx: AgentContext) -> bool:
             sys_log.warning(f"Background agent {agent.agent_id} terminated with status {agent.status.value}.")
 
         agent.progress.if_archived = True
+        if agent.progress.elapsed_s == 0 and agent.start_time > 0:
+            agent.progress.elapsed_s = time.time() - agent.start_time
         main_ctx.messages.append({
             "role": "user",
             "content": msg_content,
         })
         completed.append((tc, agent, thread, start_time))
+
+    """persist background agent summaries for resume display"""
+    if completed:
+        _save_subagent_summaries(main_ctx.session_uuid, {
+            tc["id"]: {
+                "subagent_type": agent.progress.subagent_type,
+                "subject": agent.progress.subject,
+                "status": agent.progress.status.value,
+                "tool_calls_done": agent.progress.tool_calls_done,
+                "elapsed_s": agent.progress.elapsed_s,
+                "input_tokens": agent.progress.input_tokens,
+                "output_tokens": agent.progress.output_tokens,
+                "agent_id": agent.agent_id,
+            }
+            for tc, agent, _, _ in completed
+        })
 
     for item in completed:
         main_ctx.background_agents.remove(item)
@@ -513,10 +551,26 @@ def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext,
             progress.console.print(f"Subagent {agent.agent_id} terminated with {agent.status.value} status with "
                                    f"unknown reason.", style="bold yellow")
         agent.progress.if_archived = True
+        """print per-agent summary (match live display)"""
+        progress.console.print(render_subagent_line(agent.progress))
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],
             "content": json.dumps(result, ensure_ascii=False),
         })
+    """persist subagent summaries for resume display"""
+    _save_subagent_summaries(main_ctx.session_uuid, {
+        tc["id"]: {
+            "subagent_type": agent.progress.subagent_type,
+            "subject": agent.progress.subject,
+            "status": agent.progress.status.value,
+            "tool_calls_done": agent.progress.tool_calls_done,
+            "elapsed_s": agent.progress.elapsed_s,
+            "input_tokens": agent.progress.input_tokens,
+            "output_tokens": agent.progress.output_tokens,
+            "agent_id": agent.agent_id,
+        }
+        for tc, agent in subagents
+    })
 
     return messages

@@ -15,8 +15,8 @@ Revision:
 2026.5.30      Yu Huang      1.3      Optimize the hardware occupancy of TUI
 2026.6.1       Yu Huang      1.4      Define TUI selection prefixes in constants.py
 2026.6.4       Yu Huang      1.5      Add assert to avoid possible type mismatch in ask question TUI
-2026.6.7       Yu Huang      1.6      Revise the display style of all ask permission TUIs & Add newline and space padding
-                                      for all ask permission TUIs
+2026.6.7       Yu Huang      1.6      Revise the display style of all ask permission TUIs & Add newline and space padding for all ask permission TUIs
+2026.6.29      Yu Huang      1.7      Multi-select no choice → explicit label; add get_answers_render for answer display
 
 Details:
 ---------
@@ -140,6 +140,8 @@ def get_answers(questions: list[dict[str, Any]], selected_indices: list[int],
             assert isinstance(option_bools, list)
             option_indices = [i for i, flag in enumerate(option_bools) if flag]
             answer_str = ""
+            if not option_indices:
+                answer_str = QUESTION_NO_CHOICE_LABEL
             if_other = False
             for option_idx, option in enumerate(question["options"]):
                 if option_idx in option_indices:
@@ -181,6 +183,25 @@ def get_answers(questions: list[dict[str, Any]], selected_indices: list[int],
                 }
             answers.append(answer)
     return answers
+
+
+def get_answers_render(answers: list[dict[str, Any]], console: Console):
+    """render collected answers to console"""
+    render = Text()
+    render.append("User's choices:\n", style=f"bold {MAJOR_COLOR2}")
+    for ans in answers:
+        header = ans["header"]
+        answer = ans["answer"]
+        other_text = ans.get("other_text", "")
+        render.append(f"  {OPTIONS_TO_SELECT_PREFIX}[{header}]: ", style=f"bold {MAJOR_COLOR1}")
+        ans_style = "bright_black" if answer == QUESTION_NO_CHOICE_LABEL else "white"
+        render.append(answer, style=ans_style)
+        if other_text:
+            render.append(f" ({other_text})", style="bright_black")
+        render.append("\n")
+    if render.plain.endswith("\n"):
+        render.rstrip()
+    console.print(render)
 
 
 def init_options_choice(questions: list[dict[str, Any]]) -> list[list[bool] | int]:

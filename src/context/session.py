@@ -23,6 +23,7 @@ Revision:
 2026.6.2       Yu Huang      2.1      Revise session list's layout and add usage info
 2026.6.3       Yu Huang      2.2      Revise session list info & Add configurable title in yes or no request TUI
 2026.6.13      Yu Huang      2.3      Bugfix: session list displays N/A instead of -0.0K when token data unavailable
+2026.6.29      Yu Huang      2.4      Add session title info when removing sessions
 
 Details:
 ---------
@@ -323,17 +324,27 @@ def session_remove_cli(args: Namespace, console: Console):
             console.print(f"Session with UUID: {uuid_str} is a file, not a directory", style="bold red")
             return
 
+        """read session title"""
+        context_file = os.path.join(os.path.join(session_dir, uuid_str), CONTEXT_NAME)
+        session_title = UNKNOWN_SESSION_TITLE
+        try:
+            with open(context_file, 'r', encoding='utf-8') as f:
+                context = json.load(f)
+            session_title = context.get("session_title", UNKNOWN_SESSION_TITLE)
+        except Exception as e:
+            sys_log.error(f"Failed to load session {uuid_str}'s context with error {e}")
+
         """delete the session folder"""
-        token = ui_info.request_tui(console=console, title="Remove Session", request_desc=f"remove the session: {uuid_str}",
+        token = ui_info.request_tui(console=console, title="Remove Session", request_desc=f"remove the session: {uuid_str} (Title: {session_title})",
                                     request_detail=f"This session will be deleted forever",
                                     cancel_str=f"Session remove cancelled")
         if token:
             shutil.rmtree(os.path.join(session_dir, uuid_str))
-            sys_log.debug(f"Session with UUID: {uuid_str} has been removed")
-            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] has been removed")
+            sys_log.debug(f"Session with UUID: {uuid_str} (Title: {session_title}) has been removed")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] (Title: [{MAJOR_COLOR2}]{session_title}[/{MAJOR_COLOR2}]) has been removed")
         else:
-            sys_log.debug(f"Session with UUID: {uuid_str} remove cancelled")
-            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] remove cancelled")
+            sys_log.debug(f"Session with UUID: {uuid_str} (Title: {session_title}) remove cancelled")
+            console.print(f"Session with UUID: [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] (Title: [{MAJOR_COLOR2}]{session_title}[/{MAJOR_COLOR2}]) remove cancelled")
             return
 
     except Exception as e:

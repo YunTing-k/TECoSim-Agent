@@ -54,6 +54,8 @@ Revision:
 2026.6.13      Yu Huang      4.6      Add medium model tier to spawn_agent model_type enum
 2026.6.14      Yu Huang      4.7      Fix: check_simulator returncode, bash temp file cleanup, _tmp_script_paths scope
 2026.6.17      Yu Huang      4.8      Revise the fallback behavior of file edit tool
+2026.6.29      Yu Huang      4.9      Print user choices after ask_user_question TUI & Differentiate subagent auto-deny from user denial &
+                                      Clarify bash uses GNU bash only
 
 Details:
 ---------
@@ -79,10 +81,9 @@ from src.tool.cron_support import get_cron_list, create_cron_impl
 from src.tool.scoreboard import Scoreboard, TaskStatus, args_to_taskupdate, task_to_info, tasks_to_info
 from src.tool.file_filter_support import glob_impl, grep_impl
 from src.tool.file_io_support import (
-    match_line_ranges, find_actual_string, ask_edit_tui, check_read_only,
-    match_line_trimmed, match_flexible_indent, get_enhanced_debug_info,
-    match_escape_literal, match_trimmed_boundary, match_unicode_escape,
-    _unescape_literals, _unescape_unicode, get_write_render)
+    match_line_ranges, find_actual_string, ask_edit_tui, check_read_only, match_line_trimmed, match_flexible_indent,
+    get_enhanced_debug_info, match_escape_literal, match_trimmed_boundary, match_unicode_escape, _unescape_literals,
+    _unescape_unicode, get_write_render)
 from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
@@ -90,7 +91,7 @@ from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
 from src.tool.web_support import web_search_top, web_search_process
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk, get_bash_render, get_bash_result_render
-from src.tool.ask_question import ask_user_question_tui, AskUserCancelled
+from src.tool.ask_question import ask_user_question_tui, get_answers_render, AskUserCancelled
 from src.agent.progress import SUPPORTED_TYPES_DESC
 from src.constants import *
 
@@ -98,7 +99,7 @@ sys_log = logging.getLogger('logger')
 
 
 def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
-    """create prompts of all available tools"""
+    """create prompts of all available tools (for main agent)"""
     # Agent tools
     prompts: list[dict[str, Any]] = [
         # basic tools
@@ -344,7 +345,7 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         finally:
             resume_from_permission(progress)
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected")
-        progress.console.print(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected", style="bright_black")
+        get_answers_render(answers, progress.console)
         return {
             "status": SUCCESS_LABEL,
             "answers": answers,
@@ -773,10 +774,12 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute: # (subagent should not use it)
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """creat cron task"""
         cron_task, if_success, create_info = create_cron_impl(arguments, ctx.cron_ids)
@@ -864,10 +867,12 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """remove cron task"""
         task_id = str(arguments.get("id"))
@@ -894,8 +899,10 @@ def tool_bash_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_BASH,
-            "description": "Executes a given bash command and returns its output. The working directory persists between "
-                           "commands, but shell state does not. The shell environment is initialized from the user's profile.\n"
+            "description": "Executes a given GNU bash command and returns its output (on Windows, Git Bash is used). Do "
+                           "NOT use PowerShell or cmd.exe syntax — only GNU bash commands work. The working directory persists "
+                           "between commands, but shell state does not. The shell environment is initialized from the user's "
+                           "profile.\n"
                            "IMPORTANT: Avoid using this tool to run `grep`, `glob`, `cat`, `head`, `tail`, or `echo` commands, "
                            "unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish "
                            "your task. Instead, ALWAYS prefer using the appropriate dedicated tool as this will provide "
@@ -986,10 +993,12 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"Permission denied: subagent lacks {risk} — {reason}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """execute command"""
         description = arguments.get("description", "")
         timeout = arguments.get("timeout", BASH_TIMEOUT_MS_DEFAULT)
@@ -1169,10 +1178,12 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"path: {arguments.get("path", os.getcwd())}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """glob file"""
         results, if_success, grep_info = glob_impl(arguments)
@@ -1302,10 +1313,12 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"multiline: {arguments.get("multiline", False)}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """grep file"""
         results, if_success, grep_info = grep_impl(arguments, ctx.agent_configs["RIPGREP_PATH"], ctx.agent_configs["RIPGREP_TIMEOUT_S"])
@@ -1412,10 +1425,12 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """check the path"""
         file_path = arguments["path"]
         if not os.path.exists(file_path):
@@ -1622,10 +1637,12 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """check if read-only"""
         if_readonly, check_info = check_read_only(file_path, ctx)
         if if_readonly:
@@ -1915,10 +1932,12 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                    ctx, progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """apply edit with replacement (use actual_old for consistency with matching, avoid double CR)"""
         if count > 1 and replace_all:  # multiple replace
             edit_str = raw_str.replace(actual_old, new_string_norm)
@@ -2009,10 +2028,12 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
                                          f"purpose: {arguments.get("purpose", "None")}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}, None
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}, None
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}, None
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}, None
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}, None
         """load skill"""
         # check if loaded (skill can be loaded by previous conversation but is removed in this one)
         if any(item.get("name") == name for item in ctx.loaded_skills):
@@ -2099,10 +2120,12 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"prompt: {arguments["prompt"]}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """check URL"""
         check_info, check_success = check_url(url, progress.console)
@@ -2183,7 +2206,9 @@ def tool_web_search_def() -> dict[str, Any]:
                            f"- The current month is {now.strftime("%B-%Y")}. You MUST use this year when searching for "
                            f"recent information, documentation, or current events.\n"
                            "- Example: If the user asks for \"latest React docs\", "
-                           "search for \"React documentation\" with the current year, NOT last year\n",
+                           "search for \"React documentation\" with the current year, NOT last year\n"
+                           f"If you need more detailed information from a specific URL found in search results, use the "
+                           f"`{TOOL_NAME_WEB_FETCH}` tool to fetch the full content of that page.\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2212,10 +2237,12 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          f"Web search with keywords {query}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """web search"""
         content, content_info = ui_info.loading_spinner(
@@ -2265,10 +2292,12 @@ def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progr
         token, info = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """call tool"""
         timeout = ctx.agent_configs["MCP_TIMEOUT_S"]
@@ -2383,10 +2412,12 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                                         f"Description: {arguments["description"]}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """initialize design"""
         if_success, label, info = init_design_impl(arguments, ctx.design_man, progress.console)
         return {"status": label, "info": info}
@@ -2545,10 +2576,12 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """launch sim"""
         if_success, label, info = launch_sim_impl(arguments, ctx.run_man, progress.console)
         return {"status": label, "info": info}
@@ -2703,10 +2736,12 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                                          f"offset: {arguments.get("offset", "None")}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if info is None:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user"}
+            if ctx.subagent_mute:
+                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
-                return {"status": DENIED_LABEL, "info": f"Permission request denied by user with comment: {info}"}
+                return {"status": DENIED_LABEL, "info": f" {info}"}
         if_success, label, info, lines, log = read_log_impl(arguments, ctx.run_man,
                                                             ctx.agent_configs["READ_FILE_MB_LIMIT"],
                                                             ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"],

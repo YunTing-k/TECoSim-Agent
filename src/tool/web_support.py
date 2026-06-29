@@ -18,6 +18,7 @@ Revision:
 2026.6.10      Yu Huang      1.6      Main/Fast model can configure deepseek support dependently & Define all inserted message
                                        labels in constans.py & Revise the live TUI with the same console instance
 2026.6.13      Yu Huang      1.7      Switch to configurable model tier (WEB_FETCH_MODEL/WEB_SEARCH_MODEL) via select_branch_func
+2026.6.29      Yu Huang      1.8      Fallback to DDGS when Exa/Tavily/Linkup backend fails
 
 Details:
 ---------
@@ -267,11 +268,26 @@ def web_search_top(query: str, ctx: AgentContext, console: Console) -> tuple[lis
         body_limit = ctx.agent_configs["WEB_SEARCH_RAW_CHAR_LIMIT"],
     )
     if back_end == "Exa":
-        return web_search_exa(query, param, console)
+        results, info = web_search_exa(query, param, console)
+        if results is not None:
+            return results, info
+        sys_log.warning(f"Web search Exa backend failed, fallback to DDGS. Error: {info}")
+        console.print(f"Web search Exa backend failed, fallback to DDGS", style="bright_black")
+        return web_search_ddgs(query, param, console)
     elif back_end == "Tavily":
-        return web_search_tavily(query, param, console)
+        results, info = web_search_tavily(query, param, console)
+        if results is not None:
+            return results, info
+        sys_log.warning(f"Web search Tavily backend failed, fallback to DDGS. Error: {info}")
+        console.print(f"Web search Tavily backend failed, fallback to DDGS", style="bright_black")
+        return web_search_ddgs(query, param, console)
     elif back_end == "Linkup":
-        return web_search_linkup(query, param, console)
+        results, info = web_search_linkup(query, param, console)
+        if results is not None:
+            return results, info
+        sys_log.warning(f"Web search Linkup backend failed, fallback to DDGS. Error: {info}")
+        console.print(f"Web search Linkup backend failed, fallback to DDGS", style="bright_black")
+        return web_search_ddgs(query, param, console)
     else:
         if back_end != "DDGS":
             sys_log.warning(f"Unknow backend for web search: {back_end}, fallback to DDGS. "
@@ -284,6 +300,7 @@ def web_search_top(query: str, ctx: AgentContext, console: Console) -> tuple[lis
 def web_search_exa(query: str, param: WebSearchParam, console: Console)\
         -> tuple[list[WebSearchContent] | None, str]:
     """web search with Exa backend"""
+    backend_type = "Exa"
     results: list[WebSearchContent] = []
     try:
         search_client = Exa(api_key=param["api_key"])
@@ -308,14 +325,15 @@ def web_search_exa(query: str, param: WebSearchParam, console: Console)\
             })
         return results, SUCCESS_LABEL
     except Exception as e:
-        sys_log.error(f"Web search backend {"Exa"} with query {query} failed with error: {e}")
-        console.print(f"Web search backend {"Exa"} with query {query} failed with error: {e}", style="bold red")
-        return None, f"Web search backend {"Exa"} with query {query} failed with error: {e}"
+        sys_log.error(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}")
+        console.print(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}", style="bold red")
+        return None, f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}"
 
 
 def web_search_tavily(query: str, param: WebSearchParam, console: Console)\
         -> tuple[list[WebSearchContent] | None, str]:
     """web search with Tavily backend"""
+    backend_type = "Tavily"
     results: list[WebSearchContent] = []
     try:
         search_client = TavilyClient(api_key=param["api_key"], proxies=param["proxy"])
@@ -342,14 +360,15 @@ def web_search_tavily(query: str, param: WebSearchParam, console: Console)\
             })
         return results, SUCCESS_LABEL
     except Exception as e:
-        sys_log.error(f"Web search backend {"Tavily"} with query {query} failed with error: {e}")
-        console.print(f"Web search backend {"Tavily"} with query {query} failed with error: {e}", style="bold red")
-        return None, f"Web search backend {"Tavily"} with query {query} failed with error: {e}"
+        sys_log.error(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}")
+        console.print(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}", style="bold red")
+        return None, f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}"
 
 
 def web_search_linkup(query: str, param: WebSearchParam, console: Console)\
         -> tuple[list[WebSearchContent] | None, str]:
     """web search with Linkup backend"""
+    backend_type = "Linkup"
     results: list[WebSearchContent] = []
     try:
         search_client = LinkupClient(api_key=param["api_key"])
@@ -376,14 +395,15 @@ def web_search_linkup(query: str, param: WebSearchParam, console: Console)\
             })
         return results, SUCCESS_LABEL
     except Exception as e:
-        sys_log.error(f"Web search backend {"Linkup"} with query {query} failed with error: {e}")
-        console.print(f"Web search backend {"Linkup"} with query {query} failed with error: {e}", style="bold red")
-        return None, f"Web search backend {"Linkup"} with query {query} failed with error: {e}"
+        sys_log.error(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}")
+        console.print(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}", style="bold red")
+        return None, f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}"
 
 
 def web_search_ddgs(query: str, param: WebSearchParam, console: Console)\
         -> tuple[list[WebSearchContent] | None, str]:
     """web search with DDGS backend"""
+    backend_type = "DDGS"
     results: list[WebSearchContent] = []
     include_domains = param.get("include_domains") or []
     exclude_domains = param.get("exclude_domains") or []
@@ -411,9 +431,9 @@ def web_search_ddgs(query: str, param: WebSearchParam, console: Console)\
                 })
             return results, SUCCESS_LABEL
     except Exception as e:
-        sys_log.error(f"Web search backend {"DDGS"} with query {query} failed with error: {e}")
-        console.print(f"Web search backend {"DDGS"} with query {query} failed with error: {e}", style="bold red")
-        return None, f"Web search backend {"DDGS"} with query {query} failed with error: {e}"
+        sys_log.error(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}")
+        console.print(f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}", style="bold red")
+        return None, f"Web search backend {backend_type} with query: \"{query}\" failed with error: {e}"
 
 
 web_search_system_prompt = ("You are TECoSim Agent, developed by Yu Huang (黄雨) from Shanghai Jiao Tong University. You are "

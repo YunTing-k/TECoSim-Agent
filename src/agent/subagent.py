@@ -17,6 +17,8 @@ Revision:
 2026.6.14      Yu Huang      1.5      Add warning to subagent when they are about to run out of step budget
 2026.6.14      Yu Huang      1.6      Fix: remove unused lock/threading, parse_response propagate, cached_tokens None guard
 2026.6.21      Yu Huang      1.7      Fix: User addons cannot be inserted between tool results when LLM is deepseek
+2026.6.29      Yu Huang      1.8      Expose start_time for per-agent summary display in execute_subagents & Add GNU bash
+                                      hint to subagent system prompt (avoid PowerShell on Windows)
 
 Details:
 ---------
@@ -216,6 +218,7 @@ class SubAgent:
         self.result: str | None = None
         self.error: str | None = None
         self._last_api_error: str | None = None
+        self.start_time: float = 0.0
         self.stats: dict[str, int] = {  # for LLM statistics
             "user_prompts": 0,
             "content_prompts": 0,
@@ -286,7 +289,8 @@ class SubAgent:
             f"Your task: {self.prompt}\n\n"
             f"{board_note}"
             "Work step by step. Use tools to gather information or make changes. When you are done, provide your final answer "
-            "as plain text (no tool calls). Do not ask the user questions – you are running autonomously.\n\n"
+            "as plain text (no tool calls). Do not ask the user questions – you are running autonomously.\n"
+            "The bash tool uses GNU bash (Git Bash on Windows). Do NOT use PowerShell/cmd.exe commands.\n\n"
             f"Available agent types for reference:\n"
             f"{', '.join(f'{k}: {v}' for k, v in SUPPORTED_TYPES_DESC.items())}"
         )
@@ -307,13 +311,14 @@ class SubAgent:
             return self.result
         self.status = AgentStatus.RUNNING
         self.progress.status = AgentStatus.RUNNING
-        _start_time = time.time()
+        self.start_time = time.time()
+        self.progress.start_time = self.start_time
 
         try:
             assert self.max_steps is not None
             for step in range(1, self.max_steps + 1):
                 """check if timeout"""
-                if self.timeout_s is not None and time.time() - _start_time > self.timeout_s:
+                if self.timeout_s is not None and time.time() - self.start_time > self.timeout_s:
                     self.status = AgentStatus.TIMEOUT
                     self.error = f"Timeout after {self.timeout_s:.0f}s"
                     break
@@ -379,6 +384,8 @@ class SubAgent:
             self.error = str(e)
             sys_log.error(f"SubAgent {self.agent_id} failed: {e}")
         finally:
+            if self.start_time > 0:
+                self.progress.elapsed_s = time.time() - self.start_time
             self.dump()
 
         return self.result

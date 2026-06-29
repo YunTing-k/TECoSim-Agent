@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.6.12      Yu Huang      1.0      First implementation
 2026.6.13      Yu Huang      1.1      Add if_background and subject fields, replace simulate with scheduler agent type
+2026.6.29      Yu Huang      1.2      Add start_time and elapsed_s fields for subagent duration tracking
 
 Details:
 ---------
@@ -30,7 +31,7 @@ class AgentStatus(str, Enum):
     TIMEOUT = AGENT_TIMEOUT_LABEL
     ERROR = AGENT_ERROR_LABEL
     DONE = AGENT_DONE_LABEL
-
+    UNKNOWN = AGENT_UNKNOWN_LABEL  # defensive: never set at runtime, only used as fallback on resume deserialization
 
 @dataclass
 class SubAgentProgress:
@@ -46,6 +47,8 @@ class SubAgentProgress:
     input_tokens: int = 0
     output_tokens: int = 0
     last_activity: float = 0.0
+    start_time: float = 0.0
+    elapsed_s: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +64,8 @@ class SubAgentProgress:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "last_activity": self.last_activity,
+            "start_time": self.start_time,
+            "elapsed_s": self.elapsed_s,
         }
 
     @classmethod
@@ -78,6 +83,8 @@ class SubAgentProgress:
             input_tokens=d.get("input_tokens", 0),
             output_tokens=d.get("output_tokens", 0),
             last_activity=d.get("last_activity", 0.0),
+            start_time=d.get("start_time", 0.0),
+            elapsed_s=d.get("elapsed_s", 0.0),
         )
 
 

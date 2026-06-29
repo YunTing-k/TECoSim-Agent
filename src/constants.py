@@ -12,6 +12,7 @@ Revision:
 2026.4.14      Yu Huang      1.0      First implementation
 2026.6.13      Yu Huang      1.1      Subagent support: types, status, icons, colors, tool result limits & Add header
 2026.6.14      Yu Huang      1.2      Add: simulator timeout default, agent label renames, subagent step/warn defaults
+2026.6.29      Yu Huang      1.3      Add: QUESTION_NO_CHOICE_LABEL, SUBAGENT_SUMMARIES_NAME
 
 Details:
 ---------
@@ -23,7 +24,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 4
+TECOSIM_AGENT_UPDATE_VERSION: int = 5
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -54,9 +55,11 @@ AGENT_RUNNING_LABEL: str = "running"
 AGENT_TIMEOUT_LABEL: str = "timeout"
 AGENT_ERROR_LABEL: str = "error"
 AGENT_DONE_LABEL: str = "done"
+AGENT_UNKNOWN_LABEL: str = "unknown"  # defensive-only: never set at runtime, used as fallback on resume deserialization
 AGENT_SPAWN_TOOL_NAME: str = "spawn_agent"
 AGENT_ARCHIVED_LABEL: str = "archived"
 SUBAGENT_DUMP_DIR: str = "agents"
+SUBAGENT_SUMMARIES_NAME: str = "summaries.json"
 SUBAGENT_DEFAULT_MAX_STEPS: int = 30
 SUBAGENT_DEFAULT_WARN_STEPS: int = 2
 SUBAGENT_DEFAULT_TIMEOUT_S: int = 600
@@ -96,6 +99,9 @@ DONE_LABEL: str = "DONE"
 TIMEOUT_LABEL: str = "TIMEOUT"
 CANCELLED_LABEL: str = "CANCELLED"
 DENIED_LABEL: str = "DENIED"
+SUBAGENT_PERMISSION_DENIED_INFO: str = "Permission request denied, subagent type does not have access to this tool"
+MAINAGENT_PERMISSION_DENIED_INFO: str = "Permission request denied by user"
+MAINAGENT_PERMISSION_DENIED_PREFIX_INFO: str = "Permission request denied by user with comment:"
 DISABLED_LABEL: str = "DISABLED"
 TRUNCATED_LABEL: str = "TRUNCATED"
 TASK_PENDING_LABEL: str = "pending"
@@ -144,6 +150,7 @@ ASK_USER_QUESTION_MIN_OPTION: int = 2
 QUESTION_OTHER_LABEL = "<Other>"
 QUESTION_OTHER_OPTION_DESC = "Type your ideas"
 QUESTION_RECOMMEND_LABEL = "Recommended"
+QUESTION_NO_CHOICE_LABEL = "(User didn't choose any option)"
 BASH_TIMEOUT_MS_MAX: int = 600000
 BASH_TIMEOUT_MS_DEFAULT: int = 120000
 SIMULATOR_TIMEOUT_DEFAULT_S: int = 3600
@@ -169,7 +176,7 @@ BASH_REMOVAL_LABEL = "BASH_REMOVAL"  # medium-risk (3)
 BASH_CHMOD_LABEL = "BASH_LOW_RISK_CHMOD_OPERATION"  # low-risk (4)
 BASH_CHOWN_LABEL = "BASH_LOW_RISK_CHOWN_OPERATION"  # low-risk (4)
 BASH_FILE_LABEL = "BASH_LOW_RISK_FILE_OPERATION"  # low-risk (4)
-BASH_INLINE_SCRIPT_LABEL = "BASH_LOW_RISK_INLINE_SCRIPT_OPERATION"  # low-risk (4)
+BASH_INLINE_SCRIPT_LABEL = "BASH_LOW_RISK_INLINE_SCRIPT_OPERATION"  # medium-risk (3)
 BASH_REPOSITORY_MODIFY_LABEL = "BASH_REPOSITORY_MODIFY"  # medium-risk (5)
 BASH_STAGE_CHANGE_LABEL = "BASH_STAGE_CHANGE"  # medium-risk (6)
 BASH_UNKNOWN_LABEL = "BASH_UNKNOWN"  # unknown (7)

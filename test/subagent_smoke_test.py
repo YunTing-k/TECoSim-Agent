@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Quick smoke test for SubAgent integration.
-Run with: python test/test_subagent_smoke.py
+Run with: python test/subagent_smoke_test.py
 Requires a configured api_configs.json with a valid model.
 """
 import sys
 import os
-import threading
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -14,7 +13,7 @@ from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import call_tools
 from src.agent.subagent import SubAgent
-from src.agent.progress import AgentStatus, SubAgentProgress
+from src.agent.progress import AgentStatus
 from src.tool.tool_execute import execute_background_agents, check_background_agents
 from src.utility.basic_utils import load_configs
 from src.utility.client import config_client
@@ -179,7 +178,6 @@ def test_background_agent_launch():
     })}, "id": "call_test_bg_001"}
 
     bg_initial_count = len(ctx.background_agents)
-    agent_list_before = dict(ctx.agent_list)
 
     messages = execute_background_agents([tc], ctx, board, progress)
     progress.stop()

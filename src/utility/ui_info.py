@@ -32,6 +32,7 @@ Revision:
 2026.6.11      Yu Huang      2.6      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py
 2026.6.12      Yu Huang      2.7      Add get_subagent_render for live agent progress display
 2026.6.13      Yu Huang      2.8      get_subagent_render: ICON TYPE SUBJECT USAGE single-line, current_tool on separate line
+2026.6.29      Yu Huang      2.9      Terminal subagents show └─N toolcalls · duration instead of last tool name & Rights claim modification
 
 Details:
 ---------
@@ -119,7 +120,7 @@ def log_tecosim_agent_info():
     sys_log.info("Thermo-Electric Coupling Cross-level Display Simulator (TECoSim) Agent")
     sys_log.info("Agent Version: %d.%d.%d" %
                  (TECOSIM_AGENT_MAJOR_VERSION, TECOSIM_AGENT_MINOR_VERSION, TECOSIM_AGENT_UPDATE_VERSION))
-    sys_log.info("Copyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. All Rights Reserved.")
+    sys_log.info("Copyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. Licensed under Apache 2.0.")
     sys_log.info("Developed by Yu Huang at SMIL Lab, School of Integrated Circuits, Shanghai Jiao Tong University.\n")
 
 
@@ -136,7 +137,7 @@ def console_tecosim_agent_info(console: Console):
     colored_banner = vertical_color_grad_text(banner, hex_to_rgb(MAJOR_COLOR1), hex_to_rgb(MAJOR_COLOR2))
 
     dev_info = (
-        "\n\nCopyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. All Rights Reserved.\n"
+        "\n\nCopyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. Licensed under Apache 2.0.\n"
         "Developed by Yu Huang at SMIL Lab, School of Integrated Circuits, Shanghai Jiao Tong University."
     )
     colored_dev_info = vertical_color_grad_text(dev_info, hex_to_rgb(MAJOR_COLOR2), hex_to_rgb(MAJOR_COLOR2))
@@ -198,6 +199,68 @@ class GradientTextColumn(ProgressColumn):
         )
 
 
+def render_subagent_line(p: SubAgentProgress, running_color: str = "") -> Text:
+    """render a single subagent progress line, shared by live display and print summary"""
+    sv = p.status.value
+    _icon_map = {
+        AGENT_PENDING_LABEL: SUBAGENT_PENDING_ICON,
+        AGENT_RUNNING_LABEL: SUBAGENT_IN_PROGRESS_ICON,
+        AGENT_DONE_LABEL: SUBAGENT_DONE_ICON,
+        AGENT_TIMEOUT_LABEL: SUBAGENT_ERROR_ICON,
+        AGENT_ERROR_LABEL: SUBAGENT_ERROR_ICON,
+    }
+    icon = _icon_map.get(sv, SUBAGENT_PENDING_ICON)
+
+    if sv == AGENT_RUNNING_LABEL:
+        color = running_color if running_color else MAJOR_COLOR2
+        icon_style = f"bold {color}"
+        name_style = f"bold {color}"
+        usage_style = f"{color}"
+    elif sv == AGENT_DONE_LABEL:
+        icon_style = f"bold {TASK_COMPLETED_COLOR}"
+        name_style = "bright_black"
+        usage_style = "bright_black"
+    elif sv == AGENT_ERROR_LABEL:
+        icon_style = "bold red"
+        name_style = "bold red"
+        usage_style = "bright_black"
+    elif sv == AGENT_TIMEOUT_LABEL:
+        icon_style = "bold yellow"
+        name_style = "bold yellow"
+        usage_style = "bright_black"
+    elif sv == AGENT_UNKNOWN_LABEL:  # defensive: never set at runtime, fallback on resume deserialization
+        icon_style = "bold yellow"
+        name_style = "bold yellow"
+        usage_style = "bright_black"
+    else:
+        icon_style = "bright_black"
+        name_style = "bright_black"
+        usage_style = "bright_black"
+
+    line = Text()
+    line.append(f" {icon} ", style=icon_style)
+    line.append(f"{p.subagent_type} ", style=name_style)
+    subject_display = p.subject[:SUBAGENT_SUBJECT_CHAR_LIMIT] if len(p.subject) > SUBAGENT_SUBJECT_CHAR_LIMIT else p.subject
+    line.append(f"{subject_display} ", style="bright_black")
+    line.append("↑", style=f"bold {MAJOR_COLOR2}")
+    line.append(f" {p.input_tokens / 1000:.1f} K", style=usage_style)
+    line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
+    line.append(f" {p.output_tokens / 1000:.1f} K", style=usage_style)
+    is_ended = sv in (AGENT_DONE_LABEL, AGENT_ERROR_LABEL, AGENT_TIMEOUT_LABEL, AGENT_UNKNOWN_LABEL)  # UNKNOWN: defensive
+    if is_ended and p.tool_calls_done > 0:
+        elapsed = p.elapsed_s if p.elapsed_s > 0 else (time.time() - p.start_time if p.start_time > 0 else 0)
+        if elapsed >= 60:
+            mins = int(elapsed // 60)
+            secs = int(elapsed % 60)
+            duration_str = f"{mins}m {secs:02d}s"
+        else:
+            duration_str = f"{elapsed:.0f}s"
+        line.append(f"\n └─{p.tool_calls_done} tool calls · {duration_str}", style=name_style)
+    elif p.current_tool:
+        line.append(f"\n └─{p.current_tool}", style="bright_black")
+    return line
+
+
 def get_subagent_render(agent_list: dict[str, SubAgentProgress], now_time: datetime, base_time: datetime,
                         color_list: list[str]) -> Text | None:
     """render subagent progress, same pattern as get_tasks_render"""
@@ -209,56 +272,13 @@ def get_subagent_render(agent_list: dict[str, SubAgentProgress], now_time: datet
     index = int((position_in_period / SUBAGENT_COLOR_PERIOD) * len(color_list)) % len(color_list)
     color = color_list[index]
 
-    _icon_map = {
-        AGENT_PENDING_LABEL: SUBAGENT_PENDING_ICON,
-        AGENT_RUNNING_LABEL: SUBAGENT_IN_PROGRESS_ICON,
-        AGENT_DONE_LABEL: SUBAGENT_DONE_ICON,
-        AGENT_TIMEOUT_LABEL: SUBAGENT_ERROR_ICON,
-        AGENT_ERROR_LABEL: SUBAGENT_ERROR_ICON,
-    }
-
     lines = []
     for aid, p in agent_list.items():
         if p.if_archived:
             continue
-        sv = p.status.value
-        icon = _icon_map.get(sv, SUBAGENT_PENDING_ICON)
+        lines.append(render_subagent_line(p, running_color=color))
 
-        if sv == AGENT_RUNNING_LABEL:
-            icon_style = f"bold {color}"
-            name_style = f"bold {color}"
-            usage_style = f"{color}"
-        elif sv == AGENT_DONE_LABEL:
-            icon_style = f"bold {TASK_COMPLETED_COLOR}"
-            name_style = "bright_black"
-            usage_style = f"bright_black"
-        elif sv == AGENT_ERROR_LABEL:
-            icon_style = f"bold red"
-            name_style = "bold red"
-            usage_style = f"bright_black"
-        elif sv == AGENT_TIMEOUT_LABEL:
-            icon_style = f"bold yellow"
-            name_style = "bold yellow"
-            usage_style = f"bright_black"
-        else:
-            icon_style = "bright_black"
-            name_style = "bright_black"
-            usage_style = f"bright_black"
-
-        line = Text()
-        line.append(f"\n {icon} ", style=icon_style)
-        line.append(f"{p.subagent_type} ", style=name_style)
-        subject_display = p.subject[:SUBAGENT_SUBJECT_CHAR_LIMIT] if len(p.subject) > SUBAGENT_SUBJECT_CHAR_LIMIT else p.subject
-        line.append(f"{subject_display} ", style="bright_black")
-        line.append("↑", style=f"bold {MAJOR_COLOR2}")
-        line.append(f" {p.input_tokens / 1000:.1f} K", style=usage_style)
-        line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
-        line.append(f" {p.output_tokens / 1000:.1f} K", style=usage_style)
-        if p.current_tool:
-            line.append(f"\n └─{p.current_tool}", style="bright_black")
-        lines.append(line)
-
-    return Text("").join(lines) if lines else None
+    return Text("\n").join(lines) if lines else None
 
 
 def loading_spinner(func: Callable, *args,

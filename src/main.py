@@ -132,12 +132,12 @@ if __name__ == '__main__':
     cmd_object.register_skills(ctx.skills, console)  # tools to commands
 
     """query prompts"""
-    ctx.messages = prompt.query_prompts(ctx, ctx.args.resume, console)
-
     """create/resume session"""
     [session_uuid, agent_session] = session.query_session(session_uuid=ctx.args.resume, console=console, cmd_object=cmd_object)
     ctx.session_uuid = session_uuid
     ctx.agent_session = agent_session
+
+    ctx.messages = prompt.query_prompts(ctx, ctx.args.resume, console)
 
     """create/resume scoreboard"""
     board = Scoreboard()  # independent with agent context, clearer semantics

@@ -36,6 +36,8 @@ Revision:
 2026.6.12      Yu Huang      3.1      Upgrade workflow guidelines to CONSTRAINT-level mandate (3+ steps MUST create_task) with Good/Bad examples
 2026.6.13      Yu Huang      3.2      Add subagent display in print_messages + migrate save/read_messages to file_io_support
 2026.6.14      Yu Huang      3.3      Fix: skill description None guard, cached_tokens None guard
+2026.6.29      Yu Huang      3.4      Fix: stream collectors None sentinel, reasoning-only content patch, falsy conversion removal
+2026.6.29      Yu Huang      3.5      Resume display: ask_question answers + spawn_agent summaries (fg/bg)
 
 Details:
 ---------
@@ -63,6 +65,9 @@ from rich.live import Live
 from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
 from src.tool.file_io_support import read_messages, get_write_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
+from src.tool.ask_question import get_answers_render
+from src.agent.progress import SubAgentProgress, AgentStatus
+from src.utility.ui_info import render_subagent_line
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
     get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD,
@@ -431,6 +436,42 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         if display_bash and tool_name == TOOL_NAME_BASH:
                             console.print(get_bash_render(args.get("command", "")))
             elif msg["role"] == "tool":
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_ASK_QUESTION:
+                    try:
+                        result = json.loads(msg["content"])
+                    except (json.JSONDecodeError, TypeError):
+                        result = {}
+                    answers = result.get("answers", [])
+                    if answers:
+                        get_answers_render(answers, console)
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == AGENT_SPAWN_TOOL_NAME:
+                    stats: None | dict[str, Any] = None
+                    try:
+                        path = os.path.join(SESSION_PATH, ctx.session_uuid, SUBAGENT_DUMP_DIR, SUBAGENT_SUMMARIES_NAME)
+                        if os.path.exists(path):
+                            with open(path, "r", encoding="utf-8") as f:
+                                summaries = json.load(f)
+                            stats = summaries.get(msg["tool_call_id"])
+                    except Exception:
+                        pass
+                    if stats is not None:
+                        p = SubAgentProgress(
+                            agent_id=stats.get("agent_id", "(Unknown ID)"),
+                            subagent_type=stats.get("subagent_type", "(Unknown Type)"),
+                            subject=stats.get("subject", "(Unknown Subject)"),
+                            status=AgentStatus(stats.get("status",
+                                AGENT_UNKNOWN_LABEL)),  # defensive: never set at runtime
+                            tool_calls_done=stats.get("tool_calls_done", 0),
+                            elapsed_s=stats.get("elapsed_s", 0.0),
+                            input_tokens=stats.get("input_tokens", 0),
+                            output_tokens=stats.get("output_tokens", 0),
+                            if_archived=True,
+                        )
+                        console.print(render_subagent_line(p))
+                    else:
+                        console.print(f"  {SUBAGENT_PENDING_ICON} spawn_agent N/A", style="bright_black")
+                    continue
                 if display_bash_result and msg.get("tool_call_id"):
                     matched_name = tool_id_map.get(msg["tool_call_id"], "")
                     if matched_name == TOOL_NAME_BASH:
@@ -571,8 +612,9 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
         if assistant_reasoning is None:
             raise RuntimeError("Output and Tool calls in LLM's message are both empty")
         else:
-            sys_log.warning(f"There is only reasoning content in LLM's message")
-            console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
+            sys_log.warning(f"LLM returned only reasoning content, setting content to empty string for API validity")
+            console.print(f"LLM returned only reasoning content, content patched for API validity", style="bold yellow")
+            dumped_msg["content"] = ""
 
     """check context limits"""
     if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
@@ -734,8 +776,8 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     """realization of managing stream LLM responses in main agent-loop"""
 
     """initialize collectors for streaming response"""
-    collected_reasoning = ""
-    collected_content = ""
+    collected_reasoning = None
+    collected_content = None
     collected_tool_calls: dict[int, dict[str, Any]] = {}  # index -> tool_call dict
 
     final_usage = None
@@ -766,10 +808,16 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
 
             # Collect content
             if delta.content:
+                if collected_content is None:
+                    collected_content = ""
                 collected_content += delta.content
 
             # Collect reasoning (for DeepSeek and similar models)
-            collected_reasoning += get_reasoning_stream(delta)
+            reasoning_delta = get_reasoning_stream(delta)
+            if reasoning_delta:
+                if collected_reasoning is None:
+                    collected_reasoning = ""
+                collected_reasoning += reasoning_delta
 
             """collect tool calls"""
             if delta.tool_calls:
@@ -821,9 +869,9 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
         console.print(f"LLM's response has been filtered", style="bold yellow")
 
     """count update"""
-    if collected_reasoning not in (None, ""):  # "" is ignored since default is ""
+    if collected_reasoning is not None:
         ctx.reasoning_prompts += 1
-    if collected_content not in (None, ""):  # "" is ignored since default is ""
+    if collected_content is not None:
         ctx.content_prompts += 1
 
     """check the usage"""
@@ -861,8 +909,8 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     # Build the message dict (matching non-streaming format)
     dumped_msg = {
         "role": "assistant",
-        "content": collected_content if collected_content else None,
-        "reasoning": collected_reasoning if collected_reasoning else None,
+        "content": collected_content,
+        "reasoning": collected_reasoning,
         "tool_calls": converted_tool_calls if converted_tool_calls else None,
     }
 
@@ -882,8 +930,9 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
         if assistant_reasoning is None or assistant_reasoning == "":
             raise RuntimeError("Output and Tool calls in LLM's message are both empty")
         else:
-            sys_log.warning(f"There is only reasoning content in LLM's message")
-            console.print(f"There is only reasoning content in LLM's message", style="bold yellow")
+            sys_log.warning(f"LLM returned only reasoning content, setting content to empty string for API validity")
+            console.print(f"LLM returned only reasoning content, content patched for API validity", style="bold yellow")
+            dumped_msg["content"] = ""
 
     """check context limits"""
     if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
