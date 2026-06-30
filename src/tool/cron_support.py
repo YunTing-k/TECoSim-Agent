@@ -150,7 +150,7 @@ def check_cron_tasks(ctx: AgentContext) -> bool:
         "impossible due to a prior failure.\n\n"
     )
     cron_prompts = (
-        f"You have {len(prompt_list)} cron tasks triggered. Analyze these tasks and handle them accordingly.\n"
+        f"You have `{len(prompt_list)}` cron tasks triggered. Analyze these tasks and handle them accordingly.\n"
         f"{rules}"
         f"## Tasks\n"
     )

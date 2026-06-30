@@ -32,6 +32,7 @@ Revision:
 2026.6.14      Yu Huang      3.0      Fix: foreground/background subagent timeout, tool call arg error handling
 2026.6.21      Yu Huang      3.1      Fix: User addons cannot be inserted between tool results when LLM is deepseek
 2026.6.29      Yu Huang      3.2      Subagent summary: summaries.json for foreground + background resume display
+2026.6.30      Yu Huang      3.3      Add multi-round results truncate method with pydict keys preserved
 
 Details:
 ---------
@@ -56,6 +57,7 @@ from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
 from src.tool.ask_permission import ask_permission_tui
+from src.utility.basic_utils import truncate_tool_result
 from src.agent.subagent import SubAgent
 from src.agent.progress import AgentStatus, SubAgentProgress
 from src.constants import *
@@ -200,9 +202,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
         if not if_tool_mute(func_name):
             progress.console.print(f"Using tool: [{MAJOR_COLOR1}]{func_name}[/{MAJOR_COLOR1}]", style="bright_black")
         results, user_addon = call_tools(func_name, arguments, ctx, board, progress)
-        result_str = json.dumps(results, ensure_ascii=False)
-        if len(result_str) > limit:
-            result_str = result_str[:limit] + f"...[{TRUNCATED_LABEL}: {len(result_str) - limit} chars omitted from tool result]"
+        result_str = truncate_tool_result(results, limit, TOOL_RESULT_TRUNCATION_ROUNDS)
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],

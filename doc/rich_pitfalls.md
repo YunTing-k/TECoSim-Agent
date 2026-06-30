@@ -195,7 +195,7 @@ Define all configurable colors/styles in `constants.py` to avoid hardcoding. Use
 | 编辑 Remove | `#2D1F26` | `#37222C` |
 | 编辑 Add | `#1B2B34` | `#20303B` |
 | Bash 命令 / Command | `#222222` | `#141414` |
-| Bash 结果 / Result | `#282828` | `#1C1C1C` |
+| Bash 结果 / Result | `#222222` | `#141414` |
 
 ---
 

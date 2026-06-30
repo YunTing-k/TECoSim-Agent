@@ -17,9 +17,11 @@ Revision:
 2026.6.9       Yu Huang      1.5      Remove read_line_with_limit to basic_utils.py
 2026.6.11      Yu Huang      1.6      Add format_file_for_llm: XML-wrapped left-aligned pipe-separated line-number output for LLM consumption
 2026.6.11      Yu Huang      1.7      Move rgb_to_hex, hex_to_rgb, grad_color_rgb_list and grad_color_hex_list to basic_utils.py &
-                                       Remove the space noise in readout content line prefix
+                                      Remove the space noise in readout content line prefix
 2026.6.13      Yu Huang      1.8      Add grad_type="sin" to grad_color_hex_list / grad_color_rgb_list for cosine-like smooth animation
 2026.6.14      Yu Huang      1.9      Fix: grad_color zero div guard, bash version check, UUID validation log, file format offset
+2026.6.30      Yu Huang      2.0      Add time formating function & Refactor the Markdown render style with custom theme &
+                                      Add multi-round results truncate method with pydict keys preserved
 
 Details:
 ---------
@@ -37,15 +39,86 @@ import subprocess
 import math
 
 from prompt_toolkit import PromptSession
-from rich.console import Console
-from rich.markdown import Markdown
+import rich.box
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.markdown import Markdown, TableElement, HorizontalRule, ImageItem
+from rich.rule import Rule
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
+from rich.theme import Theme
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
 
+# --- custom markdown element classes ---
+
+class _RoundedTableElement(TableElement):
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        table = Table(
+            box=rich.box.ROUNDED,
+            pad_edge=False,
+            padding=(0, 2),
+            border_style=MARKDOWN_TABLE_COLOR,
+            style="markdown.table.border",
+            show_edge=True,
+            show_lines=True,
+            collapse_padding=True,
+        )
+
+        if self.header is not None and self.header.row is not None:
+            for column in self.header.row.cells:
+                heading = column.content.copy()
+                heading.stylize("markdown.table.header")
+                table.add_column(heading)
+
+        if self.body is not None:
+            for row in self.body.rows:
+                row_content = [element.content for element in row.cells]
+                table.add_row(*row_content)
+
+        yield table
+
+
+class _StyledHorizontalRule(HorizontalRule):
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        style = console.get_style("markdown.hr", default="none")
+        yield Rule(
+            title=Text(f" {AGENT_CONSOLE_ICON} ", style="#CCCCCC"),
+            characters="─",
+            style=style,
+            align="center",
+        )
+        yield Text()
+
+
+class _StyledImageItem(ImageItem):
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        link_style = Style(link=self.link or self.destination or None)
+        title = self.text or Text(self.destination.strip("/").rsplit("/", 1)[-1])
+        if self.hyperlinks:
+            title.stylize(link_style)
+        text = Text.assemble("🌆 ", title, " ")
+        style = console.get_style("markdown.image", default="none")
+        text.stylize(style)
+        yield text
+
+
 class ReasonMD(Markdown):
     """TECoSim agent Markdown render for agent reasoning"""
+
+    elements = dict(Markdown.elements)
+    elements["table_open"] = _RoundedTableElement
+    elements["hr"] = _StyledHorizontalRule
+    elements["image"] = _StyledImageItem
+
     def __init__(self, markup: str):
         super().__init__(markup)
         self.style = REASON_STYLE
@@ -56,6 +129,12 @@ class ReasonMD(Markdown):
 
 class ContentMD(Markdown):
     """TECoSim agent Markdown render for agent content"""
+
+    elements = dict(Markdown.elements)
+    elements["table_open"] = _RoundedTableElement
+    elements["hr"] = _StyledHorizontalRule
+    elements["image"] = _StyledImageItem
+
     def __init__(self, markup: str):
         super().__init__(markup)
         self.style = CONTENT_STYLE
@@ -64,14 +143,81 @@ class ContentMD(Markdown):
         self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
 
 
-class BashMD(Markdown):
-    """TECoSim agent Markdown render for bash command"""
-    def __init__(self, markup: str):
-        super().__init__(markup)
-        self.style = BASH_STYLE
-        self.code_theme = "one-dark"
-        self.hyperlinks = True
-        self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
+def get_console() -> Console:
+    """Create a Console with Markdown theme styles applied."""
+    return Console(theme=Theme({
+        "markdown.h1": MARKDOWN_H1_STYLE,
+        "markdown.h2": MARKDOWN_H2_STYLE,
+        "markdown.h3": MARKDOWN_H3_STYLE,
+        "markdown.h4": MARKDOWN_H4_STYLE,
+        "markdown.h5": MARKDOWN_H5_STYLE,
+        "markdown.h6": MARKDOWN_H6_STYLE,
+        "markdown.code": MARKDOWN_INLINE_CODE_COLOR,
+        "markdown.item.bullet": MARKDOWN_LIST_BULLET_COLOR,
+        "markdown.item.number": MARKDOWN_LIST_NUMBER_COLOR,
+        "markdown.table.header": MARKDOWN_TABLE_HEADER_STYLE,
+        "markdown.block_quote": MARKDOWN_BLOCKQUOTE_STYLE,
+        "markdown.link_url": MARKDOWN_LINK_COLOR,
+        "markdown.hr": MARKDOWN_HR_COLOR,
+        "markdown.image": MARKDOWN_IMAGE_STYLE,
+    }))
+
+
+def truncate_tool_result(results: dict, limit: int, max_rounds: int) -> str:
+    """Iteratively truncate the longest string field until json.dumps fits.
+
+    Each round, the longest string field is cut and appended with a
+    ``<truncated>N chars omitted</truncated>`` marker visible to LLMs.
+    Falls back to hard JSON cut if max_rounds exhausted or results is not a dict.
+
+    Returns the serialized (possibly truncated) JSON string, always <= limit.
+    """
+    import json as _json
+    result_str = _json.dumps(results, ensure_ascii=False)
+    total = len(result_str)
+    if total <= limit:
+        return result_str
+
+    sys_log.debug(f"Tool result ({total} chars) exceeds limit ({limit}), starting truncation")
+
+    if not isinstance(results, dict) or max_rounds <= 0:
+        sys_log.warning(f"Tool result truncation: non-dict type or zero rounds, falling back to hard cut")
+        return _hard_cut(result_str, limit)
+
+    for rnd in range(1, max_rounds + 1):
+        str_fields = {k: v for k, v in results.items() if isinstance(v, str)}
+        if not str_fields:
+            break
+        longest_key = max(str_fields, key=lambda k: len(str_fields[k]))
+        overhead = len(result_str) - len(results[longest_key])
+        budget = max(TOOL_RESULT_TRUNCATION_MIN_BUDGET, limit - overhead - TOOL_RESULT_TRUNCATION_MARKER_RESERVE)
+        if len(results[longest_key]) <= budget:
+            sys_log.debug(f"Truncation round {rnd}: field '{longest_key}' already fits ({len(results[longest_key])} <= {budget}), stopping")
+            break
+        omitted = len(results[longest_key]) - budget
+        marker = f"...{TOOL_RESULT_TRUNCATION_START_LABEL}{omitted} chars omitted{TOOL_RESULT_TRUNCATION_END_LABEL}"
+        results[longest_key] = results[longest_key][:budget] + marker
+        result_str = _json.dumps(results, ensure_ascii=False)
+        sys_log.debug(f"Truncation round {rnd}: field '{longest_key}' {len(results[longest_key])} -> {budget + len(marker)} "
+                      f"chars, total {len(result_str)}/{limit}")
+        if len(result_str) <= limit:
+            sys_log.debug(f"Tool result truncation complete after {rnd} round(s), final size {len(result_str)}")
+            break
+    else:
+        sys_log.warning(f"Tool result truncation: {max_rounds} round(s) exhausted, still {len(result_str)} chars (limit {limit})")
+
+    if len(result_str) > limit:
+        sys_log.warning(f"Tool result truncation: falling back to hard cut ({len(result_str)} -> {limit})")
+        result_str = _hard_cut(result_str, limit)
+    return result_str
+
+
+def _hard_cut(result_str: str, limit: int) -> str:
+    """Hard truncation: cut the JSON string, respecting limit."""
+    marker = f"...{TOOL_RESULT_TRUNCATION_START_LABEL}{len(result_str) - limit} chars omitted{TOOL_RESULT_TRUNCATION_END_LABEL}"
+    if limit > len(marker):
+        return result_str[:limit - len(marker)] + marker
+    return result_str[:limit]
 
 
 def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
@@ -150,6 +296,27 @@ def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int, grad_type: 
             int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t),
             int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))))
     return h_list
+
+
+def format_time_sec(seconds: float | int) -> str:
+    """format seconds into string"""
+    total_seconds = int(seconds)
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
 
 
 def load_configs(configs_path: str, name: str, console: Console):

@@ -26,6 +26,7 @@ Revision:
 2026.6.13      Yu Huang      2.4      Add /agent_list command to display active and archived subagents
 2026.6.14      Yu Huang      2.5      Fix: readonly remove dedup + error log, session list N/A tokens, skill load guard
 2026.6.29      Yu Huang      2.6      Add session title info when removing sessions
+2026.6.30      Yu Huang      2.7      Add time info to agent list builtin command
 
 Details:
 ---------
@@ -510,6 +511,10 @@ def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, consol
             cmd_str.append(f"{p.status.value}", style=status_color)
             cmd_str.append(f", step: ", style="white")
             cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f", tool calls: ", style="white")
+            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
+            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
             cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
             cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
             cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
@@ -537,6 +542,10 @@ def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, consol
             cmd_str.append(f"{p.status.value}", style=status_color)
             cmd_str.append(f", step: ", style="white")
             cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f", tool calls: ", style="white")
+            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
+            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
             cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
             cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
             cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")

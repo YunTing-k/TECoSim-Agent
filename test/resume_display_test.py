@@ -37,7 +37,6 @@ def _make_ctx(with_write: bool = False, with_bash: bool = False,
         "RESUME_DISPLAY_BASH_PREVIEW": with_bash,
         "RESUME_DISPLAY_BASH_RESULT": with_bash_result,
         "RESUME_DISPLAY_SUBAGENT": False,
-        "RESUME_DISPLAY_SUBAGENT_AS_MD": False,
     }
     return ctx
 

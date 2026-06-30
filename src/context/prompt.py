@@ -38,6 +38,7 @@ Revision:
 2026.6.14      Yu Huang      3.3      Fix: skill description None guard, cached_tokens None guard
 2026.6.29      Yu Huang      3.4      Fix: stream collectors None sentinel, reasoning-only content patch, falsy conversion removal
 2026.6.29      Yu Huang      3.5      Resume display: ask_question answers + spawn_agent summaries (fg/bg)
+2026.6.30      Yu Huang      3.6      Revise visuals of messages print (reminders, crons, skills, subagents) when resuming session
 
 Details:
 ---------
@@ -275,17 +276,17 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
         if ctx.task_tool_unuse > ctx.agent_configs["REMIND_TASK_TOOL_GAP"]:
             if_remind = True
             info += (f"You never use any task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) "
-                     f"to manage your workflow during latest {ctx.task_tool_unuse} rounds of tool call or chat.\n")
+                     f"to manage your workflow during latest `{ctx.task_tool_unuse}` rounds of tool call or chat.\n")
             unresolved_tasks = board.list_unresolved_tasks(ctx.agent_id)
             unclaimed_tasks = board.list_unclaimed_tasks()
             if len(unresolved_tasks) == len(unclaimed_tasks) == 0:
                 info += (f"Make sure using `{TOOL_NAME_CREATE_TASK}` to break down the work into milestones and communicate "
                          f"your plan and progress to the user with `{TOOL_NAME_UPDATE_TASK}`\n")
             if len(unresolved_tasks) > 0:
-                info += (f"There are {len(unresolved_tasks)} tasks owned by you but not resolved (Task IDs: "
+                info += (f"There are `{len(unresolved_tasks)}` tasks owned by you but not resolved (Task IDs: "
                          f"{[task["task_id"] for task in unresolved_tasks]})\n")
             if len(unclaimed_tasks) > 0:
-                info += (f"There are {len(unclaimed_tasks)} tasks not claimed by any agent (Task IDs: "
+                info += (f"There are `{len(unclaimed_tasks)}` tasks not claimed by any agent (Task IDs: "
                          f"{[task["task_id"] for task in unclaimed_tasks]})\n")
     if remind_from == "user_input":
         """
@@ -300,12 +301,12 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
         if len(tasks) > 0:
             if_remind = True
             tasks_info = tasks_to_info(tasks, ctx.agent_id)
-            info += (f"There are still {len(tasks)} tasks needs your consideration:\n"
+            info += (f"There are still `{len(tasks)}` tasks needs your consideration:\n"
                      f"{tasks_info}\n"
                      f"Use task tools to manage your workflow\n")
         elif ctx.task_tool_unuse > ctx.agent_configs["REMIND_TASK_CHAT_GAP"]:
             if_remind = True
-            info += (f"You haven't use any task tools to manage your workflow during latest {ctx.task_tool_unuse} rounds "
+            info += (f"You haven't use any task tools to manage your workflow during latest `{ctx.task_tool_unuse}` rounds "
                      f"of chat or tool call. Make sure using task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, "
                      f"`{TOOL_NAME_QUERY_TASK}`) proactively.\n")
 
@@ -329,63 +330,104 @@ def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console)
     return messages
 
 
+_SYSTEM_REMINDER_STR = Text(f"{SYS_REMINDER_ICON}", style=f"{MAJOR_COLOR1}")
+_SYSTEM_REMINDER_STR = _SYSTEM_REMINDER_STR.append(" System reminder", style=f"{MAJOR_COLOR1}")
+_SYSTEM_REMINDER_STR = _SYSTEM_REMINDER_STR.append(" is inserted, content is not displayed", style=f"bright_black")
+_SKILL_STR = Text(f"{SKILL_ICON}", style=f"{MAJOR_COLOR1}")
+_SKILL_STR = _SKILL_STR.append(" Agent skill", style=f"{MAJOR_COLOR1}")
+_SKILL_STR = _SKILL_STR.append(" is invoked, content is not displayed", style=f"bright_black")
+_CRON_STR = Text(f"{CRON_ICON}", style=f"{MAJOR_COLOR1}")
+_CRON_STR = _CRON_STR.append(" Cron tasks", style=f"{MAJOR_COLOR1}")
+_CRON_STR = _CRON_STR.append(" are invoked, content is not displayed", style=f"bright_black")
+_SUBAGENT_STR = Text(f"{SUBAGENT_ICON}", style=f"{MAJOR_COLOR1}")
+_SUBAGENT_STR = _SUBAGENT_STR.append(" Background subagent", style=f"{MAJOR_COLOR1}")
+_SUBAGENT_STR = _SUBAGENT_STR.append(" is retrieved, content is not displayed", style=f"bright_black")
+
+
+def get_msg_render(msg: dict[str, Any], label_start: str, label_end: str, icon: str, info: str, as_md: bool) -> Panel:
+    """get message's render after striping the label"""
+    inner: str = msg["content"]
+    start = inner.find(label_start) + len(label_start)
+    end = inner.rfind(label_end)
+    content = inner[start:end].strip()
+    if not content:
+        content = inner.strip()
+    t = Table(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
+    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+    t.add_column(vertical="top")
+    if as_md and content:
+        render_str = Text(f" {icon} ", style=f"bold {MAJOR_COLOR1}")
+        t.add_row(render_str, ContentMD(f"{info + content}"))
+    else:
+        render_str = Text(f" {icon} ", style=f"bold {MAJOR_COLOR1}")
+        if content:
+            t.add_row(render_str, Text(f"{info + content}", style="white"))
+        else:
+            t.add_row(render_str, Text(""))
+    render = Panel(t, box=rich.box.SQUARE)
+    return render
+
+
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
         as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
         display_sys_reminder = ctx.agent_configs["RESUME_DISPLAY_SYS_REMINDER"]
-        sys_reminder_str = Text("<A system reminder is inserted, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
-        skill_str = Text("<A skill is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
-        cron_str = Text("<Cron tasks are invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         display_cron = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
         display_write = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
         display_bash = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
         display_bash_result = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
         display_subagent = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
-        display_subagent_as_md = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT_AS_MD"]
-        subagent_str = Text("<A subagent is invoked, content is not displayed>", style=f"bold {MAJOR_COLOR1}")
         tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
+                """system reminder"""
+                if (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
+                    if not display_sys_reminder:
+                        console.print(Panel(_SYSTEM_REMINDER_STR, box=rich.box.SQUARE))
+                    else:
+                        console.print(get_msg_render(
+                            msg, SYS_REMINDER_START_LABEL, SYS_REMINDER_END_LABEL, SYS_REMINDER_ICON,
+                            "**(This is a system reminder)** \n\n", as_md))
+                    continue
+                """agent skill"""
+                if ("skill_directory" in msg["content"]) and (SKILL_START_LABEL in msg["content"]) and (SKILL_END_LABEL in msg["content"]):
+                    if not display_skill:
+                        console.print(Panel(_SKILL_STR, box=rich.box.SQUARE))
+                    else:
+                        try:
+                            skill_msg: dict[str, Any] = json.loads(msg["content"]) # msg["content"] = json str: {status, skill_directory, content}
+                        except Exception as e:
+                            sys_log.error(f"Can not convert skill content into pydict with error: {e}")
+                            console.print(f"Can not convert skill content into pydict with error: {e}", style="bold red")
+                            skill_msg = msg["content"]
+                        console.print(get_msg_render(
+                            skill_msg, SKILL_START_LABEL, SKILL_END_LABEL, SKILL_ICON,
+                            "**(This is an invoked agent skill)** \n\n", as_md))
+                    continue
+                """cron task"""
+                if (CRON_START_LABEL in msg["content"]) and (CRON_END_LABEL in msg["content"]):
+                    if not display_cron:
+                        console.print(Panel(_CRON_STR, box=rich.box.SQUARE))
+                    else:
+                        console.print(get_msg_render(
+                            msg, CRON_START_LABEL, CRON_END_LABEL, CRON_ICON,
+                            "**(This is the information of invoked cron tasks)** \n\n", as_md))
+                    continue
+                """background subagent"""
+                # foreground subagent directly return in tool results. This branch is for background subagent with plain text handoff
                 if (SUBAGENT_START_LABEL in msg["content"]) and (SUBAGENT_END_LABEL in msg["content"]):
                     if not display_subagent:
-                        console.print(Panel(subagent_str, box=rich.box.SQUARE))
-                        continue
-                    inner:str = msg["content"]
-                    start = inner.find(SUBAGENT_START_LABEL) + len(SUBAGENT_START_LABEL)
-                    end = inner.rfind(SUBAGENT_END_LABEL)
-                    inner = inner[start:end].strip()
-                    parts = inner.split("\n", 1)
-                    info_line = parts[0].strip()
-                    result = parts[1].strip() if len(parts) > 1 else ""
-                    t = Table(show_header=False, show_edge=False, padding=0,
-                              box=None, collapse_padding=True)
-                    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-                    t.add_column(vertical="top")
-                    if as_md and display_subagent_as_md and result:
-                        render_str = Text(f" {SUBAGENT_IN_PROGRESS_ICON} ", style=f"bold {MAJOR_COLOR1}")
-                        t.add_row(render_str, Panel(ContentMD(f"{info_line}\n{result}"), box=rich.box.SQUARE))
+                        console.print(Panel(_SUBAGENT_STR, box=rich.box.SQUARE))
                     else:
-                        render_str = Text(f" {SUBAGENT_IN_PROGRESS_ICON} ", style=f"bold {MAJOR_COLOR1}")
-                        if result:
-                            t.add_row(render_str, Panel(Text(f"{info_line}\n{result}", style="white"), box=rich.box.SQUARE))
-                        else:
-                            t.add_row(render_str, Text(""))
-                    console.print(t)
+                        console.print(get_msg_render(
+                            msg, SUBAGENT_START_LABEL, SUBAGENT_END_LABEL, SUBAGENT_ICON,
+                            "**(This is the response of a retrieved background subagent)** \n\n", as_md))
                     continue
-                if (not display_sys_reminder) and (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
-                    console.print(Panel(sys_reminder_str, box=rich.box.SQUARE))
-                    continue
-                if (not display_skill and ("skill_directory" in msg["content"]) and (SKILL_START_LABEL in msg["content"])
-                        and (SKILL_END_LABEL in msg["content"])):
-                    console.print(Panel(skill_str, box=rich.box.SQUARE))
-                    continue
-                if not display_cron and (CRON_START_LABEL in msg["content"]) and (CRON_END_LABEL in msg["content"]):
-                    console.print(Panel(cron_str, box=rich.box.SQUARE))
-                    continue
+                """user input"""
                 user_prefix_str = Text("History user input:\n", style=f"bright_black")
                 user_prefix_str.append(f"{AGENT_CONSOLE_ICON} " + msg["content"], style="white")
                 console.print(Panel(user_prefix_str, box=rich.box.SQUARE))

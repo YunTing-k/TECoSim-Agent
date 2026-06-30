@@ -61,7 +61,10 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `SUBAGENT_END_LABEL` | `</subagent>` | 子 Agent 记录内容结束标记 / Marks the end of subagent record content |
 
 > **显示控制 | Display Control**
-> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；通过 `RESUME_DISPLAY_SUBAGENT_AS_MD` 控制子 Agent 记录的 Markdown 渲染。\n> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, `RESUME_DISPLAY_CRONS`, and `RESUME_DISPLAY_SUBAGENT` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews; use `RESUME_DISPLAY_SUBAGENT_AS_MD` for subagent Markdown rendering.
+
+> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；
+
+> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, `RESUME_DISPLAY_CRONS`, and `RESUME_DISPLAY_SUBAGENT` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews.
 
 ---
 
@@ -113,10 +116,10 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `BASH_REMOVAL_R_LABEL` | 中 Med (2) | 递归删除 `rm -r` / Recursive removal |
 | `BASH_REMOVAL_F_LABEL` | 中 Med (2) | 强制删除 `rm -f` / Forced removal |
 | `BASH_REMOVAL_LABEL` | 中 Med (3) | 普通删除 `rm` / Normal removal |
+| `BASH_INLINE_SCRIPT_LABEL` | 中 Med (3) | 内联脚本执行（python -c、node -e 等）/ Inline script execution |
 | `BASH_CHMOD_LABEL` | 低 Low (4) | 修改文件权限 / Change file permissions |
 | `BASH_CHOWN_LABEL` | 低 Low (4) | 修改文件所有者 / Change file owner |
 | `BASH_FILE_LABEL` | 低 Low (4) | 文件操作（cp、mv、mkdir 等）/ File operations |
-| `BASH_INLINE_SCRIPT_LABEL` | 低 Low (4) | 内联脚本执行（python -c、node -e 等）/ Inline script execution |
 | `BASH_REPOSITORY_MODIFY_LABEL` | 中 Med (5) | Git 修改仓库历史 / Git modifies repo history |
 | `BASH_STAGE_CHANGE_LABEL` | 中 Med (6) | Git 暂存更改 / Git stages changes |
 | `BASH_UNKNOWN_LABEL` | 未知 Unknown (7) | 未分类命令 / Unclassified command |
@@ -133,8 +136,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 |----------|---------|---------|
 | `MAJOR_COLOR1` | `#FF9FF3`（亮粉 bright pink） | 强调色、内容图标、进度条终点 / Accent, content icon, progress bar end |
 | `MAJOR_COLOR2` | `#54A0FF`（蓝 blue） | 主色调、命令名称、进度条起点 / Primary color, command names, progress bar start |
-| `REASONING_COLOR` | `#54A0FF` | 推理文本颜色 / Reasoning text color |
-| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色 / Fuzzy match warning color |
+| `REASONING_COLOR` | `MAJOR_COLOR2`（#54A0FF） | 推理文本颜色 / Reasoning text color |
+| `EDIT_FUZZY_WARN_COLOR` | `MAJOR_COLOR1`（#FF9FF3） | 模糊匹配警告颜色 / Fuzzy match warning color |
 | `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | 精确匹配族回退模式标签 / Subtle label for exact-family fallback modes |
 
 ### 图标与符号 | Icons & Symbols
@@ -152,24 +155,58 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `OPTIONS_UNSELECTED_PREFIX` | `` | TUI 选项中未选择项的前缀 / Unselected option prefix in TUI |
 | `SELECTED_QUESTION_OPTION_COLOR` | `#A6CEFF` | TUI 中已选择的选项颜色 / Color for selected option |
 | `TUI_USER_COMMENT_COLOR` | `#A6CEEF` | 用户注释文本颜色 / Color for user comment text |
+| `SYS_REMINDER_ICON` | `⚑` | 系统提醒标记图标 / System reminder icon |
+| `SUBAGENT_ICON` | `▲` | 子 Agent 标记图标 / Subagent marker icon |
+| `SKILL_ICON` | `❖` | 技能标记图标 / Skill marker icon |
+| `CRON_ICON` | `⬟` | 定时任务标记图标 / Cron marker icon |
 
 ### 样式与格式 | Styles & Formatting
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
-| `REASON_ICON_STYLE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
-| `CONTENT_ICON_STYLE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
+| `REASON_ICON_SYLTE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
+| `CONTENT_ICON_SYLTE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
 | `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
-| `BASH_STYLE` | `none` | Bash 命令输出样式 / Bash output style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
 | `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Enter: Submit)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
+
+### Markdown 渲染 | Markdown Rendering
+
+通过 `get_console()` 创建带 `Theme` 的 `Console`，统一控制 Agent 响应中 Markdown 各元素的终端样式：
+The `get_console()` function creates a `Console` with a `Theme` for uniform markdown element styling:
+
+| 常量 Constant | 默认值 Default | 控制的 Rich 样式名 | 用途 Purpose |
+|----------|---------|------|---------|
+| `MARKDOWN_TABLE_COLOR` | `MAJOR_COLOR2`(#54A0FF) | `Table.border_style` | 表格边框线颜色 / Table border line color |
+| `MARKDOWN_TABLE_HEADER_STYLE` | `bold #54A0FF` | `markdown.table.header` | 表头文字样式 / Table header text style |
+| `MARKDOWN_H1_STYLE` | `bold underline #FF9FF3` | `markdown.h1` | H1 标题样式 / H1 heading style |
+| `MARKDOWN_H2_STYLE` | `bold #FF9FF3` | `markdown.h2` | H2 标题样式 / H2 heading style |
+| `MARKDOWN_H3_STYLE` | `#FF9FF3` | `markdown.h3` | H3 标题样式 / H3 heading style |
+| `MARKDOWN_H4_STYLE` | `italic #FFBCF7` | `markdown.h4` | H4 标题样式 / H4 heading style |
+| `MARKDOWN_H5_STYLE` | `italic #FFCAF8` | `markdown.h5` | H5 标题样式 / H5 heading style |
+| `MARKDOWN_H6_STYLE` | `italic #FFD9FA` | `markdown.h6` | H6 标题样式 / H6 heading style |
+| `MARKDOWN_INLINE_CODE_COLOR` | `#61D6D6` | `markdown.code` | 行内代码颜色 / Inline code text color |
+| `MARKDOWN_LIST_BULLET_COLOR` | `#FF9FF3` | `markdown.item.bullet` | 无序列表符号颜色 / Unordered list bullet color |
+| `MARKDOWN_LIST_NUMBER_COLOR` | `#FF9FF3` | `markdown.item.number` | 有序列表数字颜色 / Ordered list number color |
+| `MARKDOWN_BLOCKQUOTE_STYLE` | `italic #696969` | `markdown.block_quote` | 引用块文字与竖线颜色 / Blockquote text & bar color |
+| `MARKDOWN_LINK_COLOR` | `#F5A742` | `markdown.link_url` | 链接文字颜色 / Link text color |
+| `MARKDOWN_HR_COLOR` | `#696969` | `markdown.hr` | 分割线颜色 / Horizontal rule line color |
+| `MARKDOWN_IMAGE_STYLE` | `#F5A742` | `markdown.image` | 图片占位符文字颜色 / Image placeholder text color |
+
+> **实现说明 | Implementation Note**
+> 表格（`_RoundedTableElement`）、分割线（`_StyledHorizontalRule`）、图片占位符（`_StyledImageItem`）三元素因 Rich 默认实现不读取 Theme 样式名，通过子类化覆盖实现自定义外观。
+> The `table_open`, `hr`, and `image` elements are subclassed (at class level in `ReasonMD`/`ContentMD`) because Rich's default implementations do not read their respective Theme style names.
+> 
+> `CodeBlock` 的 `style_name = "markdown.code_block"` 同样不会被读取——代码块外观仅由 `code_theme`（pygments 主题）和 `Syntax(padding=...)` 控制。
+> `CodeBlock`'s `style_name = "markdown.code_block"` is likewise ignored — code block appearance is solely controlled by `code_theme` (pygments theme) and `Syntax(padding=...)`.
+
 
 ### 任务看板 | Task Board (Scoreboard)
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
-| `TASK_DISPLAYS_BEFORE_ARCHIVED` | `3` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
+| `TASK_DISPLAYS_BEFORE_ARCHIVED` | `6` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
 | `MUTE_TASK_OP_INFO` | `true` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
 | `TASK_EMPTY_TITLE` | `` | 空任务的占位标题 / Placeholder title for empty task |
 | `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
@@ -182,8 +219,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `TASK_PENDING_WITH_OWNER_ICON` | `●` | 有归属待处理/进行中任务图标 / Icon for pending/in-progress task with owner |
 | `TASK_COMPLETED_ICON` | `✓` | 已完成任务图标 / Icon for completed task |
 | `TASK_DELETED_ICON` | `✗` | 已删除任务图标 / Icon for deleted task |
-| `TASK_PENDING_COLOR_START` | `#545454` | 待处理任务渐变起始色 / Gradient start for pending tasks |
-| `TASK_PENDING_COLOR_END` | `#DBDBDB` | 待处理任务渐变终止色 / Gradient end for pending tasks |
+| `TASK_PENDING_COLOR_START` | `#202020` | 待处理任务渐变起始色 / Gradient start for pending tasks |
+| `TASK_PENDING_COLOR_END` | `#808080` | 待处理任务渐变终止色 / Gradient end for pending tasks |
 | `TASK_IN_PROGRESS_COLOR_START` | `#FF9FF3`（亮粉） | 进行中任务渐变起始色 / Gradient start for in-progress tasks |
 | `TASK_IN_PROGRESS_COLOR_END` | `#54A0FF`（蓝） | 进行中任务渐变终止色 / Gradient end for in-progress tasks |
 | `TASK_COMPLETED_COLOR` | `#8CDCA0`（绿） | 已完成任务颜色 / Color for completed tasks |
@@ -201,7 +238,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `CRON_LISTEN_COLOR_END` | `#54A0FF`（蓝） | Cron 监听渐变终止色 / Cron listen gradient end |
 | `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
 | `CRON_LISTEN_COLOR_PERIOD` | `1.75` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
-| `KEY_LISTEN_SLEEP_TIME_MS` | `100` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
+| `KEY_LISTEN_SLEEP_TIME_MS` | `30` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
 
 ### 会话标题 | Session Titles
 
@@ -291,20 +328,18 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `MATCH_MODE_TRIMMED_BOUNDARY` | `trimmed_boundary` | 边界裁剪匹配（首尾空白去除）/ Boundary trimmed match (strip leading/trailing whitespace) |
 | `MATCH_MODE_DESC` | _(字典 dict)_ | 匹配模式枚举到 UI 显示的映射 / Map from match mode enum to human-readable description |
 | `MATCH_MODE_EXACT_FAMILY` | `{exact, quote_norm, unicode_escape}` | 精确匹配族（TUI 中灰色标签，非橙色警告）/ Exact match family (grey label in TUI, not orange warning) |
-| `_PUNCTUATION_MAP` | (6 项 `dict`) | Unicode 标点归一化表：en-dash/em-dash→连字符，NBSP/全角空格→普通空格，弯曲引号→直引号 / Punctuation normalization map: en/em-dashes, NBSP, fullwidth-space, curly quotes → ASCII |
 
 ### Bash 视图 | Bash View (Command Preview & Result Output)
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `BASH_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
-| `BASH_VIEW_LINE_NUM_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
 | `BASH_VIEW_GUTTER_BG` | `#222222`（深灰 dark grey） | Bash 命令预览行号栏背景色 / Bash command gutter background |
 | `BASH_VIEW_PADDING_LINES` | `1` | Bash 命令预览首尾空白过渡行数 / Blank padding lines above/below command block |
-| `BASH_RESULT_GUTTER_BG` | `#282828`（中灰 mid grey） | Bash 结果输出行号栏背景色 / Bash result gutter background |
-| `BASH_RESULT_CONTENT_BG` | `#1C1C1C`（浅黑 light black） | Bash 结果输出内容区背景色 / Bash result content background |
-| `BASH_RESULT_MAX_LINES` | `20` | Bash 结果预览最大显示行数（超出截断）/ Max lines to display before truncation |
-| `BASH_RESULT_MAX_CHARS` | `1200` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
+| `BASH_RESULT_GUTTER_BG` | `#222222`（深灰 dark grey） | Bash 结果输出行号栏背景色 / Bash result gutter background |
+| `BASH_RESULT_CONTENT_BG` | `#141414`（深黑 dark black） | Bash 结果输出内容区背景色 / Bash result content background |
+| `BASH_RESULT_MAX_LINES` | `60` | Bash 结果预览最大显示行数（超出截断）/ Max lines to display before truncation |
+| `BASH_RESULT_MAX_CHARS` | `1500` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
 | `BASH_RESULT_PADDING_LINES` | `1` | Bash 结果预览首尾空白过渡行数 / Blank padding lines above/below result block |
 
 ### Write 文件预览 | Write File Preview
@@ -314,7 +349,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `WRITE_VIEW_GUTTER_BG` | `#222222`（深灰 dark grey） | Write 预览行号栏背景色 / Write preview gutter background |
 | `WRITE_VIEW_CONTENT_BG` | `#141414`（线黑 line black） | Write 预览内容区背景色 / Write preview content background |
 | `WRITE_VIEW_PADDING_LINES` | `1` | Write 预览首尾空白过渡行数 / Blank padding lines above/below write preview |
-| `WRITE_VIEW_MAX_LINES` | `30` | Write 预览最大显示行数（超出截断）/ Max lines to display before truncation |
+| `WRITE_VIEW_MAX_LINES` | `40` | Write 预览最大显示行数（超出截断）/ Max lines to display before truncation |
 | `WRITE_VIEW_MAX_CHARS` | `2000` | Write 预览最大显示字符数（超出截断）/ Max chars to display before truncation |
 
 ### URL 缓存 | URL Cache
@@ -342,7 +377,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `AGENT_TIMEOUT_LABEL`   | `"timeout"`     | 子 Agent 超时终止 / Subagent timed out |
 | `AGENT_ERROR_LABEL`     | `"error"`       | 子 Agent 异常终止 / Subagent errored |
 | `AGENT_DONE_LABEL`      | `"done"`        | 子 Agent 正常完成 / Subagent done |
-| `AGENT_ARCHIVED_LABEL`  | `"archived"`    | 子 Agent 已归档（不再显示）/ Subagent archived |
+| `AGENT_UNKNOWN_LABEL`   | `"unknown"`     | 子 Agent 状态未知 / Subagent status unknown |
 | `AGENT_SPAWN_TOOL_NAME` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
 
 #### 工具与配置 | Tools & Config
@@ -350,13 +385,22 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `SUBAGENT_DUMP_DIR` | `"agents"` | 子 Agent 数据持久化子目录名 / Subagent dump subdirectory name |
-| `SUBAGENT_POLL_INTERVAL_S` | `0.2` | 子 Agent 进度轮询间隔（秒）/ Subagent progress poll interval |
+| `SUBAGENT_SUMMARIES_NAME` | `"summaries.json"` | 子 Agent 摘要持久化文件名 / Subagent summaries file name |
+| `SUBAGENT_DEFAULT_MAX_STEPS` | `30` | 子 Agent 默认最大步数 / Subagent default max steps |
+| `SUBAGENT_DEFAULT_WARN_STEPS` | `2` | 子 Agent 默认提前提醒步数 / Subagent default early warning steps |
+| `SUBAGENT_DEFAULT_TIMEOUT_S` | `600` | 子 Agent 默认超时（秒）/ Subagent default timeout (seconds) |
+| `SUBAGENT_DEFAULT_MODEL_TYPE` | `"fast"` | 子 Agent 默认模型类型 / Subagent default model type |
 | `SUBAGENT_RESULT_LOG_CHAR_LIMIT` | `200` | 子 Agent 结果日志截断长度 / Subagent result log char limit |
 | `SUBAGENT_TOOL_DISPLAY_MAX_LEN` | `70` | 工具调用显示参数值最大长度 / Max len for tool display argument value |
 | `SUBAGENT_PROMPT_LOG_CHAR_LEN` | `200` | 初始化日志中 prompt 预览长度 / Prompt preview length in init log |
 | `SUBAGENT_SUBJECT_CHAR_LIMIT` | `40` | 子 Agent subject 字段最大字符数 / Subagent subject field char limit |
 | `SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `50000` | 子 Agent 工具结果默认截断字符数 / Default char limit for subagent tool results |
-| `MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `10000` | 主 Agent 工具结果默认截断字符数 / Default char limit for main agent tool results |
+| `MAIN_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `20000` | 主 Agent 工具结果默认截断字符数 / Default char limit for main agent tool results |
+| `TOOL_RESULT_TRUNCATION_ROUNDS` | `6` | 迭代截断最大轮数，耗尽后退到硬截断 / Max rounds for iterative field-level truncation |
+| `TOOL_RESULT_TRUNCATION_MIN_BUDGET` | `1024` | 被截断字段保底字符数，防止截成空串 / Floor budget for truncated field content |
+| `TOOL_RESULT_TRUNCATION_MARKER_RESERVE` | `60` | 为 `<truncated>` 标记预留字符数 / Char reserve for truncation marker overhead |
+| `TOOL_RESULT_TRUNCATION_START_LABEL` | `<truncated>` | 截断标记起始标签 / Truncation marker start tag |
+| `TOOL_RESULT_TRUNCATION_END_LABEL` | `</truncated>` | 截断标记结束标签 / Truncation marker end tag |
 
 #### TUI 显示 | TUI Display
 
@@ -371,6 +415,14 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `SUBAGENT_COLOR_GRADIENT` | `128` | 渐变阶梯数 / Gradient step count |
 | `SUBAGENT_COLOR_PERIOD` | `4.0` | 颜色循环周期（秒）/ Color cycle period (seconds) |
 
+#### 权限控制 | Permission Control
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `SUBAGENT_PERMISSION_DENIED_INFO` | `"Permission request denied, subagent type does not have access to this tool"` | 子 Agent 权限拒绝时的提示信息 / Info shown when subagent permission is denied |
+| `MAINAGENT_PERMISSION_DENIED_INFO` | `"Permission request denied by user"` | 主 Agent 权限拒绝时的提示信息 / Info shown when main agent permission is denied by user |
+| `MAINAGENT_PERMISSION_DENIED_PREFIX_INFO` | `"Permission request denied by user with comment:"` | 主 Agent 权限拒绝并附注释时的前缀 / Prefix when main agent permission is denied with user comment |
+
 ---
 
 ## 其他关键常量 | Other Key Constants
@@ -382,7 +434,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `2` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `1` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `6` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
@@ -409,6 +461,7 @@ These constants control the agent's core identity and basic behavior:
 | `QUESTION_OTHER_LABEL` | `"<Other>"` | 用户自定义选项标签 / Custom option label |
 | `QUESTION_OTHER_OPTION_DESC` | `"Type your ideas"` | 自定义选项描述 / Custom option description |
 | `QUESTION_RECOMMEND_LABEL` | `"Recommended"` | 推荐选项标签 / Recommended option label |
+| `QUESTION_NO_CHOICE_LABEL` | `"(User didn't choose any option)"` | 用户未选择选项时的占位文本 / Placeholder when user chooses no option |
 | `GLOB_FILE_ENTRIES_DEFAULT` | `250` | `glob_file` 默认返回条目数 / Default entries for glob_file |
 | `GREP_FILE_HEAD_LIMIT_DEFAULT` | `250` | `grep_file` 默认结果数上限 / Default head limit for grep_file |
 | `READ_FILE_ENCODING_DEFAULT` | `utf-8` | `read_file` 默认编码 / Default encoding for read_file |
@@ -419,6 +472,8 @@ These constants control the agent's core identity and basic behavior:
 | `WEB_SEARCH_QUERY_MIN` | `2` | 网络搜索最小查询字符数 / Min query chars for web search |
 | `BASH_TIMEOUT_MS_DEFAULT` | `120000` (2 min) | Bash 命令默认超时。Agent 的 `bash` 工具若不指定 timeout 参数则使用此值 / Default bash command timeout; used when no timeout argument is given |
 | `BASH_TIMEOUT_MS_MAX` | `600000` (10 min) | Bash 命令最大超时上限。Agent 拒绝任何超过此值的 timeout 参数，防止误设过长超时 / Max bash command timeout; the agent rejects any timeout exceeding this limit |
+| `SIMULATOR_TIMEOUT_DEFAULT_S` | `3600` (1 hour) | 仿真运行默认超时（秒）/ Default simulation timeout (seconds) |
+| `DEFAULT_TIMEOUT_MS` | `1000000` (~16 min) | LLM API 请求默认超时（毫秒）/ Default LLM API request timeout (ms) |
 | `READ_FILE_MAX_LINE` | `10000` | 单次读取文件最大行数。超过此行数后不再继续读取 / Max lines per file read; stops reading beyond this limit |
 | `READ_FILE_LINE_CHAR_LIMIT` | `2000` | LLM 输出单行最大字符数（超出截断并标记）/ Max chars per line in LLM output (truncated with marker) |
 | `READ_LOG_MAX_LINE` | `10000` | 单次读取日志最大行数。与 `READ_FILE_MAX_LINE` 不同，此值专门针对仿真日志读取 / Max lines per log read (separate from `READ_FILE_MAX_LINE`, specific to simulation logs) |

@@ -317,7 +317,7 @@ class AgentContext:
             if "agent_list" in in_dict:
                 self.agent_list = {aid: SubAgentProgress.from_dict(d) for aid, d in in_dict["agent_list"].items()}
                 for p in self.agent_list.values():
-                    if not p.if_archived:
+                    if not p.if_archived: # non-archived agent in file config when resuming means error (run killed etc.)
                         p.status = AgentStatus.ERROR
                         p.if_archived = True
             if not mute:

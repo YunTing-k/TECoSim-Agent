@@ -19,6 +19,7 @@ Revision:
 2026.6.21      Yu Huang      1.7      Fix: User addons cannot be inserted between tool results when LLM is deepseek
 2026.6.29      Yu Huang      1.8      Expose start_time for per-agent summary display in execute_subagents & Add GNU bash
                                       hint to subagent system prompt (avoid PowerShell on Windows)
+2026.6.30      Yu Huang      1.9      Add multi-round results truncate method with pydict keys preserved
 
 Details:
 ---------
@@ -41,6 +42,7 @@ from src.context.prompt import get_reasoning, deepseek_support
 from src.tool.scoreboard import Scoreboard
 from src.tool import tool_def
 from src.tool.tool_dispatch import call_tools
+from src.utility.basic_utils import truncate_tool_result
 from src.agent.progress import AgentStatus, SubAgentProgress, SUPPORTED_TYPES, PERMISSION_PRESETS, SUPPORTED_TYPES_DESC
 from src.constants import *
 
@@ -48,7 +50,7 @@ sys_log = logging.getLogger('logger')
 
 # subagent config keys read from ctx.agent_configs at init time
 _CONFIG_KEY_MAX_STEPS = "SUBAGENT_MAX_STEPS"
-_CONFIG_KEY_WARN_STEPS = "SUBAGENT_WARN_STEPS"
+_CONFIG_KEY_WARN_STEPS = "SUBAGENT_EARLY_WARN_STEPS"
 _CONFIG_KEY_MODEL_TYPE = "SUBAGENT_MODEL_TYPE"
 _CONFIG_KEY_TIMEOUT_S = "SUBAGENT_TIMEOUT_S"
 _CONFIG_KEY_API_RETRY = "SUBAGENT_API_RETRY_COUNT"
@@ -506,11 +508,9 @@ class SubAgent:
             results, user_addon = call_tools(
                 func_name, arguments, self.ctx, self.board, self._dummy_progress
             )
-            result_str = json.dumps(results, ensure_ascii=False)
-            if len(result_str) > self._tool_result_limit:
-                result_str = result_str[:self._tool_result_limit] + (
-                    f"...[{TRUNCATED_LABEL}: {len(result_str) - self._tool_result_limit} chars omitted from tool result]"
-                )
+            result_str = truncate_tool_result(
+                results, self._tool_result_limit, TOOL_RESULT_TRUNCATION_ROUNDS
+            )
             self.ctx.messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call["id"],

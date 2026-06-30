@@ -39,6 +39,7 @@ Revision:
 2026.6.13      Yu Huang      3.6      Subagent integration: spawn, agent_list registry, background agent orchestration,
 2026.6.14      Yu Huang      3.7      Fix: summary trigger >= with if_summarized guard, tool calls spinner board pass args
                                       stale agent cleanup on session resume
+2026.6.30      Yu Huang      3.8      Refactor the Markdown render style with custom theme
 
 Details:
 ---------
@@ -51,14 +52,13 @@ import os
 import openai
 
 from pathlib import Path
-from rich.console import Console
 from src.utility import sys_logger, cli_args, ui_info, client, command, agent_listen
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled
 from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
-from src.utility.basic_utils import load_configs
+from src.utility.basic_utils import load_configs, get_console
 from src.constants import *
 
 """program's parser"""
@@ -68,7 +68,7 @@ arguments = cli_args.tecosim_agent_args()
 sys_log = sys_logger.Logger(str(os.path.basename(__file__))[0:-3], arguments.log)
 
 """create console"""
-console = Console()
+console = get_console()
 
 if __name__ == '__main__':
     """Entry point for session operations"""

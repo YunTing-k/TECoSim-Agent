@@ -62,7 +62,7 @@ from typing import Callable, Any
 from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
-from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list
+from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec
 from src.agent.progress import SubAgentProgress
 from src.constants import *
 
@@ -249,12 +249,7 @@ def render_subagent_line(p: SubAgentProgress, running_color: str = "") -> Text:
     is_ended = sv in (AGENT_DONE_LABEL, AGENT_ERROR_LABEL, AGENT_TIMEOUT_LABEL, AGENT_UNKNOWN_LABEL)  # UNKNOWN: defensive
     if is_ended and p.tool_calls_done > 0:
         elapsed = p.elapsed_s if p.elapsed_s > 0 else (time.time() - p.start_time if p.start_time > 0 else 0)
-        if elapsed >= 60:
-            mins = int(elapsed // 60)
-            secs = int(elapsed % 60)
-            duration_str = f"{mins}m {secs:02d}s"
-        else:
-            duration_str = f"{elapsed:.0f}s"
+        duration_str = format_time_sec(elapsed)
         line.append(f"\n └─{p.tool_calls_done} tool calls · {duration_str}", style=name_style)
     elif p.current_tool:
         line.append(f"\n └─{p.current_tool}", style="bright_black")
@@ -429,16 +424,16 @@ def loading_spinner_with_board(func: Callable, *args,
     progress._outer_live = None  # placeholder, set after Live is created
 
     def make_group() -> Group:
-        agent_render = None
+        subagent_render = None
         if agent_list is not None:
-            agent_render = get_subagent_render(agent_list, datetime.now(), base_time, subagent_color_list)
+            subagent_render = get_subagent_render(agent_list, datetime.now(), base_time, subagent_color_list)
         task_str = get_tasks_render(board.list_tasks(), datetime.now(), base_time, task_color_list1, task_color_list2)
 
         final_str = Text("")
 
         parts = [progress]
-        if agent_render is not None:
-            final_str.append(agent_render)
+        if subagent_render is not None:
+            final_str.append(subagent_render)
             final_str.append(Text("\n"))
         if task_str.plain.strip():
             final_str.append(Text("\n"))

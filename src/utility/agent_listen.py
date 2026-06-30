@@ -12,6 +12,7 @@ Revision:
 2026.6.7       Yu Huang      1.0      First implementation
 2026.6.13      Yu Huang      1.1      Add background agent monitoring: entry condition + check_background_agents in listen loop
 2026.6.13      Yu Huang      1.2      Add subagent progress render in listen TUI (between cron and task)
+2026.6.30      Yu Huang      1.3      Add time info string in listen TUI
 
 Details:
 ---------
@@ -36,7 +37,7 @@ from src.tool.tool_execute import check_background_agents
 from src.utility.ui_info import get_subagent_render
 from src.agent.progress import SubAgentProgress
 from src.constants import *
-from src.utility.basic_utils import grad_color_hex_list
+from src.utility.basic_utils import grad_color_hex_list, format_time_sec
 
 sys_log = logging.getLogger('logger')
 
@@ -77,7 +78,8 @@ def get_listen_title(now_time: datetime, base_time: datetime, color_list: list[s
     title_str = Text(f"{AGENT_CONSOLE_ICON}", style=f"bold {color}")
     title_str = title_str.append(f" TECoSim agent is in ", style=f"bright_black")
     title_str = title_str.append(f"listening mode", style=f"bold {color}")
-    title_str = title_str.append(f" ... \n", style=f"bright_black")
+    title_str = title_str.append(f" ({now_time.strftime("%H:%M:%S")}) · ", style=f"bright_black")
+    title_str = title_str.append(f"{format_time_sec(time_diff)}\n", style=f"bold {color}")
     return title_str
 
 

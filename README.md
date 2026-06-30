@@ -298,6 +298,7 @@ TECoSimAgent/
 │   ├── configuration.md         # 完整配置参数参考 / Full configuration reference
 │   ├── constants_reference.md   # constants.py 完整参考 / Complete constants.py reference
 │   ├── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
+│   ├── bash_comparison.md       # Bash 命令风险检测对比 / Bash risk evaluation comparison
 │   ├── rich_pitfalls.md         # Rich 库开发注意事项 / Rich development pitfalls
 │   ├── task_management_comparison.md  # 任务管理机制对比研究 / Task management comparison
 │   ├── subagent_comparison.md   # Subagent 架构对比分析 / Subagent architecture comparison

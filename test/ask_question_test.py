@@ -176,7 +176,6 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
-            "RESUME_DISPLAY_SUBAGENT_AS_MD": False,
         }
 
         answers = [{
@@ -220,7 +219,6 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
-            "RESUME_DISPLAY_SUBAGENT_AS_MD": False,
         }
 
         content = json.dumps({"status": "SUCCESS", "answers": [], "info": "Collected 0 answers from user"})
@@ -258,7 +256,6 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
-            "RESUME_DISPLAY_SUBAGENT_AS_MD": False,
         }
 
         messages = [

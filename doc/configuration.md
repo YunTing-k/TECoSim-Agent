@@ -96,7 +96,6 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RIPGREP_TIMEOUT_S` | 文件搜索超时（秒）/ File search (ripgrep) timeout (seconds)                                                                                   |
 | `MCP_INIT_TIMEOUT_S` | MCP 初始化超时（秒）/ MCP init timeout (seconds)                                                                                             |
 | `MCP_TIMEOUT_S` | MCP 调用超时（秒）/ MCP call timeout (seconds)                                                                                              |
-| `REMIND_UNRESOLVED_TASK` | 会话恢复时是否提醒未解决的任务 / Whether to remind unresolved tasks on session resume                                                               |
 | `SKILL_DESC_CHAR_LIMIT` | 技能描述最大字符数 / Skill description char limit                                                                                             |
 | `WEB_FETCH_MODEL` | 网页内容总结使用的模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for web fetch summarization                                                |
 | `WEB_FETCH_LLM_CHAR_LIMIT` | 网页获取内容传给 LLM 的最大字符数 / Web fetch content char limit for LLM                                                                           |
@@ -114,12 +113,12 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session                                                        |
 | `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session                                               |
 | `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session                                                |
-| `RESUME_DISPLAY_SUBAGENT_AS_MD` | 恢复会话时是否以 Markdown 格式显示子 Agent 运行记录 / Whether to display subagent records as Markdown when resuming session                           |
 | `SUBAGENT_MAX_STEPS` | 子 Agent 最大步骤数（LLM 请求次数），超出后自动终止 / Max steps for subagents                                                                            |
 | `SUBAGENT_MODEL_TYPE` | 子 Agent 模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for subagents                                                               |
 | `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds                                                                                |
 | `SUBAGENT_API_RETRY_COUNT` | 子 Agent API 临时故障重试次数 / Subagent API retry count on transient failures                                                                |
 | `SUBAGENT_TOOL_RESULT_CHAR_LIMIT` | 子 Agent 工具结果最大字符数（超出截断）/ Subagent tool result char limit (truncated if exceeded)                                                     |
+| `SUBAGENT_EARLY_WARN_STEPS` | 子 Agent 提前提醒步数（剩余步数低于此值时发出警告，默认 2）/ Subagent early warning steps (warn when remaining steps fall below this, default 2)                    |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）
@@ -178,7 +177,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | 子 Agent SubAgent | 子 Agent 状态、图标、色彩渐变、轮询间隔等参数 / Subagent status labels, icons, color gradients, poll intervals |
 
 > **子 Agent 参数 | SubAgent Parameters**
-> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `100`）：子 Agent 最多向 LLM 发起的请求轮数。达到上限后返回 `[steps exhausted]` 提示
+> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `30`）：子 Agent 最多向 LLM 发起的请求轮数。通过 `agent_configs.json` 中的 `SUBAGENT_MAX_STEPS` 可覆盖此默认值 / Overridable via `SUBAGENT_MAX_STEPS` in `agent_configs.json`
 > - `SUBAGENT_DEFAULT_MODEL_TYPE`（默认 `"fast"`）：`"fast"` 使用 FAST_MODEL_* 配置，`"medium"` 使用 MEDIUM_MODEL_* 配置，`"main"` 使用 MAIN_MODEL_* 配置
 > - `SUBAGENT_API_RETRY_COUNT`（默认 `2`）：子 Agent 遇到 API 临时故障时的重试次数
 > - `SUBAGENT_TOOL_RESULT_CHAR_LIMIT`（默认 `50000`）：子 Agent 工具结果超过此字符数时截断，防止子 Agent 输出撑爆主上下文
