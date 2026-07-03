@@ -40,6 +40,7 @@ Revision:
 2026.6.29      Yu Huang      3.5      Resume display: ask_question answers + spawn_agent summaries (fg/bg)
 2026.6.30      Yu Huang      3.6      Revise visuals of messages print (reminders, crons, skills, subagents) when resuming session
 2026.7.3       Yu Huang      3.7      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
+2026.7.3       Yu Huang      3.8      Fix: overflow of printing LLM response when a line is too long
 
 Details:
 ---------
@@ -352,7 +353,7 @@ def get_msg_render(msg: str, icon: str, info: str, as_md: bool) -> Panel:
     content = msg.strip()
     t = Table(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-    t.add_column(vertical="top")
+    t.add_column(vertical="top", overflow="fold")
     if as_md and content:
         render_str = Text(f" {icon} ", style=f"bold {MAJOR_COLOR1}")
         t.add_row(render_str, ContentMD(f"{info + content}"))
@@ -453,7 +454,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
                     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-                    t.add_column(vertical="top")
+                    t.add_column(vertical="top", overflow="fold")
                     if as_md:
                         t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
                                   ReasonMD("{Think}: " + assistant_reasoning))
@@ -470,7 +471,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     t = Table(show_header=False, show_edge=False, padding=0,
                               box=None, collapse_padding=True)
                     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-                    t.add_column(vertical="top")
+                    t.add_column(vertical="top", overflow="fold")
                     if as_md:
                         t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(msg["content"]))
                     else:
@@ -785,7 +786,7 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
         t = Table(show_header=False, show_edge=False, padding=0,
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t.add_column(vertical="top")
+        t.add_column(vertical="top", overflow="fold")
         if show_reason:
             if as_md:
                 t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
@@ -807,7 +808,7 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
         t = Table(show_header=False, show_edge=False, padding=0,
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t.add_column(vertical="top")
+        t.add_column(vertical="top", overflow="fold")
         if as_md:
             t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(collected_content))
         else:
@@ -835,7 +836,7 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         t = Table(show_header=False, show_edge=False, padding=0,
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t.add_column(vertical="top")
+        t.add_column(vertical="top", overflow="fold")
         parts.append(Text("\n"))
         if show_reason:
             reason_lines = collected_reasoning.split('\n')
@@ -888,7 +889,7 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
         t = Table(show_header=False, show_edge=False, padding=0,
                   box=None, collapse_padding=True)
         t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t.add_column(vertical="top")
+        t.add_column(vertical="top", overflow="fold")
         if as_md:
             t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(display_content))
         else:

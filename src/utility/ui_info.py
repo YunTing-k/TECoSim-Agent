@@ -33,6 +33,7 @@ Revision:
 2026.6.12      Yu Huang      2.7      Add get_subagent_render for live agent progress display
 2026.6.13      Yu Huang      2.8      get_subagent_render: ICON TYPE SUBJECT USAGE single-line, current_tool on separate line
 2026.6.29      Yu Huang      2.9      Terminal subagents show └─N toolcalls · duration instead of last tool name & Rights claim modification
+2026.7.3       Yu Huang      3.0      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -55,14 +56,13 @@ from rich.text import Text
 from rich.style import Style
 from rich.live import Live
 from rich.progress import Progress, ProgressColumn, SpinnerColumn, TimeElapsedColumn
-from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.formatted_text import ANSI
 from typing import Callable, Any
 from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
-from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec
+from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec, create_clean_input, flush_terminal_input
 from src.agent.progress import SubAgentProgress
 from src.constants import *
 
@@ -569,6 +569,7 @@ def resume_from_permission(progress):
 def get_user_prompt(ctx: AgentContext) -> str:
     """get the user prompt text"""
     if ctx.agent_session:
+        flush_terminal_input()
         if ctx.agent_configs["RANDOM_PROGRESS_TITLE"]:
             prefix = random.choice(USER_PROMPT_PREFIX_LIST)
         else:
@@ -611,11 +612,10 @@ def request_tui(console: Console, title: str, request_desc: str, request_detail:
     active_idx = 0  # default active option
 
     while True:
-        input_device = create_input()
+        input_device = create_clean_input()
         action = None
         try:
             with input_device.raw_mode():
-                input_device.flush_keys()
                 with Live(render_request(title, request_desc, request_detail, active_idx),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:
@@ -690,11 +690,10 @@ def exit_tui(ctx: AgentContext, console: Console) -> bool:
     active_idx = 0  # default active option
 
     while True:
-        input_device = create_input()
+        input_device = create_clean_input()
         action = None
         try:
             with input_device.raw_mode():
-                input_device.flush_keys()
                 with Live(render_exit(ctx, active_idx),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:

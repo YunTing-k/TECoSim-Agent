@@ -23,6 +23,7 @@ Revision:
 2026.6.30      Yu Huang      2.0      Add time formating function & Refactor the Markdown render style with custom theme &
                                       Add multi-round results truncate method with pydict keys preserved
 2026.7.1       Yu Huang      2.1      Support of plain text of HTML tag rendering in LLM's response
+2026.7.3       Yu Huang      2.2      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -40,6 +41,7 @@ import subprocess
 import math
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.input import create_input, Input
 import rich.box
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.markdown import Markdown, TableElement, HorizontalRule, ImageItem
@@ -54,7 +56,33 @@ from src.constants import *
 sys_log = logging.getLogger('logger')
 
 
-# --- custom markdown element classes ---
+def create_clean_input() -> Input:
+    """Create an Input with drained OS buffer and internal event queue.
+
+    Call BEFORE raw_mode() to ensure no stale keystrokes leak into
+    interactive dialogs (permission, question, edit, etc.).
+    """
+    input_device = create_input()
+    input_device.flush_keys()
+    while input_device.read_keys():
+        pass
+    return input_device
+
+
+def flush_terminal_input() -> None:
+    """Flush OS input buffer and drain event queue without creating a persistent Input.
+
+    Call before any blocking input (e.g. PromptSession.prompt) to clear
+    keystrokes pressed during non-interactive phases (LLM streaming).
+    """
+    d = create_input()
+    try:
+        d.flush_keys()
+        while d.read_keys():
+            pass
+    finally:
+        d.close()
+
 
 class _RoundedTableElement(TableElement):
     def __rich_console__(
@@ -63,7 +91,7 @@ class _RoundedTableElement(TableElement):
         table = Table(
             box=rich.box.ROUNDED,
             pad_edge=False,
-            padding=(0, 2),
+            padding=(0, 0, 0, 0),
             border_style=MARKDOWN_TABLE_COLOR,
             style="markdown.table.border",
             show_edge=True,

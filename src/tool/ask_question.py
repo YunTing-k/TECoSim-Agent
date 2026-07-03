@@ -17,6 +17,7 @@ Revision:
 2026.6.4       Yu Huang      1.5      Add assert to avoid possible type mismatch in ask question TUI
 2026.6.7       Yu Huang      1.6      Revise the display style of all ask permission TUIs & Add newline and space padding for all ask permission TUIs
 2026.6.29      Yu Huang      1.7      Multi-select no choice → explicit label; add get_answers_render for answer display
+2026.7.3       Yu Huang      1.8      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -28,7 +29,6 @@ import time
 import logging
 
 from typing import Any
-from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from prompt_toolkit import PromptSession
 from rich.console import Group, Console
@@ -36,6 +36,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
 from src.constants import *
+from src.utility.basic_utils import create_clean_input
 
 sys_log = logging.getLogger('logger')
 
@@ -256,11 +257,10 @@ def ask_user_question_tui(questions: list[dict[str, Any]], console: Console, age
     user_cache = ["" for _ in questions_normalized]  # empty user cache
 
     while True:
-        input_device = create_input()
+        input_device = create_clean_input()
         action = None
         try:
             with input_device.raw_mode():
-                input_device.flush_keys()
                 with Live(render_questions(questions_normalized, active_idx, selected_indices, options_choices, user_cache),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:

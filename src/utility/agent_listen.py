@@ -13,6 +13,7 @@ Revision:
 2026.6.13      Yu Huang      1.1      Add background agent monitoring: entry condition + check_background_agents in listen loop
 2026.6.13      Yu Huang      1.2      Add subagent progress render in listen TUI (between cron and task)
 2026.6.30      Yu Huang      1.3      Add time info string in listen TUI
+2026.7.3       Yu Huang      1.4      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -29,7 +30,6 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.console import Group, Console
 from rich.live import Live
-from prompt_toolkit.input import create_input
 from src.context.agent_context import AgentContext
 from src.tool.cron_support import check_cron_tasks
 from src.tool.scoreboard import Scoreboard, TaskStatus, Task, get_tasks_render
@@ -37,6 +37,7 @@ from src.tool.tool_execute import check_background_agents
 from src.utility.ui_info import get_subagent_render
 from src.agent.progress import SubAgentProgress
 from src.constants import *
+from src.utility.basic_utils import create_clean_input
 from src.utility.basic_utils import grad_color_hex_list, format_time_sec
 
 sys_log = logging.getLogger('logger')
@@ -158,10 +159,9 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
     subagent_color_list = grad_color_hex_list(SUBAGENT_COLOR_START, SUBAGENT_COLOR_END, SUBAGENT_COLOR_GRADIENT, "sin")
     subagent_color_list = subagent_color_list + subagent_color_list[::-1]
     """TUI"""
-    input_device = create_input()
+    input_device = create_clean_input()
     try:
         with input_device.raw_mode():
-            input_device.flush_keys()
             with Live(render_listen(ctx.active_cron, ctx.agent_list, board, base_time, tui_color_list,
                                     cron_color_list, subagent_color_list, task_color_list1, task_color_list2),
                       console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:

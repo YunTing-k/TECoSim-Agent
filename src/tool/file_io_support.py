@@ -40,6 +40,7 @@ Revision:
 2026.6.12      Yu Huang      3.1      Add subagent_mute flag for subagent coordination
 2026.6.13      Yu Huang      3.2      Absorb read_messages/save_messages from prompt.py to break circular import
 2026.7.3       Yu Huang      3.3      Fix of special Unicode render for bash, bash out, edit, write tool
+2026.7.3       Yu Huang      3.4      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -48,8 +49,8 @@ fallback matching with per-mode track & enhanced Unicode normalization (quotes/d
 (3) preview renderers with pygments syntax highlighting, diff-style add/remove with soft-wrap, 3-part gutter bg,
 CJK display-width continuity, inter-hunk separator, and highlight-then-split token-style preservation;
 (4) write_file content preview (get_write_render) with lexer-based highlighting, line-number gutter, configurable
-truncation, and highlight-then-split wrapping; (5) edit permission TUI with preview and match mode
-visibility; (6) read-only path checking; (7) session saving utility.
+truncation, and highlight-then-split wrapping; (5) edit permission TUI with preview and match mode visibility;
+(6) read-only path checking; (7) session saving utility.
 """
 import os
 import math
@@ -65,13 +66,12 @@ from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 from rich.live import Live
-from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from pygments.styles import get_style_by_name
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.util import ClassNotFound
 from pygments import lex
-from src.utility.basic_utils import get_user_input
+from src.utility.basic_utils import get_user_input, create_clean_input
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.constants import *
@@ -1189,11 +1189,10 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
     if ctx.permissions[request_type]:
         return True, None
     while True:
-        input_device = create_input()
+        input_device = create_clean_input()
         action = None
         try:
             with input_device.raw_mode():
-                input_device.flush_keys()
                 with Live(render_edit_permission(path, active_idx, user_cache, match_mode),
                           console=console, auto_refresh=False, transient=True) as live:
                     while True:

@@ -19,6 +19,7 @@ Revision:
 2026.6.7       Yu Huang      1.7      Revise the display style of all ask permission TUIs & Add newline and space padding
                                       for all ask permission TUIs
 2026.6.12      Yu Huang      1.8      Add subagent_mute flag for subagent coordination
+2026.7.3       Yu Huang      1.9      Bugfix of buffered keyboard press before real TUI interaction
 
 Details:
 ---------
@@ -33,10 +34,9 @@ from rich.console import Group, Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
-from prompt_toolkit.input import create_input
 from prompt_toolkit.keys import Keys
 from src.context.agent_context import AgentContext
-from src.utility.basic_utils import get_user_input
+from src.utility.basic_utils import get_user_input, create_clean_input
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -102,11 +102,10 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
         ctx.permissions[request_type] = False
 
     while True:
-        input_device = create_input()
+        input_device = create_clean_input()
         action = None
         try:
             with input_device.raw_mode():
-                input_device.flush_keys()
                 with Live(render_permission(active_idx, request_type, request_desc, user_cache),
                           console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
                     while True:
