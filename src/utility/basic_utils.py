@@ -22,6 +22,7 @@ Revision:
 2026.6.14      Yu Huang      1.9      Fix: grad_color zero div guard, bash version check, UUID validation log, file format offset
 2026.6.30      Yu Huang      2.0      Add time formating function & Refactor the Markdown render style with custom theme &
                                       Add multi-round results truncate method with pydict keys preserved
+2026.7.1       Yu Huang      2.1      Support of plain text of HTML tag rendering in LLM's response
 
 Details:
 ---------
@@ -42,6 +43,7 @@ from prompt_toolkit import PromptSession
 import rich.box
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.markdown import Markdown, TableElement, HorizontalRule, ImageItem
+from rich.segment import Segment
 from rich.rule import Rule
 from rich.style import Style
 from rich.table import Table
@@ -89,7 +91,7 @@ class _StyledHorizontalRule(HorizontalRule):
     ) -> RenderResult:
         style = console.get_style("markdown.hr", default="none")
         yield Rule(
-            title=Text(f" {AGENT_CONSOLE_ICON} ", style="#CCCCCC"),
+            title=Text(f" {AGENT_CONSOLE_ICON} ", style=MARKDOWN_HR_COLOR),
             characters="─",
             style=style,
             align="center",
@@ -111,7 +113,36 @@ class _StyledImageItem(ImageItem):
         yield text
 
 
-class ReasonMD(Markdown):
+class _NoLeadingNewlinesMD(Markdown):
+    """Markdown base: escapes < > outside code blocks so Rich does not strip them as HTML."""
+
+    def __init__(self, markup: str, **kwargs):
+        super().__init__(self._escape_html_outside_code(markup), **kwargs)
+
+    @staticmethod
+    def _escape_html_outside_code(markup: str) -> str:
+        parts: list[str] = re.split(r"(```.*?```)", markup, flags=re.DOTALL)
+        result: list[str] = []
+        for part in parts:
+            if part.startswith("```"):
+                result.append(part)
+            else:
+                result.append(part.replace("<", "&lt;").replace(">", "&gt;"))
+        return "".join(result)
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        segments: list[Segment] = list(super().__rich_console__(console, options))
+        start = 0
+        for i, seg in enumerate(segments):
+            if seg.text.strip():
+                start = i
+                break
+        yield from segments[start:]
+
+
+class ReasonMD(_NoLeadingNewlinesMD):
     """TECoSim agent Markdown render for agent reasoning"""
 
     elements = dict(Markdown.elements)
@@ -127,7 +158,7 @@ class ReasonMD(Markdown):
         self.elements["heading_open"].LEVEL_ALIGN["h1"] = "left"
 
 
-class ContentMD(Markdown):
+class ContentMD(_NoLeadingNewlinesMD):
     """TECoSim agent Markdown render for agent content"""
 
     elements = dict(Markdown.elements)

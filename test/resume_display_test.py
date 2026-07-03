@@ -36,6 +36,10 @@ def _make_ctx(with_write: bool = False, with_bash: bool = False,
         "RESUME_DISPLAY_WRITE_PREVIEW": with_write,
         "RESUME_DISPLAY_BASH_PREVIEW": with_bash,
         "RESUME_DISPLAY_BASH_RESULT": with_bash_result,
+        "RESUME_DISPLAY_GLOB_PREVIEW": False,
+        "RESUME_DISPLAY_GLOB_RESULT": False,
+        "RESUME_DISPLAY_GREP_PREVIEW": False,
+        "RESUME_DISPLAY_GREP_RESULT": False,
         "RESUME_DISPLAY_SUBAGENT": False,
     }
     return ctx
@@ -121,7 +125,7 @@ class TestResumeBashPreview(unittest.TestCase):
         msg = self._make_bash_msg()
         output = _capture_output(ctx, [msg])
         self.assertIn("ls -la", output)
-        self.assertIn("$bash", output)
+        self.assertIn("$in", output)
 
     def test_bash_preview_off_default(self):
         ctx = _make_ctx(with_bash=False)

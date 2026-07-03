@@ -25,8 +25,9 @@ Revision:
 2026.6.29      Yu Huang      1.9      Process-sub detection, substitution checks in all safe branches, Docker/kubectl
                                       multi-word subs, pacman flags, eval/to/pkexec/doas detection, >&/>>& redirect,
                                       bare sh→INLINE_SCRIPT, timeout in prefixes, kill/reboot→base_cmd, +18 pkgs/cmds
-2026.6.29      Yu Huang      1.10     here-doc detection, eval chain substitution, pkg-mgr substitution checks, remove
+2026.6.29      Yu Huang      2.0      here-doc detection, eval chain substitution, pkg-mgr substitution checks, remove
                                       export/umask/ulimit/stty from safe, fix 3<>file/&>> redirect detection. 408 tests.
+2026.7.3       Yu Huang      2.1      Fix of special Unicode render for bash, bash out, edit, write tool
 
 Details:
 ---------
@@ -41,13 +42,13 @@ import re
 import shlex
 import math
 import os
-import unicodedata
 
 from rich.text import Text
 from rich.style import Style
 from src.constants import *
 from src.context.agent_context import AgentContext
 from src.tool.file_io_support import _highlight_fragment, _get_lexer, get_line_prefix, fill_str_line
+from src.tool.file_io_support import _char_display_width, _sanitize_control, _display_width
 
 sys_log = logging.getLogger('logger')
 
@@ -240,11 +241,13 @@ def _check_all_substitutions(cmd: str, outer_level: int) -> tuple[str, str, int]
     subs = _extract_substitutions(cmd) + _extract_process_substitutions(cmd)
     if not subs:
         return None
-    best = None
+    best: tuple[str, str, int] | None = None
     for s in subs:
         risk, reason, level = get_bash_risk(s)
         if level < outer_level:
-            if best is None or level < best[2]:
+            if best is None:
+                best = (risk, f"Command substitution '{s}' → {reason}", level)
+            elif level < best[2]:
                 best = (risk, f"Command substitution '{s}' → {reason}", level)
     return best
 
@@ -1051,6 +1054,8 @@ def evaluate_bash_risk(commands: str, ctx: AgentContext) -> tuple[str, str, int]
 
 def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: Style, max_width: int, gutter_width: int):
     """highlight then split by display width — preserves token boundaries across continuation lines."""
+    line = line.expandtabs(EDIT_VIEW_TAB_WIDTH)
+    line = _sanitize_control(line)
     hl = _highlight_fragment(line, lexer, strip_bg=True)
     plain = str(hl)
 
@@ -1067,7 +1072,7 @@ def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: St
         w = 0
         start = pos
         while pos < total:
-            cw = 2 if unicodedata.east_asian_width(plain[pos]) in ('F', 'W') else 1
+            cw = _char_display_width(plain[pos])
             if w + cw > max_width:
                 break
             w += cw
@@ -1085,14 +1090,14 @@ def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: St
         if lines:
             chunk = Text.assemble((" " * gutter_width, gutter_style), chunk)
         else:
-            _pad = max_width - len(plain[start:pos])
+            _pad = max_width - w
             if _pad > 0:
                 chunk.append("\u00a0" * _pad, style=content_style)
         lines.append(chunk)
 
     if len(lines) > 1:
         last = lines[-1]
-        _pad = gutter_width + max_width - len(str(last))
+        _pad = gutter_width + max_width - _display_width(str(last))
         if _pad > 0:
             last.append("\u00a0" * _pad, style=content_style)
     return lines[0] if lines else Text(), lines[1:]
@@ -1116,7 +1121,7 @@ def get_bash_render(commands: str) -> Text:
     body = Text()
     for i in range(BASH_VIEW_PADDING_LINES):
         if i == 0:
-            lbl = _pad_label("$bash")
+            lbl = _pad_label("$in")
             body.append(lbl, style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
             first, _ = fill_str_line("", offset=len(lbl))
             body.append(first, style=content_style)
@@ -1130,6 +1135,8 @@ def get_bash_render(commands: str) -> Text:
         body.append(prefix1 + prefix2 + " ", style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
         first, cont_lines = _highlight_and_wrap(line, lexer, content_style, gutter_style,
                                                  max_width, gutter_width)
+        if not line and not cont_lines:
+            first.append("\u00a0" * max_width, style=content_style)
         body.append(first)
         if cont_lines:
             for cl in cont_lines:
@@ -1159,15 +1166,21 @@ def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
 
     truncated = False
     truncated_lines = 0
+    raw_lines = output.split('\n')
     if 0 < BASH_RESULT_MAX_CHARS < len(output):
         output = output[:BASH_RESULT_MAX_CHARS]
         truncated = True
-
-    lines = output.split('\n')
-    if 0 < BASH_RESULT_MAX_LINES < len(lines):
-        truncated_lines = len(lines) - BASH_RESULT_MAX_LINES
-        lines = lines[:BASH_RESULT_MAX_LINES]
+        lines = output.split('\n')
+        lines[-1] = lines[-1] + " ... (truncated)"
+        if len(lines) < len(raw_lines):
+            truncated_lines = len(raw_lines) - len(lines)
+    elif 0 < BASH_RESULT_MAX_LINES < len(raw_lines):
+        truncated_lines = len(raw_lines) - BASH_RESULT_MAX_LINES
+        lines = raw_lines[:BASH_RESULT_MAX_LINES]
+        lines[-1] = lines[-1] + " ... (truncated)"
         truncated = True
+    else:
+        lines = raw_lines
 
     budget = math.floor(math.log10(max(len(lines), 1))) + 1
     gutter_width = EDIT_VIEW_LEFT_SPACE_MARGIN + budget + EDIT_VIEW_LINE_SPACE_MARGIN + 1
@@ -1199,7 +1212,7 @@ def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
             body.append(cl[p:] + "\n", style=f"bold white on {BASH_RESULT_CONTENT_BG}")
 
     if truncated:
-        info = "(%d lines not shown)" % truncated_lines if truncated_lines else "(output truncated)"
+        info = f"({truncated_lines} lines not shown)" if (truncated_lines > 0) else "(output truncated)"
         prefix1, prefix2, _ = get_line_prefix(len(lines) + 1, budget)
         body.append(prefix1, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
         body.append(prefix2 + " ", style=f"bright_black on {BASH_RESULT_GUTTER_BG}")

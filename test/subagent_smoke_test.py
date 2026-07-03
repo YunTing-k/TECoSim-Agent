@@ -154,7 +154,7 @@ def test_tool_dispatch_integration():
     progress = Progress(console=Console(quiet=True), disable=True)
     progress.start()
 
-    results, _ = call_tools(AGENT_SPAWN_TOOL_NAME, {"subagent_type": "explore", "prompt": "test"}, ctx, board, progress)
+    results, _ = call_tools(TOOL_NAME_SPAWN_AGENT, {"subagent_type": "explore", "prompt": "test"}, ctx, board, progress)
     progress.stop()
     print(f"call_tools result for spawn_agent: {results}")
     # spawn_agent should hit the "undefined" branch in call_tools since dispatch is at execute_tools level
@@ -172,7 +172,7 @@ def test_background_agent_launch():
     import json
     progress = Progress(console=Console(quiet=True), disable=True)
 
-    tc = {"function": {"name": AGENT_SPAWN_TOOL_NAME, "arguments": json.dumps({
+    tc = {"function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
         "subagent_type": "explore", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
         "if_background": True,
     })}, "id": "call_test_bg_001"}
@@ -212,7 +212,7 @@ def test_background_agent_collect():
     import json
     progress = Progress(console=Console(quiet=True), disable=True)
 
-    tc = {"function": {"name": AGENT_SPAWN_TOOL_NAME, "arguments": json.dumps({
+    tc = {"function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
         "subagent_type": "explore", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
         "if_background": True,
     })}, "id": "call_test_collect_001"}
@@ -263,7 +263,7 @@ def test_execute_tools_bg_fg_split():
             "id": "call_ver_001",
         },
         {
-            "function": {"name": AGENT_SPAWN_TOOL_NAME, "arguments": json.dumps({
+            "function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
                 "subagent_type": "explore",
                 "subject": "check version bg",
                 "prompt": "Read src/constants.py with limit 3 lines and report the version.",
@@ -272,7 +272,7 @@ def test_execute_tools_bg_fg_split():
             "id": "call_bg_001",
         },
         {
-            "function": {"name": AGENT_SPAWN_TOOL_NAME, "arguments": json.dumps({
+            "function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
                 "subagent_type": "explore",
                 "subject": "check constants fg",
                 "prompt": "Read src/constants.py with limit 5 lines and report the constants.",

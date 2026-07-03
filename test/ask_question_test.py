@@ -175,6 +175,10 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_WRITE_PREVIEW": False,
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
+            "RESUME_DISPLAY_GLOB_PREVIEW": False,
+            "RESUME_DISPLAY_GLOB_RESULT": False,
+            "RESUME_DISPLAY_GREP_PREVIEW": False,
+            "RESUME_DISPLAY_GREP_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
         }
 
@@ -218,6 +222,10 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_WRITE_PREVIEW": False,
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
+            "RESUME_DISPLAY_GLOB_PREVIEW": False,
+            "RESUME_DISPLAY_GLOB_RESULT": False,
+            "RESUME_DISPLAY_GREP_PREVIEW": False,
+            "RESUME_DISPLAY_GREP_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
         }
 
@@ -255,6 +263,10 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
             "RESUME_DISPLAY_WRITE_PREVIEW": False,
             "RESUME_DISPLAY_BASH_PREVIEW": False,
             "RESUME_DISPLAY_BASH_RESULT": False,
+            "RESUME_DISPLAY_GLOB_PREVIEW": False,
+            "RESUME_DISPLAY_GLOB_RESULT": False,
+            "RESUME_DISPLAY_GREP_PREVIEW": False,
+            "RESUME_DISPLAY_GREP_RESULT": False,
             "RESUME_DISPLAY_SUBAGENT": False,
         }
 

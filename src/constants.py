@@ -24,7 +24,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 6
+TECOSIM_AGENT_UPDATE_VERSION: int = 7
 """Basic configs"""
 # basic files
 LOG_PATH: str = "./log"
@@ -56,7 +56,6 @@ AGENT_TIMEOUT_LABEL: str = "timeout"
 AGENT_ERROR_LABEL: str = "error"
 AGENT_DONE_LABEL: str = "done"
 AGENT_UNKNOWN_LABEL: str = "unknown"  # defensive-only: never set at runtime, used as fallback on resume deserialization
-AGENT_SPAWN_TOOL_NAME: str = "spawn_agent"
 SUBAGENT_DUMP_DIR: str = "agents"
 SUBAGENT_SUMMARIES_NAME: str = "summaries.json"
 SUBAGENT_DEFAULT_MAX_STEPS: int = 30
@@ -64,7 +63,7 @@ SUBAGENT_DEFAULT_WARN_STEPS: int = 2
 SUBAGENT_DEFAULT_TIMEOUT_S: int = 600
 SUBAGENT_DEFAULT_MODEL_TYPE: str = "fast"
 SUBAGENT_RESULT_LOG_CHAR_LIMIT: int = 200
-SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 70
+SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 120
 SUBAGENT_PROMPT_LOG_CHAR_LEN: int = 200
 SUBAGENT_SUBJECT_CHAR_LIMIT: int = 40
 SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT: int = 50000
@@ -96,6 +95,7 @@ SKILL_ICON: str = "❖"
 CRON_START_LABEL: str = "<cron_tasks>"
 CRON_END_LABEL: str = "</cron_tasks>"
 CRON_ICON: str = "⬟"
+CRON_PROMPT_DISPLAY_CHAR_MAX: int = 200
 SIM_DESIGN_NAME: str = "design"
 SIM_RUN_NAME: str = "run"
 FAIL_LABEL: str = "FAIL"
@@ -125,6 +125,7 @@ RUN_DONE_LABEL: str = "DONE"
 """Tool names"""
 # basic tools
 TOOL_NAME_VERSION: str = "agent_version"
+TOOL_NAME_SPAWN_AGENT: str = "spawn_agent"
 TOOL_NAME_ASK_QUESTION: str = "ask_user_question"
 TOOL_NAME_CREATE_CRON: str = "create_cron"
 TOOL_NAME_QUERY_CRON: str = "query_cron"
@@ -328,6 +329,7 @@ EDIT_VIEW_LINE_MARGIN_SINGLE: int = 3
 EDIT_VIEW_LINE_MARGIN_MULTI: int = 2
 EDIT_VIEW_LEFT_SPACE_MARGIN: int = 5
 EDIT_VIEW_LINE_SPACE_MARGIN: int = 1
+EDIT_VIEW_TAB_WIDTH: int = 4
 EDIT_SYNTAX_THEME: str = "one-dark"
 """Match mode for edit_file fallback chain"""
 MATCH_MODE_EXACT: str = "exact"

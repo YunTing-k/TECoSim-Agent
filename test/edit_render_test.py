@@ -22,7 +22,8 @@ from rich.style import Style
 
 from src.tool.file_io_support import (
     _highlight_and_wrap_edit, _render_normal_block, _render_diff_block,
-    _create_diff_styles,
+    _create_diff_styles, _char_display_width, _sanitize_control,
+    _display_width, _slice_by_width, fill_str_line,
 )
 
 
@@ -128,6 +129,33 @@ class TestHighlightAndWrapEdit(unittest.TestCase):
             self.assertIsInstance(chunk, Text)
             self.assertTrue(len(str(chunk)) > 0)
 
+    def test_tab_expanded(self):
+        line = "col1\tcol2\n"
+        first, cont = _highlight_and_wrap_edit(line, self.lexer, max_width=80)
+        self.assertNotIn('\t', str(first))
+
+    def test_carriage_return_replaced(self):
+        line = "line1\rline2\n"
+        first, cont = _highlight_and_wrap_edit(line, self.lexer, max_width=80)
+        self.assertNotIn('\r', str(first))
+        self.assertIn('\u240d', str(first))
+
+    def test_backspace_replaced(self):
+        line = "abc\bdef\n"
+        first, cont = _highlight_and_wrap_edit(line, self.lexer, max_width=80)
+        self.assertNotIn('\b', str(first))
+        self.assertIn('\u2408', str(first))
+
+    def test_combining_mark_preserved(self):
+        line = "e\u0301\n"
+        first, cont = _highlight_and_wrap_edit(line, self.lexer, max_width=80)
+        self.assertIn('\u0301', str(first))
+
+    def test_zwsp_preserved(self):
+        line = "a\u200bb\n"
+        first, cont = _highlight_and_wrap_edit(line, self.lexer, max_width=80)
+        self.assertIn('\u200b', str(first))
+
 
 class TestRenderBlockHighlightWrapping(unittest.TestCase):
     """Integration tests for _render_normal_block / _render_diff_block using highlight-then-split."""
@@ -181,6 +209,105 @@ class TestRenderBlockHighlightWrapping(unittest.TestCase):
             _render_diff_block(body, lines, 1, 1, "add", None, styles)
         self.assertTrue(len(str(body)) > 0)
         self.assertIn('\n', str(body))
+
+
+class TestCharDisplayWidth(unittest.TestCase):
+    """Tests for _char_display_width — single-character terminal display width."""
+
+    def test_normal_ascii(self):
+        self.assertEqual(_char_display_width('a'), 1)
+        self.assertEqual(_char_display_width('Z'), 1)
+        self.assertEqual(_char_display_width(' '), 1)
+
+    def test_cjk_fullwidth(self):
+        self.assertEqual(_char_display_width('\u4e2d'), 2)
+        self.assertEqual(_char_display_width('\u6587'), 2)
+
+    def test_combining_mark_zero(self):
+        self.assertEqual(_char_display_width('\u0301'), 0)
+
+    def test_zero_width_space(self):
+        self.assertEqual(_char_display_width('\u200b'), 0)
+        self.assertEqual(_char_display_width('\u200c'), 0)
+        self.assertEqual(_char_display_width('\u200d'), 0)
+
+    def test_control_chars_zero(self):
+        self.assertEqual(_char_display_width('\b'), 0)
+        self.assertEqual(_char_display_width('\r'), 0)
+        self.assertEqual(_char_display_width('\0'), 0)
+
+
+class TestSanitizeControl(unittest.TestCase):
+    """Tests for _sanitize_control — replace terminal-affecting control chars."""
+
+    def test_carriage_return(self):
+        self.assertEqual(_sanitize_control('line1\rline2'), 'line1\u240dline2')
+
+    def test_backspace(self):
+        self.assertEqual(_sanitize_control('abc\bdef'), 'abc\u2408def')
+
+    def test_null(self):
+        self.assertEqual(_sanitize_control('a\0b'), 'a\u2400b')
+
+    def test_no_control_no_change(self):
+        self.assertEqual(_sanitize_control('hello world'), 'hello world')
+
+    def test_multiple_controls(self):
+        self.assertEqual(_sanitize_control('\r\b\0'), '\u240d\u2408\u2400')
+
+
+class TestDisplayWidth(unittest.TestCase):
+    """Tests for _display_width — zero-width character handling."""
+
+    def test_zero_width_chars_inside_text(self):
+        self.assertEqual(_display_width('e\u0301'), 1)
+        self.assertEqual(_display_width('a\u200bb'), 2)
+
+    def test_standalone_zero_width(self):
+        self.assertEqual(_display_width('\u200b'), 0)
+        self.assertEqual(_display_width('\u0301'), 0)
+
+    def test_cjk_still_works(self):
+        self.assertEqual(_display_width('\u4e2d\u6587'), 4)
+
+    def test_mixed_text(self):
+        self.assertEqual(_display_width('a\u4e2d\u0301b'), 4)
+
+
+class TestFillStrLine(unittest.TestCase):
+    """Tests for fill_str_line — tab expansion, control sanitization, zero-width."""
+
+    def test_tab_expanded(self):
+        from unittest.mock import patch
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            first, cont = fill_str_line("col1\tcol2\n", offset=10)
+        self.assertNotIn('\t', first)
+
+    def test_carriage_return_replaced(self):
+        from unittest.mock import patch
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            first, cont = fill_str_line("line1\rline2\n", offset=10)
+        self.assertNotIn('\r', first)
+        self.assertIn('\u240d', first)
+
+    def test_backspace_replaced(self):
+        from unittest.mock import patch
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            first, cont = fill_str_line("abc\bdef\n", offset=10)
+        self.assertNotIn('\b', first)
+        self.assertIn('\u2408', first)
+
+    def test_combining_mark_preserved(self):
+        from unittest.mock import patch
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            first, cont = fill_str_line("e\u0301\n", offset=10)
+        self.assertIn('e\u0301', first)
+
+    def test_zwsp_preserved(self):
+        from unittest.mock import patch
+        with patch('os.get_terminal_size', return_value=os.terminal_size((120, 40))):
+            first, cont = fill_str_line("a\u200bb\n", offset=10)
+        self.assertIn('a\u200bb', first)
 
 
 if __name__ == '__main__':

@@ -112,6 +112,10 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RESUME_DISPLAY_WRITE_PREVIEW` | 恢复会话时是否预览 write_file 写入的文件内容 / Whether to preview file content for write_file tool calls                                             |
 | `RESUME_DISPLAY_BASH_PREVIEW` | 恢复会话时是否预览 bash 执行的命令 / Whether to preview bash commands when resuming session                                                        |
 | `RESUME_DISPLAY_BASH_RESULT` | 恢复会话时是否预览 bash 命令的输出结果 / Whether to preview bash command results when resuming session                                               |
+| `RESUME_DISPLAY_GLOB_PREVIEW` | 恢复会话时是否预览 glob 匹配的文件列表 / Whether to preview glob file match results when resuming session                                               |
+| `RESUME_DISPLAY_GLOB_RESULT` | 恢复会话时是否预览 glob 匹配的详细结果 / Whether to preview glob match detailed results when resuming session                                               |
+| `RESUME_DISPLAY_GREP_PREVIEW` | 恢复会话时是否预览 grep 搜索的文件匹配 / Whether to preview grep file search matches when resuming session                                               |
+| `RESUME_DISPLAY_GREP_RESULT` | 恢复会话时是否预览 grep 搜索的详细信息 / Whether to preview grep search detailed results when resuming session                                               |
 | `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session                                                |
 | `SUBAGENT_MAX_STEPS` | 子 Agent 最大步骤数（LLM 请求次数），超出后自动终止 / Max steps for subagents                                                                            |
 | `SUBAGENT_MODEL_TYPE` | 子 Agent 模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for subagents                                                               |

@@ -39,6 +39,7 @@ Revision:
 2026.6.29      Yu Huang      3.4      Fix: stream collectors None sentinel, reasoning-only content patch, falsy conversion removal
 2026.6.29      Yu Huang      3.5      Resume display: ask_question answers + spawn_agent summaries (fg/bg)
 2026.6.30      Yu Huang      3.6      Revise visuals of messages print (reminders, crons, skills, subagents) when resuming session
+2026.7.3       Yu Huang      3.7      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
 
 Details:
 ---------
@@ -67,6 +68,8 @@ from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
 from src.tool.file_io_support import read_messages, get_write_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.tool.ask_question import get_answers_render
+from src.tool.file_filter_support import get_grep_cmd
+from src.tool.cron_support import get_cron_create_str
 from src.agent.progress import SubAgentProgress, AgentStatus
 from src.utility.ui_info import render_subagent_line
 from src.context.agent_context import AgentContext
@@ -165,7 +168,7 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"
                 f"# Subagent Guidelines\n"
-                f"Use `{AGENT_SPAWN_TOOL_NAME}` when tasks are complex and would consume too many turns in the main loop, "
+                f"Use `{TOOL_NAME_SPAWN_AGENT}` when tasks are complex and would consume too many turns in the main loop, "
                 f"or independent of each other and can run in parallel. Prefer `{EXPLORER_AGENT_LABEL}` for read-only "
                 f"investigation, `{WORKER_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for task planning "
                 f"and dependency setup. Launch multiple agents per message when tasks are independent.\n"
@@ -344,14 +347,9 @@ _SUBAGENT_STR = _SUBAGENT_STR.append(" Background subagent", style=f"{MAJOR_COLO
 _SUBAGENT_STR = _SUBAGENT_STR.append(" is retrieved, content is not displayed", style=f"bright_black")
 
 
-def get_msg_render(msg: dict[str, Any], label_start: str, label_end: str, icon: str, info: str, as_md: bool) -> Panel:
-    """get message's render after striping the label"""
-    inner: str = msg["content"]
-    start = inner.find(label_start) + len(label_start)
-    end = inner.rfind(label_end)
-    content = inner[start:end].strip()
-    if not content:
-        content = inner.strip()
+def get_msg_render(msg: str, icon: str, info: str, as_md: bool) -> Panel:
+    """get message's render"""
+    content = msg.strip()
     t = Table(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
     t.add_column(vertical="top")
@@ -368,17 +366,33 @@ def get_msg_render(msg: dict[str, Any], label_start: str, label_end: str, icon: 
     return render
 
 
+def get_msg_render_strip(msg: dict[str, Any], label_start: str, label_end: str, icon: str, info: str, as_md: bool) -> Panel:
+    """get message's render after striping the label"""
+    inner: str = msg["content"]
+    start = inner.find(label_start) + len(label_start)
+    end = inner.rfind(label_end)
+    content = inner[start:end].strip()
+    if not content:
+        content = inner.strip()
+    render = get_msg_render(content, icon, info, as_md)
+    return render
+
+
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
         as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
+        display_subagent = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
         display_sys_reminder = ctx.agent_configs["RESUME_DISPLAY_SYS_REMINDER"]
         display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
         display_cron = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
         display_write = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
         display_bash = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
         display_bash_result = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
-        display_subagent = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
+        display_glob = ctx.agent_configs["RESUME_DISPLAY_GLOB_PREVIEW"]
+        display_glob_result = ctx.agent_configs["RESUME_DISPLAY_GLOB_RESULT"]
+        display_grep = ctx.agent_configs["RESUME_DISPLAY_GREP_PREVIEW"]
+        display_grep_result = ctx.agent_configs["RESUME_DISPLAY_GREP_RESULT"]
         tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
@@ -389,7 +403,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     if not display_sys_reminder:
                         console.print(Panel(_SYSTEM_REMINDER_STR, box=rich.box.SQUARE))
                     else:
-                        console.print(get_msg_render(
+                        console.print(get_msg_render_strip(
                             msg, SYS_REMINDER_START_LABEL, SYS_REMINDER_END_LABEL, SYS_REMINDER_ICON,
                             "**(This is a system reminder)** \n\n", as_md))
                     continue
@@ -404,7 +418,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             sys_log.error(f"Can not convert skill content into pydict with error: {e}")
                             console.print(f"Can not convert skill content into pydict with error: {e}", style="bold red")
                             skill_msg = msg["content"]
-                        console.print(get_msg_render(
+                        console.print(get_msg_render_strip(
                             skill_msg, SKILL_START_LABEL, SKILL_END_LABEL, SKILL_ICON,
                             "**(This is an invoked agent skill)** \n\n", as_md))
                     continue
@@ -413,7 +427,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     if not display_cron:
                         console.print(Panel(_CRON_STR, box=rich.box.SQUARE))
                     else:
-                        console.print(get_msg_render(
+                        console.print(get_msg_render_strip(
                             msg, CRON_START_LABEL, CRON_END_LABEL, CRON_ICON,
                             "**(This is the information of invoked cron tasks)** \n\n", as_md))
                     continue
@@ -423,7 +437,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     if not display_subagent:
                         console.print(Panel(_SUBAGENT_STR, box=rich.box.SQUARE))
                     else:
-                        console.print(get_msg_render(
+                        console.print(get_msg_render_strip(
                             msg, SUBAGENT_START_LABEL, SUBAGENT_END_LABEL, SUBAGENT_ICON,
                             "**(This is the response of a retrieved background subagent)** \n\n", as_md))
                     continue
@@ -473,21 +487,27 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             args = json.loads(tool_calls["function"]["arguments"])
                         except (json.JSONDecodeError, TypeError, KeyError):
                             args = {}
-                        if display_write and tool_name == TOOL_NAME_WRITE_FILE:
-                            console.print(get_write_render(args.get("path", ""), args.get("content", "")))
+                        if display_cron and tool_name == TOOL_NAME_CREATE_CRON:
+                            console.print(get_bash_render(get_cron_create_str(args, False)))
+                            continue
+                        if display_cron and tool_name == TOOL_NAME_REMOVE_CRON:
+                            task_id = str(args.get("id", "(Empty cron task ID)"))
+                            console.print(get_bash_render(f"{TOOL_NAME_REMOVE_CRON}: {task_id}"))
+                            continue
                         if display_bash and tool_name == TOOL_NAME_BASH:
-                            console.print(get_bash_render(args.get("command", "")))
+                            console.print(get_bash_render(args.get("command", "(Failed to get bash command)")))
+                            continue
+                        if display_glob and tool_name == TOOL_NAME_GLOB_FILE:
+                            console.print(get_bash_render(f"{TOOL_NAME_GLOB_FILE}: {args.get("pattern", "(Failed to get glob pattern)")}"))
+                            continue
+                        if display_grep and tool_name == TOOL_NAME_GREP_FILE:
+                            console.print(get_bash_render(get_grep_cmd(args, "rg")))
+                            continue
+                        if display_write and tool_name == TOOL_NAME_WRITE_FILE:
+                            console.print(get_write_render(args.get("path", ""), args.get("content", "(Failed to get write content)")))
+                            continue
             elif msg["role"] == "tool":
-                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_ASK_QUESTION:
-                    try:
-                        result = json.loads(msg["content"])
-                    except (json.JSONDecodeError, TypeError):
-                        result = {}
-                    answers = result.get("answers", [])
-                    if answers:
-                        get_answers_render(answers, console)
-                    continue
-                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == AGENT_SPAWN_TOOL_NAME:
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_SPAWN_AGENT:
                     stats: None | dict[str, Any] = None
                     try:
                         path = os.path.join(SESSION_PATH, ctx.session_uuid, SUBAGENT_DUMP_DIR, SUBAGENT_SUMMARIES_NAME)
@@ -514,9 +534,64 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     else:
                         console.print(f"  {SUBAGENT_PENDING_ICON} spawn_agent N/A", style="bright_black")
                     continue
-                if display_bash_result and msg.get("tool_call_id"):
-                    matched_name = tool_id_map.get(msg["tool_call_id"], "")
-                    if matched_name == TOOL_NAME_BASH:
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_ASK_QUESTION:
+                    try:
+                        result = json.loads(msg["content"])
+                    except (json.JSONDecodeError, TypeError):
+                        result = {}
+                    answers = result.get("answers", [])
+                    if answers:
+                        get_answers_render(answers, console)
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_CREATE_CRON:
+                    if display_cron:
+                        try:
+                            result = json.loads(msg["content"])
+                            cron_task_id: str = result.get("id")
+                            if cron_task_id:
+                                console.print(get_bash_result_render(f"Cron task: {cron_task_id} created"))
+                            else:
+                                console.print(get_bash_result_render("(Failed to get cron task)"))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_bash_result_render("(Failed to get cron task)"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_QUERY_CRON:
+                    if display_cron:
+                        try:
+                            result = json.loads(msg["content"])
+                            cron_task_amount: int = result.get("total_tasks", -1)
+                            if cron_task_amount == -1:
+                                console.print(get_bash_result_render(f"(Failed to get total cron tasks)"))
+                            else:
+                                console.print(get_bash_result_render(f"Total cron tasks: {cron_task_amount}"))
+                            cron_task_str: str = result.get("task_list")
+                            if cron_task_str:
+                                console.print(get_msg_render(cron_task_str, CRON_ICON, "", as_md))
+                            else:
+                                pass
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_bash_result_render("(Failed to get cron task)"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_REMOVE_CRON:
+                    if display_cron:
+                        try:
+                            result = json.loads(msg["content"])
+                            info: str = result.get("info")
+                            if info:
+                                console.print(get_bash_result_render(info))
+                            else:
+                                console.print(get_bash_result_render("(Failed to get cron task removal info)"))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_bash_result_render("(Failed to get cron task removal info)"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_BASH:
+                    if display_bash_result:
                         try:
                             result = json.loads(msg["content"])
                         except (json.JSONDecodeError, TypeError):
@@ -525,7 +600,31 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         stderr = result.get("stderr", "")
                         if stdout or stderr:
                             console.print(get_bash_result_render(stdout, stderr))
-                continue
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_GLOB_FILE:
+                    if display_glob_result:
+                        try:
+                            result = json.loads(msg["content"])
+                            glob_content: str = result.get("results", "(Failed to get glob result)")
+                            console.print(get_bash_result_render(glob_content))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_bash_result_render("(Failed to get glob result)"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_GREP_FILE:
+                    if display_grep_result:
+                        try:
+                            result = json.loads(msg["content"])
+                            grep_content: str = result.get("results", "(Failed to get grep result)")
+                            console.print(get_bash_result_render(grep_content))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_bash_result_render("(Failed to get grep result)"))
+                    else:
+                        pass
+                    continue
             else:
                 sys_log.debug(f"Unknown role: {msg["role"]} in history massages")
                 continue

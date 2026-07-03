@@ -185,6 +185,80 @@ class TestHighlightAndWrap(unittest.TestCase):
             result = get_bash_render("echo hello")
         self.assertIsInstance(result, Text)
 
+    def test_tab_expanded(self):
+        from src.tool.bash_support import _highlight_and_wrap
+        first, cont = _highlight_and_wrap(
+            'echo "col1\tcol2"', self.lexer, self.content_style, self.gutter_style,
+            max_width=80, gutter_width=10)
+        self.assertNotIn('\t', str(first))
+
+    def test_carriage_return_replaced(self):
+        from src.tool.bash_support import _highlight_and_wrap
+        first, cont = _highlight_and_wrap(
+            'printf "line1\rline2"', self.lexer, self.content_style, self.gutter_style,
+            max_width=80, gutter_width=10)
+        self.assertNotIn('\r', str(first))
+        self.assertIn('\u240d', str(first))
+
+    def test_backspace_replaced(self):
+        from src.tool.bash_support import _highlight_and_wrap
+        first, cont = _highlight_and_wrap(
+            'echo "abc\bdef"', self.lexer, self.content_style, self.gutter_style,
+            max_width=80, gutter_width=10)
+        self.assertNotIn('\b', str(first))
+        self.assertIn('\u2408', str(first))
+
+
+class TestBashResultRender(unittest.TestCase):
+    """Tests for get_bash_result_render — special character handling."""
+
+    def test_tab_expanded(self):
+        from unittest.mock import patch
+        from src.tool.bash_support import get_bash_result_render
+        import os as _os
+        with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
+            result = get_bash_result_render("col1\tcol2\tcol3\n")
+        self.assertNotIn('\t', str(result))
+
+    def test_carriage_return_replaced(self):
+        from unittest.mock import patch
+        from src.tool.bash_support import get_bash_result_render
+        import os as _os
+        with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
+            result = get_bash_result_render("line1\rline2\n")
+        self.assertNotIn('\r', str(result))
+        self.assertIn('\u240d', str(result))
+
+    def test_backspace_replaced(self):
+        from unittest.mock import patch
+        from src.tool.bash_support import get_bash_result_render
+        import os as _os
+        with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
+            result = get_bash_result_render("abc\bdef\n")
+        self.assertNotIn('\b', str(result))
+        self.assertIn('\u2408', str(result))
+
+    def test_combining_mark_preserved(self):
+        from unittest.mock import patch
+        from src.tool.bash_support import get_bash_result_render
+        import os as _os
+        with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
+            result = get_bash_result_render("e\u0301\n")
+        self.assertIn('e\u0301', str(result))
+
+    def test_zwsp_preserved(self):
+        from unittest.mock import patch
+        from src.tool.bash_support import get_bash_result_render
+        import os as _os
+        with patch('os.get_terminal_size', return_value=_os.terminal_size((120, 40))):
+            result = get_bash_result_render("a\u200bb\n")
+        self.assertIn('a\u200bb', str(result))
+
+    def test_empty_output(self):
+        from src.tool.bash_support import get_bash_result_render
+        result = get_bash_result_render("")
+        self.assertEqual(str(result), "(empty output)")
+
 
 class TestTempFileCleanup(unittest.TestCase):
     """Test that temp files are cleaned up when fallback Popen fails after file creation."""

@@ -14,6 +14,7 @@ Revision:
 2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
 2026.6.13      Yu Huang      1.3      Bugfix: one-shot cron tasks now check next_time before firing
 2026.6.13      Yu Huang      1.4      Add sys_log on cron fire (task id + type) and trigger summary
+2026.7.3       Yu Huang      1.5      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
 
 Details:
 ---------
@@ -189,6 +190,24 @@ def gen_cron_id(id_list: list[str]) -> str:
         uuid_str = uuid_obj.__str__()
         cron_id = uuid_str[:CRON_TASK_ID_LEN]
     return cron_id
+
+
+def get_cron_create_str(arguments: dict[str, Any], if_fail: bool) -> str:
+    """get cron create string with arguments only for display"""
+    cron_str: str = arguments.get("cron", "(Empty cron pattern)")
+    prompt: str = arguments.get("prompt", "(Empty cron prompt)")
+    if len(prompt) > CRON_PROMPT_DISPLAY_CHAR_MAX:
+        prompt = prompt[:CRON_PROMPT_DISPLAY_CHAR_MAX] + "..."
+    if_repeat: bool = arguments.get("if_repeat", True)
+    durable: bool = arguments.get("durable", False)
+    if not if_fail:
+        return (f"{TOOL_NAME_CREATE_CRON}:\n"
+                f"├─pattern: \"{cron_str}\", if repeat: {if_repeat}, if durable across sessions: {durable}\n"
+                f"└─prompt: \"{prompt}\"")
+    else:
+        return (f"{TOOL_NAME_CREATE_CRON}: Fail\n"
+                f"├─pattern: \"{cron_str}\", if repeat: {if_repeat}, if durable across sessions: {durable}\n"
+                f"└─prompt: \"{prompt}\"")
 
 
 def create_cron_impl(arguments: dict[str, Any], id_list: list[str]) -> tuple[CronTask | None, bool, str]:

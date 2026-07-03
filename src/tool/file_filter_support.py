@@ -13,6 +13,7 @@ Revision:
 2026.5.31      Yu Huang      1.1      Define default params of all tools in constants.py
 2026.6.1       Yu Huang      1.2      Define all used status labels in constants.py
 2026.6.8       Yu Huang      1.3      Bash and ripgrep path configurable support
+2026.7.3       Yu Huang      1.4      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
 
 Details:
 ---------
@@ -63,6 +64,44 @@ def glob_impl(arguments: dict[str, Any]) -> tuple[str, bool, str]:
             return "(No matches found)", True, SUCCESS_LABEL
     except Exception as e:
         return "", False, f"Recursive match with `pattern`: {pattern} failed with error: {e}"
+
+
+def get_grep_cmd(arguments: dict[str, Any], rg_path: str) -> str:
+    """get ripgrep cmd for display only"""
+    pattern = arguments.get("pattern", "(Empty pattern)")
+    """get prams"""
+    path = arguments.get("path", os.getcwd())
+    glob_filter = arguments.get("glob")
+    file_type = arguments.get("type")
+    output_mode = arguments.get("output_mode", "files_with_matches")
+    ignore_case = arguments.get("ignore_case", False)
+    context_val = arguments.get("context")
+    multiline = arguments.get("multiline", False)
+
+    """build rg cmd"""
+    cmd = [rg_path, "--color", "never"]
+
+    if output_mode == "files_with_matches":
+        cmd.append("-l")
+    elif output_mode == "count":
+        cmd.append("-c")
+    elif output_mode == "content":
+        cmd.append("--line-number")
+        if context_val is not None:
+            cmd.extend(["-C", str(context_val)])
+
+    if ignore_case:
+        cmd.append("-i")
+    if multiline:
+        cmd.extend(["--multiline", "--multiline-dotall"])
+    if glob_filter is not None:
+        cmd.extend(["--glob", str(glob_filter)])
+    if file_type:
+        cmd.extend(["--type", str(file_type)])
+
+    cmd.append(str(pattern))
+    cmd.append(path)
+    return " ".join(cmd)
 
 
 def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[str, bool, str]:

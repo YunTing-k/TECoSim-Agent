@@ -195,6 +195,14 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `MARKDOWN_IMAGE_STYLE` | `#F5A742` | `markdown.image` | 图片占位符文字颜色 / Image placeholder text color |
 
 > **实现说明 | Implementation Note**
+> 
+> **HTML 标签转义 | HTML Tag Escaping (v0.2.7)**
+> Rich 的 Markdown 解析器将 `<...>` 视为内联 HTML 并默认移除，导致 LLM 回复中的尖括号内容（如 `<html>`、`<head>`、`<!DOCTYPE>`）被静默丢弃。`_NoLeadingNewlinesMD` 基础类通过正则 `re.split` 分割代码块与正文，仅在代码块**外部**将 `<` / `>` 替换为 `&lt;` / `&gt;` 实体（Rich 会在渲染时解析回原字符），代码块内部（\`\`\`）保持原始符号不变。
+> Rich's Markdown parser treats `<...>` as inline HTML and strips it by default, causing angle-bracket content (e.g. `<html>`, `<head>`, `<!DOCTYPE>`) in LLM replies to be silently removed. The `_NoLeadingNewlinesMD` base class uses `re.split` to separate code blocks from body text and escapes `<` / `>` as `&lt;` / `&gt;` **only outside** fenced code blocks — Rich resolves these entities back to the original characters at render time.
+>
+> **控制字符与零宽字符展开 | Control & Zero-Width Character Expansion (v0.2.7)**
+> `\t`、`\r`、`\b` 等终端控制字符及 `\u0301`（组合重音）、`\u200b`（零宽空格）等零宽字符在宽度测量中被误计为 1 列，导致背景填充错位。修复方案：`_char_display_width()` 正确识别 Unicode 类别（Mn/Mc/Me/Cf/Cc → 0），`_sanitize_control()` 将控制字符替换为等宽可见 Unicode Control Pictures（`\r`→`␍`，`\b`→`␈`，`\0`→`␀`），`.expandtabs(EDIT_VIEW_TAB_WIDTH)` 将 tab 展开为定宽空格。全部在 `fill_str_line()`、`_highlight_and_wrap()`、`_highlight_and_wrap_edit()` 中统一处理。
+> Terminal control characters (`\t`, `\r`, `\b`) and zero-width characters (`\u0301` combining accent, `\u200b` ZWSP) were incorrectly measured as 1 column, causing background fill misalignment. Fix: `_char_display_width()` correctly handles Unicode categories (Mn/Mc/Me/Cf/Cc → 0), `_sanitize_control()` replaces control chars with visible Unicode Control Pictures (`\r`→`␍`, `\b`→`␈`, `\0`→`␀`), and `.expandtabs(EDIT_VIEW_TAB_WIDTH)` expands tabs to spaces. Applied uniformly in `fill_str_line()`, `_highlight_and_wrap()`, `_highlight_and_wrap_edit()`.
 > 表格（`_RoundedTableElement`）、分割线（`_StyledHorizontalRule`）、图片占位符（`_StyledImageItem`）三元素因 Rich 默认实现不读取 Theme 样式名，通过子类化覆盖实现自定义外观。
 > The `table_open`, `hr`, and `image` elements are subclassed (at class level in `ReasonMD`/`ContentMD`) because Rich's default implementations do not read their respective Theme style names.
 > 
@@ -239,6 +247,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `CRON_LISTEN_COLOR_GRADIENT` | `128` | Cron 监听渐变色阶数 / Cron listen gradient steps |
 | `CRON_LISTEN_COLOR_PERIOD` | `1.75` | Cron 监听动画周期（秒）/ Cron listen animation period (seconds) |
 | `KEY_LISTEN_SLEEP_TIME_MS` | `30` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
+| `CRON_PROMPT_DISPLAY_CHAR_MAX` | `200` | Cron 任务提示显示最大字符数 / Max chars for cron task prompt display |
 
 ### 会话标题 | Session Titles
 
@@ -306,6 +315,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `EDIT_VIEW_LINE_MARGIN_MULTI` | `2` | 多次编辑预览上下文行数 / Context lines for multi edit preview |
 | `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `EDIT_VIEW_LINE_SPACE_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
+| `EDIT_VIEW_TAB_WIDTH` | `4` | Tab 字符展开宽度（空格数），确保含 tab 的代码/输出行背景填充对齐 / Tab expansion width in spaces, ensures background fill alignment for tab-containing lines |
 | `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
 | `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | exact-family 回退模式标签颜色（quote_norm / unicode_escape）/ Subtle label color for exact-family fallback modes (quote_norm / unicode_escape) |
 | `MATCH_MODE_EXACT` | `exact` | 完全匹配 / Exact string match |
@@ -339,7 +349,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `BASH_RESULT_GUTTER_BG` | `#222222`（深灰 dark grey） | Bash 结果输出行号栏背景色 / Bash result gutter background |
 | `BASH_RESULT_CONTENT_BG` | `#141414`（深黑 dark black） | Bash 结果输出内容区背景色 / Bash result content background |
 | `BASH_RESULT_MAX_LINES` | `60` | Bash 结果预览最大显示行数（超出截断）/ Max lines to display before truncation |
-| `BASH_RESULT_MAX_CHARS` | `1500` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
+| `BASH_RESULT_MAX_CHARS` | `3000` | Bash 结果预览最大显示字符数（超出截断）/ Max chars to display before truncation |
 | `BASH_RESULT_PADDING_LINES` | `1` | Bash 结果预览首尾空白过渡行数 / Blank padding lines above/below result block |
 
 ### Write 文件预览 | Write File Preview
@@ -378,7 +388,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `AGENT_ERROR_LABEL`     | `"error"`       | 子 Agent 异常终止 / Subagent errored |
 | `AGENT_DONE_LABEL`      | `"done"`        | 子 Agent 正常完成 / Subagent done |
 | `AGENT_UNKNOWN_LABEL`   | `"unknown"`     | 子 Agent 状态未知 / Subagent status unknown |
-| `AGENT_SPAWN_TOOL_NAME` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
+| `TOOL_NAME_SPAWN_AGENT` | `"spawn_agent"` | 子 Agent 创建工具名称 / Spawn subagent tool name |
 
 #### 工具与配置 | Tools & Config
 
@@ -391,7 +401,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `SUBAGENT_DEFAULT_TIMEOUT_S` | `600` | 子 Agent 默认超时（秒）/ Subagent default timeout (seconds) |
 | `SUBAGENT_DEFAULT_MODEL_TYPE` | `"fast"` | 子 Agent 默认模型类型 / Subagent default model type |
 | `SUBAGENT_RESULT_LOG_CHAR_LIMIT` | `200` | 子 Agent 结果日志截断长度 / Subagent result log char limit |
-| `SUBAGENT_TOOL_DISPLAY_MAX_LEN` | `70` | 工具调用显示参数值最大长度 / Max len for tool display argument value |
+| `SUBAGENT_TOOL_DISPLAY_MAX_LEN` | `120` | 工具调用显示参数值最大长度 / Max len for tool display argument value |
 | `SUBAGENT_PROMPT_LOG_CHAR_LEN` | `200` | 初始化日志中 prompt 预览长度 / Prompt preview length in init log |
 | `SUBAGENT_SUBJECT_CHAR_LIMIT` | `40` | 子 Agent subject 字段最大字符数 / Subagent subject field char limit |
 | `SUBAGENT_TOOL_RESULT_DEFAULT_CHAR_LIMIT` | `50000` | 子 Agent 工具结果默认截断字符数 / Default char limit for subagent tool results |
@@ -434,7 +444,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `2` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `6` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `7` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |

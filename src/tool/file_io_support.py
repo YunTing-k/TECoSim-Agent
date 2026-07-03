@@ -39,6 +39,7 @@ Revision:
 2026.6.12      Yu Huang      3.0      Always show edit preview
 2026.6.12      Yu Huang      3.1      Add subagent_mute flag for subagent coordination
 2026.6.13      Yu Huang      3.2      Absorb read_messages/save_messages from prompt.py to break circular import
+2026.7.3       Yu Huang      3.3      Fix of special Unicode render for bash, bash out, edit, write tool
 
 Details:
 ---------
@@ -619,11 +620,30 @@ def get_line_prefix(idx: int, budget: int, mode: str = "normal") -> tuple[str, s
     return prefix1, prefix2, symbol
 
 
+def _char_display_width(ch: str) -> int:
+    """terminal display width of a single character.
+    CJK → 2, combining marks / format chars (ZWSP etc.) → 0, others → 1.
+    """
+    cat = unicodedata.category(ch)
+    if cat in ('Mn', 'Mc', 'Me', 'Cf'):
+        return 0
+    if unicodedata.east_asian_width(ch) in ('F', 'W'):
+        return 2
+    if cat == 'Cc':
+        return 0
+    return 1
+
+
+def _sanitize_control(text: str) -> str:
+    """replace terminal-affecting control chars with visible Unicode Control Pictures."""
+    return text.replace('\r', '\u240d').replace('\b', '\u2408').replace('\0', '\u2400')
+
+
 def _display_width(s: str) -> int:
     """compute the terminal display width of a string (CJK characters count as 2)."""
     w = 0
     for ch in s:
-        w += 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
+        w += _char_display_width(ch)
     return w
 
 
@@ -631,7 +651,7 @@ def _slice_by_width(s: str, max_width: int) -> tuple[str, str]:
     """split s at the display-width boundary: (head, tail) where display_width(head) <= max_width."""
     w = 0
     for i, ch in enumerate(s):
-        cw = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
+        cw = _char_display_width(ch)
         if w + cw > max_width:
             return s[:i], s[i:]
         w += cw
@@ -656,6 +676,9 @@ def _highlight_and_wrap_edit(line: str, lexer, max_width: int, strip_bg: bool = 
     else:
         content = line
 
+    content = content.expandtabs(EDIT_VIEW_TAB_WIDTH)
+    content = _sanitize_control(content)
+
     hl = _highlight_fragment(content, lexer, strip_bg=strip_bg)
     plain = str(hl)
 
@@ -672,7 +695,7 @@ def _highlight_and_wrap_edit(line: str, lexer, max_width: int, strip_bg: bool = 
         w = 0
         start = pos
         while pos < total:
-            cw = 2 if unicodedata.east_asian_width(plain[pos]) in ('F', 'W') else 1
+            cw = _char_display_width(plain[pos])
             if w + cw > max_width:
                 break
             w += cw
@@ -719,6 +742,9 @@ def fill_str_line(input_line: str, offset: int) -> tuple[str, list[str]]:
     else:
         line_ending = '\n'
         content = input_line
+
+    content = content.expandtabs(EDIT_VIEW_TAB_WIDTH)
+    content = _sanitize_control(content)
 
     if _display_width(content) <= width:
         return content + _fill * (width - _display_width(content)) + line_ending, []

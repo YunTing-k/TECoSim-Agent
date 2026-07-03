@@ -157,7 +157,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
     fg_agent_calls: list[dict[str, Any]] = []
 
     for tc in tool_calls:
-        if tc["function"]["name"] == AGENT_SPAWN_TOOL_NAME:
+        if tc["function"]["name"] == TOOL_NAME_SPAWN_AGENT:
             try:
                 args = json.loads(tc["function"]["arguments"])
                 agent_type = args["subagent_type"]  # make sure there has subagent_type
@@ -166,15 +166,15 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
                 else:
                     fg_agent_calls.append(tc)
             except Exception as e:
-                sys_log.error(f"Failed to parse {AGENT_SPAWN_TOOL_NAME} tool call's arguments: {tc} with error: {e}")
-                progress.console.print(f"Failed to parse {AGENT_SPAWN_TOOL_NAME} tool call's arguments with error: {e}",
+                sys_log.error(f"Failed to parse {TOOL_NAME_SPAWN_AGENT} tool call's arguments: {tc} with error: {e}")
+                progress.console.print(f"Failed to parse {TOOL_NAME_SPAWN_AGENT} tool call's arguments with error: {e}",
                                        style="bold red")
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "content": json.dumps({
                         "status": FAIL_LABEL,
-                        "info": f"Failed to parse {AGENT_SPAWN_TOOL_NAME} tool call's arguments with error: {e}. Please recheck."},
+                        "info": f"Failed to parse {TOOL_NAME_SPAWN_AGENT} tool call's arguments with error: {e}. Please recheck."},
                         ensure_ascii=False),
                 })
                 continue
@@ -227,7 +227,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
             desc_parts.append(f"  [{mode}] {args['subagent_type']}: {args.get('subject', '')}")
         desc = f"Spawn {len(all_agent_calls)} subagent(s):\n" + "\n".join(desc_parts)
         pause_for_permission(progress)
-        token, comment = ask_permission_tui(ctx, AGENT_SPAWN_TOOL_NAME, desc, progress.console)
+        token, comment = ask_permission_tui(ctx, TOOL_NAME_SPAWN_AGENT, desc, progress.console)
         resume_from_permission(progress)
         if not token:
             denied_info = f"All subagent spawns in this round of tool call are denied by user"

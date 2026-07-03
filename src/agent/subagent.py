@@ -20,6 +20,7 @@ Revision:
 2026.6.29      Yu Huang      1.8      Expose start_time for per-agent summary display in execute_subagents & Add GNU bash
                                       hint to subagent system prompt (avoid PowerShell on Windows)
 2026.6.30      Yu Huang      1.9      Add multi-round results truncate method with pydict keys preserved
+2026.7.3       Yu Huang      2.0      Add more current tools info when subagent is running
 
 Details:
 ---------
@@ -57,21 +58,25 @@ _CONFIG_KEY_API_RETRY = "SUBAGENT_API_RETRY_COUNT"
 _CONFIG_KEY_TOOL_RESULT_LIMIT = "SUBAGENT_TOOL_RESULT_CHAR_LIMIT"
 
 _TOOL_DISPLAY_KEYS: dict[str, str] = {
-    TOOL_NAME_READ_FILE: "path",
-    TOOL_NAME_WRITE_FILE: "path",
-    TOOL_NAME_EDIT_FILE: "path",
+    # basic tools
+    TOOL_NAME_CREATE_TASK: "subject",
+    TOOL_NAME_UPDATE_TASK: "task_id",
+    TOOL_NAME_QUERY_TASK: "task_id",
     TOOL_NAME_BASH: "description",
     TOOL_NAME_GLOB_FILE: "pattern",
     TOOL_NAME_GREP_FILE: "pattern",
+    TOOL_NAME_READ_FILE: "path",
+    TOOL_NAME_WRITE_FILE: "path",
+    TOOL_NAME_EDIT_FILE: "path",
+    TOOL_NAME_SKILL: "name",
     TOOL_NAME_WEB_FETCH: "url",
     TOOL_NAME_WEB_SEARCH: "query",
-    TOOL_NAME_READ_LOG: "run_id",
-    TOOL_NAME_CREATE_TASK: "subject",
+    # simulation tools
     TOOL_NAME_INIT_DESIGN: "subject",
     TOOL_NAME_QUERY_DESIGN: "design_id",
     TOOL_NAME_LAUNCH_SIM: "subject",
     TOOL_NAME_QUERY_RUN: "run_id",
-    TOOL_NAME_SKILL: "name",
+    TOOL_NAME_READ_LOG: "run_id",
 }
 
 

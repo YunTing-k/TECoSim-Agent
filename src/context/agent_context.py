@@ -146,7 +146,7 @@ class AgentContext:
         self.subagent_mute: bool = False  # (don't dump) suppress console output and permission TUIs for subagents
         self.permissions: dict[str, bool] = {
             # basic tools
-            AGENT_SPAWN_TOOL_NAME: False,
+            TOOL_NAME_SPAWN_AGENT: False,
             TOOL_NAME_CREATE_CRON: False,
             TOOL_NAME_QUERY_CRON: False,
             TOOL_NAME_REMOVE_CRON: False,

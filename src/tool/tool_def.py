@@ -56,6 +56,8 @@ Revision:
 2026.6.17      Yu Huang      4.8      Revise the fallback behavior of file edit tool
 2026.6.29      Yu Huang      4.9      Print user choices after ask_user_question TUI & Differentiate subagent auto-deny from user denial &
                                       Clarify bash uses GNU bash only
+2026.7.3       Yu Huang      5.0      Fix of old=new string replacement in file edit tool & Revise visuals of messages print
+                                      (create/query/remove crons, glob, query) when resuming session
 
 Details:
 ---------
@@ -77,9 +79,9 @@ from src.utility import ui_info
 from src.utility.ui_info import pause_for_permission, resume_from_permission
 from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
-from src.tool.cron_support import get_cron_list, create_cron_impl
+from src.tool.cron_support import get_cron_list, get_cron_create_str, create_cron_impl
 from src.tool.scoreboard import Scoreboard, TaskStatus, args_to_taskupdate, task_to_info, tasks_to_info
-from src.tool.file_filter_support import glob_impl, grep_impl
+from src.tool.file_filter_support import glob_impl, get_grep_cmd, grep_impl
 from src.tool.file_io_support import (
     match_line_ranges, find_actual_string, ask_edit_tui, check_read_only, match_line_trimmed, match_flexible_indent,
     get_enhanced_debug_info, match_escape_literal, match_trimmed_boundary, match_unicode_escape, _unescape_literals,
@@ -168,13 +170,13 @@ def agent_version(progress: Progress) -> dict[str, Any]:
 
 
 def tool_spawn_agent_def() -> dict[str, Any]:
-    """tool definition of spawning a subagent ({AGENT_SPAWN_TOOL_NAME})"""
+    """tool definition of spawning a subagent ({TOOL_NAME_SPAWN_AGENT})"""
     type_enum = list(SUPPORTED_TYPES_DESC.keys())
     type_desc = "  ".join(f"- {k}: {v}" for k, v in SUPPORTED_TYPES_DESC.items())
     tool_def = {
         "type": "function",
         "function": {
-            "name": AGENT_SPAWN_TOOL_NAME,
+            "name": TOOL_NAME_SPAWN_AGENT,
             "description": f"Use this tool when tasks are complex and would consume too many turns in the main loop, or "
                            f"independent of each other and can run in parallel. Spawn multiple agents in a single message "
                            f"with concurrent tool calls when tasks are independent.\n"
@@ -782,19 +784,18 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """creat cron task"""
+        progress.console.print(get_bash_render(get_cron_create_str(arguments, False)))
         cron_task, if_success, create_info = create_cron_impl(arguments, ctx.cron_ids)
         if if_success and cron_task is not None:
             ctx.add_cron_task(cron_task)
-            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Create cron task with pattern: {arguments.get("cron")} and prompt: "
-                          f"{arguments.get("prompt")} successfully")
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: Create cron task with pattern: {arguments.get("cron")} and prompt: "
-                                   f"{arguments.get("prompt")} successfully", style="bright_black")
+            sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Create cron task (id: {cron_task["id"]}) with pattern: "
+                          f"{arguments.get("cron")} and prompt: {arguments.get("prompt")} successfully")
+            progress.console.print(get_bash_result_render(f"Cron task with id: {cron_task["id"]} created"))
             return {"status": SUCCESS_LABEL, "id": cron_task["id"]}
         else:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Create cron task with pattern: {arguments.get("cron")} and prompt: "
                           f"{arguments.get("prompt")} failed with error, details: {create_info}")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Create cron task with pattern: {arguments.get("cron")} and prompt: "
-                                   f"{arguments.get("prompt")} failed with error, details: {create_info}", style="bold red")
+            progress.console.print(get_bash_render(get_cron_create_str(arguments, True)))
             return {"status": FAIL_LABEL, "info": f"Create cron task failed with error, details: {create_info}"}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Create cron failed with error: {e}")
@@ -826,7 +827,7 @@ def query_cron(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     func_name = TOOL_NAME_QUERY_CRON
     cron_str = get_cron_list(ctx.cron_tasks)
     sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Total cron tasks {len(ctx.cron_tasks)}")
-    progress.console.print(f"{func_name} {SUCCESS_LABEL}: Total cron tasks {len(ctx.cron_tasks)}", style="bright_black")
+    progress.console.print(get_bash_result_render(f"Total cron tasks: {len(ctx.cron_tasks)}"))
     return {"status": SUCCESS_LABEL,
             "total_tasks": len(ctx.cron_tasks),
             "task_list": cron_str}
@@ -875,17 +876,17 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """remove cron task"""
-        task_id = str(arguments.get("id"))
+        task_id = str(arguments.get("id", "(Empty cron task ID)"))
+        progress.console.print(get_bash_render(f"{func_name}: {task_id}"))
         if_success, remove_info = ctx.remove_cron_task(task_id)
         if if_success:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Remove cron task with id: {task_id} successfully")
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: Remove cron task with id: {task_id} successfully",
-                                   style="bright_black")
+            progress.console.print(get_bash_result_render(f"Remove cron task with id: {task_id} successfully"))
             return {"status": SUCCESS_LABEL, "info": f"Remove cron task with id: {task_id} successfully"}
         else:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Remove cron task with id: {task_id} failed with error, details: {remove_info}")
-            progress.console.print(f"{func_name} {FAIL_LABEL}: Remove cron task with id: {task_id} failed with error, "
-                                   f"details: {remove_info}", style="bold red")
+            progress.console.print(get_bash_result_render(f"Remove cron task with id: {task_id} failed with error\n"
+                                                          f"└─details: {remove_info}"))
             return {"status": FAIL_LABEL, "info": f"Remove cron task failed with error, details: {remove_info}"}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Remove cron failed with error: {e}")
@@ -1137,8 +1138,8 @@ def tool_glob_file_def() -> dict[str, Any]:
             "description": "File pattern matching tool that works with any codebase size. Use this tool when you need to "
                            "find files by name patterns.\n"
                            "Usage:\n"
-                           f"- ALWAYS use `{TOOL_NAME_GLOB_FILE}` for file search tasks. NEVER invoke `find` or `ls` as a Bash command. The "
-                           f"`{TOOL_NAME_GLOB_FILE}` tool has been optimized for correct permissions and access\n"
+                           f"- ALWAYS use `{TOOL_NAME_GLOB_FILE}` for file search tasks. NEVER invoke `find` or `ls` as a "
+                           f"Bash command. The `{TOOL_NAME_GLOB_FILE}` tool has been optimized for correct permissions and access\n"
                            "- Supports glob patterns like \"**/*.js\" or \"src/**/*.py\"\n"
                            "- Returns matching file paths sorted by modification time\n",
             "parameters": {
@@ -1186,8 +1187,11 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """glob file"""
+        pattern = arguments.get("pattern")
+        progress.console.print(get_bash_render(f"{func_name}: {pattern}"))
         results, if_success, grep_info = glob_impl(arguments)
         if if_success:
+            progress.console.print(get_bash_result_render(results))
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Glob file in path: {arguments.get("path", os.getcwd())} with pattern: "
                           f"{arguments.get("pattern")} successfully")
             progress.console.print(f"{func_name} {SUCCESS_LABEL}: Glob file in path: {arguments.get("path", os.getcwd())} "
@@ -1321,8 +1325,10 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """grep file"""
+        progress.console.print(get_bash_render(get_grep_cmd(arguments, "rg")))
         results, if_success, grep_info = grep_impl(arguments, ctx.agent_configs["RIPGREP_PATH"], ctx.agent_configs["RIPGREP_TIMEOUT_S"])
         if if_success:
+            progress.console.print(get_bash_result_render(results))
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Grep file in path: {arguments.get("path", os.getcwd())} with pattern: "
                           f"{arguments.get("pattern")} successfully")
             progress.console.print(f"{func_name} {SUCCESS_LABEL}: Grep file in path: {arguments.get("path", os.getcwd())} "
@@ -1807,6 +1813,10 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         """find the string to replace"""
         old_string:str = arguments["old_string"]
         new_string:str = arguments["new_string"]
+        if old_string == new_string:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: New string is equal to old string")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: New string is equal to old string", style="bold red")
+            return {"status": FAIL_LABEL, "info": f"New string is equal to old string"}
         replace_all:bool = arguments.get("replace_all", False)
         # normalize old_string & new_string: strip \r to prevent CRLF-vs-LF mismatch
         # (reading: text-mode universal newlines convert \r\n to \n in content)
