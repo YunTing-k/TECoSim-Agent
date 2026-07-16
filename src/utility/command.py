@@ -580,7 +580,7 @@ def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: 
                                             f"(Load skill {skill_name} manually by user failed, content is NONE)\n"
                                             f"{SKILL_END_LABEL}"})
         else:
-            ctx.messages.append({"role": "user", "content": json.dumps(content)})
+            ctx.messages.append({"role": "user", "content": json.dumps(content, ensure_ascii=False)})
             if not any(item.get("name") == skill_name for item in ctx.loaded_skills):  # registered skills must be available
                 ctx.loaded_skills.append({
                     "name": skill_name,

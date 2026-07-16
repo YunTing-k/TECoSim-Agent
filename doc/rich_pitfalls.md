@@ -203,3 +203,29 @@ Define all configurable colors/styles in `constants.py` to avoid hardcoding. Use
 
 `os.get_terminal_size()` 在非 TTY 环境（CI、管道）会抛出 `OSError`，测试时需 `patch`。所有宽度计算应使用 display width（支持 CJK），非 `len()`。建议预留 1 列安全边距防止边界换行异常。
 `os.get_terminal_size()` raises `OSError` in non-TTY environments (CI, pipes); use `patch` when testing. All width calculations should use display width (CJK-aware), not `len()`. A 1-column safety margin is recommended to prevent boundary wrapping issues.
+
+---
+
+## 13. Windows CMD 滚动条与 Live 光标定位冲突 | Windows CMD Scrollbar & Live Cursor Positioning Conflict
+
+在 Windows CMD 终端中使用 `Live(transient=True, auto_refresh=False)` + `live.refresh()` 循环刷新时，如果用户手动拖动滚动条离开 Live 区域并停留，终端会在数秒后整体**冻结**——画面不刷新，滚动无响应，直至用户拖动回底部或滚动到最底部后才恢复正常。
+
+When using `Live(transient=True, auto_refresh=False)` + `live.refresh()` in a refresh loop on Windows CMD, if the user manually drags the scrollbar away from the Live area and stays there, the entire terminal **freezes** after several seconds — no display refresh, no scroll response — until the user drags back to the bottom or scrolls to the very bottom.
+
+### 原因 / Root Cause
+
+`Live` 的 `transient=True` 刷新机制依赖 ANSI 逃逸序列在终端内部 **保存光标位置→跳回→覆盖内容→恢复光标位置**。Windows CMD 的滚屏 buffer 与光标定位是耦合的——当用户拖动滚动条离开 Live 区域后，终端可视范围与 Rich 保存的光标基准不再一致。每次 `live.refresh()` 发出的光标定位逃逸序列在滚动偏移状态下被 CMD 错误处理，状态累积不一致最终导致终端冻结。拖动回底部后终端重新同步，恢复。
+
+`Live` with `transient=True` relies on ANSI escape sequences to **save cursor position → jump back → overwrite content → restore cursor position**. Windows CMD's scroll buffer is coupled with cursor positioning — when the user drags the scrollbar away from the Live area, the terminal's visible viewport no longer matches the cursor anchor saved by Rich. Every `live.refresh()` emits cursor-positioning escape sequences that CMD mishandles under scroll offset, accumulating state inconsistency until the terminal freezes. Dragging back to the bottom re-synchronizes and restores normal behavior.
+
+### 发生场景 / When It Happens
+
+- `agent_listen.py` 的 `listen_tui()`：`Live(transient=True, auto_refresh=False)` 循环刷新按键监听 TUI
+- `prompt.py` 的 LLM stream 显示：`Live(transient=True, refresh_per_second=...)` 持续更新流式输出
+- 任何有 `transient=True` + 循环 `refresh()` 且运行时间较长（超过数秒）的 Live 场景
+- 在 Windows CMD 和 PowerShell 上均可能重现
+
+- `agent_listen.py` `listen_tui()`: `Live(transient=True, auto_refresh=False)` loop-refreshes the key-listen TUI
+- `prompt.py` LLM stream display: `Live(transient=True, refresh_per_second=...)` continuously updates streaming output
+- Any scenario with `transient=True` + refresh loop running for more than a few seconds
+- Reproducible on Windows Command Prompt (CMD) and PowerShell

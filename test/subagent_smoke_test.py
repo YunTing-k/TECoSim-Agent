@@ -33,7 +33,7 @@ def setup_ctx():
     return ctx
 
 
-def test_explore_subagent():
+def test_explorer_subagent():
     """Test explore agent reads a file."""
     print("\n=== Test 1: Explore SubAgent ===")
     ctx = setup_ctx()
@@ -42,7 +42,7 @@ def test_explore_subagent():
 
     agent = SubAgent(
         parent_ctx=ctx,
-        subagent_type="explore",
+        subagent_type="explorer",
         prompt="Read the file src/constants.py with limit 5 lines and tell me what constants are defined at the start.",
         agent_id="test_exp_001",
         max_steps=3,
@@ -67,7 +67,7 @@ def test_subagent_stats():
 
     agent = SubAgent(
         parent_ctx=ctx,
-        subagent_type="explore",
+        subagent_type="explorer",
         prompt="Read src/constants.py with limit 10 lines.",
         agent_id="test_stat_001",
         max_steps=3,
@@ -92,7 +92,7 @@ def test_subagent_dump():
 
     agent = SubAgent(
         parent_ctx=ctx,
-        subagent_type="explore",
+        subagent_type="explorer",
         prompt="Read src/constants.py line 1 to 5.",
         agent_id="test_dump_001",
         max_steps=3,
@@ -123,7 +123,7 @@ def test_agent_id_in_list():
 
     agent = SubAgent(
         parent_ctx=ctx,
-        subagent_type="explore",
+        subagent_type="explorer",
         prompt="Read src/constants.py line 1 to 3 and report the constants.",
         agent_id="test_list_001",
         max_steps=3,
@@ -154,7 +154,7 @@ def test_tool_dispatch_integration():
     progress = Progress(console=Console(quiet=True), disable=True)
     progress.start()
 
-    results, _ = call_tools(TOOL_NAME_SPAWN_AGENT, {"subagent_type": "explore", "prompt": "test"}, ctx, board, progress)
+    results, _ = call_tools(TOOL_NAME_SPAWN_AGENT, {"subagent_type": "explorer", "prompt": "test"}, ctx, board, progress)
     progress.stop()
     print(f"call_tools result for spawn_agent: {results}")
     # spawn_agent should hit the "undefined" branch in call_tools since dispatch is at execute_tools level
@@ -173,7 +173,7 @@ def test_background_agent_launch():
     progress = Progress(console=Console(quiet=True), disable=True)
 
     tc = {"function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
-        "subagent_type": "explore", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
+        "subagent_type": "explorer", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
         "if_background": True,
     })}, "id": "call_test_bg_001"}
 
@@ -191,7 +191,7 @@ def test_background_agent_launch():
     assert len(ctx.background_agents) == bg_initial_count + 1
     bg_tc, bg_agent, bg_thread, _ = ctx.background_agents[-1]
     assert bg_tc is tc
-    assert bg_agent.subagent_type == "explore"
+    assert bg_agent.subagent_type == "explorer"
     assert bg_thread.is_alive() or bg_agent.status != AgentStatus.PENDING
     assert bg_agent.agent_id in ctx.agent_list
     assert ctx.agent_list[bg_agent.agent_id].status in (AgentStatus.PENDING, AgentStatus.RUNNING)
@@ -213,7 +213,7 @@ def test_background_agent_collect():
     progress = Progress(console=Console(quiet=True), disable=True)
 
     tc = {"function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
-        "subagent_type": "explore", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
+        "subagent_type": "explorer", "subject": "check version", "prompt": "Read src/constants.py with limit 3 lines and report the version constant.",
         "if_background": True,
     })}, "id": "call_test_collect_001"}
 
@@ -264,7 +264,7 @@ def test_execute_tools_bg_fg_split():
         },
         {
             "function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
-                "subagent_type": "explore",
+                "subagent_type": "explorer",
                 "subject": "check version bg",
                 "prompt": "Read src/constants.py with limit 3 lines and report the version.",
                 "if_background": True,
@@ -273,7 +273,7 @@ def test_execute_tools_bg_fg_split():
         },
         {
             "function": {"name": TOOL_NAME_SPAWN_AGENT, "arguments": json.dumps({
-                "subagent_type": "explore",
+                "subagent_type": "explorer",
                 "subject": "check constants fg",
                 "prompt": "Read src/constants.py with limit 5 lines and report the constants.",
                 "if_background": False,
@@ -312,7 +312,7 @@ def test_execute_tools_bg_fg_split():
 
 
 if __name__ == "__main__":
-    test_explore_subagent()
+    test_explorer_subagent()
     test_subagent_stats()
     test_subagent_dump()
     test_agent_id_in_list()

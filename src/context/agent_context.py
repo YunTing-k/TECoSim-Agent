@@ -26,6 +26,7 @@ Revision:
 2026.6.12      Yu Huang      2.4      Add subagent_mute flag and agent_list registry for subagent coordination
 2026.6.13      Yu Huang      2.5      Add background_agents registry + stale agent cleanup on session resume
 2026.6.14      Yu Huang      2.6      Fix: file_read_log path key, bg timeout tracking, if_summarized, cron file guard
+2026.7.15-16   Yu Huang      2.7      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -47,6 +48,7 @@ from argparse import Namespace
 from prompt_toolkit import PromptSession
 from typing import Any, TypedDict, TYPE_CHECKING
 from rich.console import Console
+from src.tool.wechat_support import WeChatBridge, WeChatQueuedMsg
 from src.tool.mcps_support import MCPToolRouter
 from src.tool.simulator_support import DesignManager, RunManager
 from src.agent.progress import SubAgentProgress, AgentStatus
@@ -90,6 +92,46 @@ class CronTask(TypedDict):
     if_end: bool
 
 
+PERMISSION_LABEL_TO_NAME_MAP: dict[str, str] = {
+    # basic tools
+    "TOOL_NAME_SPAWN_AGENT": TOOL_NAME_SPAWN_AGENT,
+    "TOOL_NAME_CREATE_CRON": TOOL_NAME_CREATE_CRON,
+    "TOOL_NAME_QUERY_CRON": TOOL_NAME_QUERY_CRON,
+    "TOOL_NAME_REMOVE_CRON": TOOL_NAME_REMOVE_CRON,
+    "BASH_HIGH_RISK_LABEL": BASH_HIGH_RISK_LABEL,
+    "BASH_PACKAGE_LABEL": BASH_PACKAGE_LABEL,
+    "BASH_NETWORK_LABEL": BASH_NETWORK_LABEL,
+    "BASH_REMOVAL_RF_LABEL": BASH_REMOVAL_RF_LABEL,
+    "BASH_REMOVAL_R_LABEL": BASH_REMOVAL_R_LABEL,
+    "BASH_REMOVAL_F_LABEL": BASH_REMOVAL_F_LABEL,
+    "BASH_REMOVAL_LABEL": BASH_REMOVAL_LABEL,
+    "BASH_CHMOD_LABEL": BASH_CHMOD_LABEL,
+    "BASH_CHOWN_LABEL": BASH_CHOWN_LABEL,
+    "BASH_FILE_LABEL": BASH_FILE_LABEL,
+    "BASH_INLINE_SCRIPT_LABEL": BASH_INLINE_SCRIPT_LABEL,
+    "BASH_REPOSITORY_MODIFY_LABEL": BASH_REPOSITORY_MODIFY_LABEL,
+    "BASH_STAGE_CHANGE_LABEL": BASH_STAGE_CHANGE_LABEL,
+    "BASH_UNKNOWN_LABEL": BASH_UNKNOWN_LABEL,
+    "BASH_SAFE_LABEL": BASH_SAFE_LABEL,
+    "TOOL_NAME_GLOB_FILE": TOOL_NAME_GLOB_FILE,
+    "TOOL_NAME_GREP_FILE": TOOL_NAME_GREP_FILE,
+    "TOOL_NAME_READ_FILE": TOOL_NAME_READ_FILE,
+    "TOOL_NAME_WRITE_FILE": TOOL_NAME_WRITE_FILE,
+    "TOOL_NAME_EDIT_FILE": TOOL_NAME_EDIT_FILE,
+    "TOOL_NAME_SKILL": TOOL_NAME_SKILL,
+    "TOOL_NAME_WEB_FETCH": TOOL_NAME_WEB_FETCH,
+    "TOOL_NAME_WEB_SEARCH": TOOL_NAME_WEB_SEARCH,
+    # WeChat tools
+    "TOOL_NAME_WECHAT_SEND_MEDIA": TOOL_NAME_WECHAT_SEND_MEDIA,
+    # simulation tool"
+    "TOOL_NAME_INIT_DESIGN": TOOL_NAME_INIT_DESIGN,
+    "TOOL_NAME_LAUNCH_SIM": TOOL_NAME_LAUNCH_SIM,
+    "TOOL_NAME_READ_LOG": TOOL_NAME_READ_LOG,
+}
+
+PERMISSION_NAME_TO_LABEL_MAP: dict[str, str] = {v: k for k, v in PERMISSION_LABEL_TO_NAME_MAP.items()}
+
+
 class AgentContext:
     """context of TECoSim agent"""
     def __init__(self):
@@ -106,6 +148,8 @@ class AgentContext:
         self.agent_session: PromptSession | None = None  # (don't dump)
         self.llm_client: OpenAI | None = None  # (don't dump, shared)
         self.url_caches: list[URLCache] = []  # (don't dump)
+        self.wechat_bot: WeChatBridge | None = None  # (don't dump)
+        self.last_wechat_msg: WeChatQueuedMsg | None = None  # (don't dump)
         self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump, shared)
         self.durable_crons: list[CronDump] = []  # (don't dump, read-only)
         self.session_crons: list[CronDump] = []  # (don't dump, read-only)
@@ -119,6 +163,7 @@ class AgentContext:
         # params
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump, shared)
+        self.enable_wechat: bool = False  # (don't dump)
         self.if_summarized: bool = False
         self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
@@ -143,8 +188,8 @@ class AgentContext:
         self.loaded_skills: list[dict[str, str]] = []
         # signals
         self.task_end: bool = True  # (don't dump)
-        self.subagent_mute: bool = False  # (don't dump) suppress console output and permission TUIs for subagents
-        self.permissions: dict[str, bool] = {
+        self.tui_mute: bool = False  # (don't dump) suppress console output and permission TUIs for all agents
+        self.permissions: dict[str, bool] = {  # can be override if WeChat is enabled
             # basic tools
             TOOL_NAME_SPAWN_AGENT: False,
             TOOL_NAME_CREATE_CRON: False,
@@ -173,11 +218,22 @@ class AgentContext:
             TOOL_NAME_SKILL: False,
             TOOL_NAME_WEB_FETCH: False,
             TOOL_NAME_WEB_SEARCH: False,
+            # WeChat tools
+            TOOL_NAME_WECHAT_SEND_MEDIA: False,
             # simulation tools
             TOOL_NAME_INIT_DESIGN: False,
             TOOL_NAME_LAUNCH_SIM: False,
             TOOL_NAME_READ_LOG: False,
         }
+
+
+    def config_wechat_permission(self, config: dict[str, Any]):
+        """configure the permission of Agent if WeChat is enabled (exclude MCPs)"""
+        for k, v in PERMISSION_LABEL_TO_NAME_MAP.items():
+            if isinstance(config.get(k), bool):
+                self.permissions[v] = config.get(k)
+            else:
+                continue
 
 
     def file_read_log(self, path: str):

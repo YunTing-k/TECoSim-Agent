@@ -40,6 +40,7 @@ Revision:
 2026.6.14      Yu Huang      3.7      Fix: summary trigger >= with if_summarized guard, tool calls spinner board pass args
                                       stale agent cleanup on session resume
 2026.6.30      Yu Huang      3.8      Refactor the Markdown render style with custom theme
+2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -57,7 +58,8 @@ from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled
-from src.tool import tool_def, tool_execute, skills_support, mcps_support, summarize_support, file_io_support, cron_support
+from src.tool import (
+    tool_def, tool_execute, skills_support, wechat_support, mcps_support, summarize_support, file_io_support, cron_support)
 from src.utility.basic_utils import load_configs, get_console
 from src.constants import *
 
@@ -172,6 +174,26 @@ if __name__ == '__main__':
         sys_log.debug("All cron tasks are disabled in main agent and subagent")
         console.print("All cron tasks are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
 
+    """config wechat bot"""
+    if ctx.args.wechat:
+        wechat_bot = wechat_support.WeChatBridge(console=console, prompt_session=ctx.agent_session,
+                                                 session_uuid=ctx.session_uuid, config=ctx.agent_configs)
+        login_flag = wechat_bot.login()
+        if login_flag:
+            ctx.wechat_bot = wechat_bot
+            ctx.tui_mute = True  # mute permission TUI
+            ctx.enable_wechat = True  # enable WeChat mode
+            assert ctx.wechat_bot
+            if ctx.args.resume is not None:
+                ctx.wechat_bot.load_cdn_cache()
+                ctx.wechat_bot.load_msg_history()
+            ctx.wechat_bot.run()
+        else:
+            ctx.enable_wechat = False
+            sys_log.info("WeChat Bot failed to launch and is disabled, fallback to CLI")
+            console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] failed to launch and is [bold red]disabled[/bold red]"
+                          f", fallback to CLI")
+
     """config agent context"""
     # resume context
     if ctx.args.resume is not None:
@@ -182,9 +204,19 @@ if __name__ == '__main__':
         ctx.load_context(console=console)
     ctx.cron_tasks, ctx.cron_ids = cron_support.config_cron(ctx.durable_crons, ctx.session_crons, console=console)  # config crons
     ctx.active_cron = len(ctx.cron_tasks)
-    ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)  # set MCP permission
+    # override permission if WeChat is enabled
+    if ctx.wechat_bot is not None and ctx.enable_wechat:
+        ctx.config_wechat_permission(ctx.agent_configs["WECHAT_BOT_PERMISSION"])
+        wechat_enable_all_mcp = bool(ctx.agent_configs["WECHAT_BOT_PERMISSION"]["ALL_MCP_TOOLS"])
+        ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console, enable_all_mcp=wechat_enable_all_mcp)
+        sys_log.info("Permission in main agent is overridden by WeChat Bot")
+        console.print(
+            f"[{MAJOR_COLOR2}]Permission[/{MAJOR_COLOR2}] in main agent is overridden by [{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}]")
+    # set MCP permission
+    else:
+        ctx.mcp_router.update_mcp_permission(permissions=ctx.permissions, console=console)
     # get all agent tools
-    # 1). agent tools (basic, simulation)
+    # 1). agent tools (basic, simulation, WeChat)
     # 2). MCPs tools
     if not ctx.args.notools:
         ctx.tools = tool_def.create_tools_prompts(ctx)
@@ -206,7 +238,7 @@ if __name__ == '__main__':
             if ctx.task_end:
                 ui_info.usage_bar(ctx=ctx, console=console)
                 """
-                Listen agent when there are active cron tasks, pending tasks, foreground subagents 
+                Listen agent when there are active cron tasks, pending tasks, foreground subagents, WeChat Bot is enabled
                 1). check cron tasks
                     if cron tasks triggered, append messages and exits (else exits if user press any key)
                 2). display agent tasks
@@ -214,6 +246,9 @@ if __name__ == '__main__':
                 3). check foreground subagents,
                     if any subagent stopped, append messages and exits (else exits if user press any key)
                     reason of listening here but not in top of loop is to avoid subagent to interrupt the main agent
+                4). listen WeChat messages,
+                    if WeChat Bot is enabled, WeChat messages will be the only source of user prompts and agent_listen is
+                    always called, and can't exit if Ctrl+C is not pressed
                 """
                 listen_triggerd = agent_listen.listen_tui(ctx=ctx, board=board, console=console)
                 if not listen_triggerd:
@@ -238,7 +273,7 @@ if __name__ == '__main__':
                             ctx.session_title = title if title else ERROR_SESSION_TITLE
                             ui_info.set_terminal_title(ctx.session_title)
                 else:
-                    """pass cron prompts to LLM"""
+                    """pass prompts to LLM"""
                     pass
             else:
                 """second response with previous loop's tool results or reminder"""

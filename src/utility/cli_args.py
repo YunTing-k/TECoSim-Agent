@@ -17,6 +17,7 @@ Revision:
 2026.6.2       Yu Huang      1.5      Add CLI command support of skill list
 2026.6.3       Yu Huang      1.6      Add cron tasks support
 2026.6.5       Yu Huang      1.7      Add --nosystem, --notools, --nocrons support
+2026.7.15-16   Yu Huang      1.8      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -35,6 +36,7 @@ def tecosim_agent_args() -> Namespace:
     parser = argparse.ArgumentParser(description='Thermo-Electric Coupling Cross-level Display Simulator (TECoSim) Agent')
     parser.add_argument('-l', '--log', help='To enable dev logger', action='store_true')
     parser.add_argument('-r', '--resume', type=str, help='Resume with session UUID', metavar='<UUID>')
+    parser.add_argument('-wc', '--wechat', help='Interact agent with WeChat', action='store_true')
     parser.add_argument('--nosystem', help='To disable main agent\'s system prompts', action='store_true')
     parser.add_argument('--notools', help='To disable main agent\'s tools', action='store_true')
     parser.add_argument('--nocrons', help='To disable all cron tasks in main agent and subagent', action='store_true')

@@ -13,6 +13,7 @@ Revision:
 2026.6.13      Yu Huang      1.1      Subagent support: types, status, icons, colors, tool result limits & Add header
 2026.6.14      Yu Huang      1.2      Add: simulator timeout default, agent label renames, subagent step/warn defaults
 2026.6.29      Yu Huang      1.3      Add: QUESTION_NO_CHOICE_LABEL, SUBAGENT_SUMMARIES_NAME
+2026.7.15-16   Yu Huang      1.4      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -23,10 +24,10 @@ MCP params, and more.
 """TECoSim Agent constants"""
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
-TECOSIM_AGENT_MINOR_VERSION: int = 2
-TECOSIM_AGENT_UPDATE_VERSION: int = 8
+TECOSIM_AGENT_MINOR_VERSION: int = 3
+TECOSIM_AGENT_UPDATE_VERSION: int = 0
 """Basic configs"""
-# basic files
+# basic files/dirs
 LOG_PATH: str = "./log"
 API_CONFIGS_PATH: str = "./config/api_configs.json"
 AGENT_CONFIGS_PATH: str = "./config/agent_configs.json"
@@ -36,7 +37,8 @@ MCPS_CONFIGS_PATH: str = MCPS_PATH + "/mcps_configs.json"
 SESSION_PATH: str = "./session"
 CRON_CONFIGS_PATH: str = "./cron/cron_configs.json"
 CRON_TASK_ID_LEN: int = 8
-# files under session:
+WECHAT_CRED_PATH: str = "./config/wechat_bot_cred.json"
+# files/dirs under session:
 USER_HISTORY_NAME: str = "user_history"
 MESSAGES_NAME: str = "messages.json"
 CONTEXT_NAME: str = "context.json"
@@ -44,6 +46,42 @@ CRON_NAME: str = "cron_configs.json"
 TASKS_NAME: str = "tasks.json"
 RUNS_NAME: str = "runs.json"
 DESIGNS_NAME: str = "designs.json"
+WECHAT_MEDIA_CACHE_DIR: str = "wechat_cache"
+WECHAT_MEDIA_CACHE_NAME: str = "cdn_cache.json"
+WECHAT_HISTORY_NAME: str = "msg_history.json"
+# WeChat bot
+WECHAT_BOT_LOGIN_DEFAULT_TIMEOUT_S: float = 120
+WECHAT_BOT_STOP_DEFAULT_TIMEOUT_S: float = 10
+WECHAT_BOT_HEAD_CDN_DEFAULT_TIMEOUT_S: float = 10
+WECHAT_BOT_TEXT_REPLY_DEFAULT_TIMEOUT_S: float = 30
+WECHAT_BOT_MEDIA_REPLY_DEFAULT_TIMEOUT_S: float = 60
+WECHAT_BOT_MUTE_NONFATAL_ERROR_DEFAULT: bool = False
+WECHAT_BOT_MSG_SUMMARY_CHAR_MAX: int = 100
+WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB_DEFAULT: int = 100
+WECHAT_MEDIA_CACHE_KEY_MAX_LEN: int = 8
+WECHAT_BOT_QUOTED_CHAR_MAX: int = 1000
+WECHAT_BOT_LOCKED_LIST: list[str] = [
+    "✅ Session has been locked. You have exclusive access. Other users will be denied until this session ends.",
+    "✅ Exclusive session initiated. All other incoming requests will be rejected for the duration of this conversation.",
+    "✅ You now hold the session lock. No other users will be admitted until you disconnect.",
+    "✅ Session secured. External access has been disabled for the remainder of this interaction.",
+    "✅ Lock acquired. This session is now single-user. Concurrent requests will be blocked.",
+]
+WECHAT_BOT_BLOCK_REPLY_LIST: list[str] = [
+    "❌ Sorry, I'm currently serving another user. This session won't be available until it ends.",
+    "❌ I'm in a private session right now. No queue, no waiting — please don't hold your breath.",
+    "❌ Occupied. There's no line to wait in — this conversation is exclusive until it's over.",
+    "❌ Another user has locked this session. You won't get through until they're done.",
+    "❌ Currently in an exclusive chat. Don't wait around — this won't open up mid-session.",
+    "❌ I'm a one-person-at-a-time kind of bot. No queue, no waiting list, just come back... eventually.",
+    "❌ Someone else has my full attention right now. I don't do reservations — try again only if you're feeling lucky.",
+    "❌ I'm not ignoring you, but I kind of am. This session is locked, and there's no ETA.",
+    "❌ Session locked. No waitlist. Try again only after the current chat ends.",
+    "❌ Exclusive session in progress. Door's closed, no peeking.",
+    "❌ Occupied. No queue. Come back when it's quiet.",
+    "❌ I'm with someone else and can't switch mid-conversation. There's no waitlist — you'll just have to catch me when I'm free.",
+    "❌ This is a strictly one-on-one session. No interruptions allowed, no line forming. Please don't wait on me.",
+]
 # subagent
 MAIN_AGENT_ID: str = "main"
 AGENT_ID_LEN: int = 8
@@ -83,6 +121,9 @@ SUBAGENT_COLOR_GRADIENT: int = 128
 SUBAGENT_COLOR_PERIOD: float = 4
 # others
 DEFAULT_TIMEOUT_MS: int = 1000000
+WECHAT_PROMPT_START_LABEL: str = "<wechat_bot>"
+WECHAT_PROMPT_END_LABEL: str = "</wechat_bot>"
+WECHAT_PROMPT_ICON: str = "▶"
 SYS_REMINDER_START_LABEL: str = "<system_reminder>"
 SYS_REMINDER_END_LABEL: str = "</system_reminder>"
 SYS_REMINDER_ICON: str = "⚑"
@@ -106,7 +147,7 @@ DONE_LABEL: str = "DONE"
 TIMEOUT_LABEL: str = "TIMEOUT"
 CANCELLED_LABEL: str = "CANCELLED"
 DENIED_LABEL: str = "DENIED"
-SUBAGENT_PERMISSION_DENIED_INFO: str = "Permission request denied, subagent type does not have access to this tool"
+MUTE_PERMISSION_DENIED_INFO: str = "Permission request denied, you don't have access to this tool"
 MAINAGENT_PERMISSION_DENIED_INFO: str = "Permission request denied by user"
 MAINAGENT_PERMISSION_DENIED_PREFIX_INFO: str = "Permission request denied by user with comment:"
 DISABLED_LABEL: str = "DISABLED"
@@ -142,6 +183,7 @@ TOOL_NAME_EDIT_FILE: str = "edit_file"
 TOOL_NAME_SKILL: str = "skill"
 TOOL_NAME_WEB_FETCH: str = "web_fetch"
 TOOL_NAME_WEB_SEARCH: str = "web_search"
+TOOL_NAME_WECHAT_SEND_MEDIA: str = "wechat_send_media"
 TOOL_NAME_CALL_MCP: str = "call_mcp"
 # simulation tools
 TOOL_NAME_CHECK_SIMULATOR: str = "check_simulator"
@@ -262,6 +304,8 @@ KEY_LISTEN_SLEEP_TIME_MS: int = 30
 SPINNER_LIVE_CHECK_GAP_MS: int = 200
 SPINNER_TERMINATE_WAIT_S: int = 10
 USER_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Enter: Submit)"
+WECHAT_VERIFY_CODE_PREFIX1: str = "Please input the verify code on you phone"
+WECHAT_VERIFY_CODE_PREFIX2: str = "Wrong verify code, please input the correct verify code on you phone"
 USER_PROMPT_PREFIX_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
     "Type, and behold the breath of silica",
     "Whisper your command into the chips",

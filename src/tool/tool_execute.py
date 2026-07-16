@@ -33,6 +33,7 @@ Revision:
 2026.6.21      Yu Huang      3.1      Fix: User addons cannot be inserted between tool results when LLM is deepseek
 2026.6.29      Yu Huang      3.2      Subagent summary: summaries.json for foreground + background resume display
 2026.6.30      Yu Huang      3.3      Add multi-round results truncate method with pydict keys preserved
+2026.7.15      Yu Huang      3.4      Add merge subagent statistic method
 
 Details:
 ---------
@@ -58,7 +59,7 @@ from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
 from src.tool.ask_permission import ask_permission_tui
 from src.utility.basic_utils import truncate_tool_result
-from src.agent.subagent import SubAgent
+from src.agent.subagent import SubAgent, merge_agent_stats
 from src.agent.progress import AgentStatus, SubAgentProgress
 from src.constants import *
 
@@ -349,17 +350,7 @@ def check_background_agents(main_ctx: AgentContext) -> bool:
                 agent.status = AgentStatus.TIMEOUT
                 agent.progress.status = AgentStatus.TIMEOUT
 
-        main_ctx.total_llm_requests += agent.stats["total_llm_requests"]
-        main_ctx.user_prompts += agent.stats["user_prompts"]
-        main_ctx.content_prompts += agent.stats["content_prompts"]
-        main_ctx.reasoning_prompts += agent.stats["reasoning_prompts"]
-        main_ctx.total_input_tokens += agent.stats["total_input_tokens"]
-        main_ctx.total_output_tokens += agent.stats["total_output_tokens"]
-        main_ctx.total_tokens += agent.stats["total_tokens"]
-        main_ctx.total_uncached_tokens += agent.stats["total_uncached_tokens"]
-        main_ctx.tool_calls_prompts += agent.stats["tool_calls_prompts"]
-        main_ctx.tool_results_prompts += agent.stats["tool_results_prompts"]
-
+        merge_agent_stats(main_ctx, agent)
         agent_id_str = f"{agent.agent_id} ({agent.subagent_type})"
         if agent.status == AgentStatus.DONE:
             if agent.result:
@@ -497,16 +488,7 @@ def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext,
             agent.progress.status = AgentStatus.TIMEOUT
     """update stats"""
     for _, agent in subagents:
-        main_ctx.total_llm_requests += agent.stats["total_llm_requests"]
-        main_ctx.user_prompts += agent.stats["user_prompts"]
-        main_ctx.content_prompts += agent.stats["content_prompts"]
-        main_ctx.reasoning_prompts += agent.stats["reasoning_prompts"]
-        main_ctx.total_input_tokens += agent.stats["total_input_tokens"]
-        main_ctx.total_output_tokens += agent.stats["total_output_tokens"]
-        main_ctx.total_tokens += agent.stats["total_tokens"]
-        main_ctx.total_uncached_tokens += agent.stats["total_uncached_tokens"]
-        main_ctx.tool_calls_prompts += agent.stats["tool_calls_prompts"]
-        main_ctx.tool_results_prompts += agent.stats["tool_results_prompts"]
+        merge_agent_stats(main_ctx, agent)
     """gather subagent results"""
     messages = []
     for tc, agent in subagents:

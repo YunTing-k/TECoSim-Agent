@@ -1,9 +1,11 @@
-# TECoSim Agent: 从跨层次建模到智能体设计
-# TECoSim Agent: From Cross-level Modeling to Intelligent Design
+# TECoSim Agent
 
-<div align="center" style="margin-top: 50px;">
-  <img src="./doc/img/logo.png" width="75%" />
+<div align="center">
+  <img src="./doc/img/logo.png" width="100%" />
 </div>
+
+> 从**跨层次建模**到**智能体设计**
+> From **Cross-level Modeling** to **Agent Design**
 
 ## 简介 | Introduction
 ### 背景 | Background
@@ -15,7 +17,7 @@ Modern display systems are **multi-level nested complex systems** (Physical → 
 </div>
 
 [TECoSim仿真器](https://github.com/YunTing-k/TECoSim)（暂未开源）正是为建模这些跨层次耦合效应而生，采用**自底向上逐层抽象**与**系统级端到端仿真**相结合的**跨层次协同仿真方法**。
-The [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not yet open-source) was built specifically to model these cross-level coupling effects, using a **cross-level co-simulation** approach combining **bottom-up abstraction** with **system-level end-to-end simulation**.
+The [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not open-source yet) was built specifically to model these cross-level coupling effects, using a **cross-level co-simulation** approach combining **bottom-up abstraction** with **system-level end-to-end simulation**.
 
 ### 敏捷设计的困境 | Dilemma of Agile Design
 TECoSim 面临两个核心瓶颈：
@@ -49,12 +51,9 @@ Traditional design requires experts to **manually translate** design intent into
 
 | # | 特性 Feature | 说明 Description |
 |---|-------------|------------------|
-| 1 | **自然语言驱动** Natural language driven | 描述目标，智能体自动完成设计、仿真、验证全流程 / Describe goals, the agent handles the full workflow |
-| 2 | **TECoSim 无缝集成** Seamless integration | 自动配置仿真参数、调用仿真器、解析输出结果 / Auto-configures params, invokes simulator, parses results |
-| 3 | **子Agent协作** Subagent | 并发启动 explorer/worker/scheduler 类型子Agent，支持前台阻塞/后台异步模式，共享任务看板 / Parallel subagents with foreground/background modes and shared scoreboard |
-| 5 | **任务看板** Scoreboard | 线程安全的任务系统，依赖管理与状态流转，子Agent任务可被主Agent认领 / Thread-safe tasks with dependency tracking, subagent-created tasks claimable by main agent |
-| 6 | **内置工具与权限** Tools & permissions | 文件I/O、Shell、网页获取/搜索、定时任务；所有敏感操作需用户TUI确认 / File I/O, bash, web fetch/search, cron; TUI permission for all sensitive ops |
-| 7 | **MCP 与技能** MCP & skills | stdio/http/sse MCP 服务器接入，Anthropic 式技能框架按需加载 / MCP server integration + Anthropic-style skill framework with on-demand loading |
+| 1 | **通用智能体平台** General Agent Platform | 内置文件读写编辑、Bash执行、网页搜索获取、定时任务、多Agent并发协作、任务看板、MCP协议、技能框架等丰富工具，结合权限系统 / File I/O & edit, Bash execution, web search & fetch, cron tasks, parallel subagents, scoreboard, MCP, skill framework — with permission system |
+| 2 | **跨层次工具无缝集成** Cross-Level Tool Integration | 自然语言描述目标，智能体自动完成从设计、仿真到验证的全流程，深度整合 TECoSim 跨层次协同仿真 / Describe goals in natural language — the agent handles the full design→simulate→verify workflow, deeply integrated with TECoSim cross-level co-simulation |
+| 3 | **微信交互** WeChat Interaction | 通过微信 Bot 接收文字、语音（ASR 转写）、图片、视频、文件，支持双向多媒体回复 / Interact via WeChat Bot — text, voice (ASR), images, video, files — with bidirectional multimedia reply |
 
 ---
 
@@ -67,6 +66,9 @@ Traditional design requires experts to **manually translate** design intent into
 - **可选 Optional**: TECoSim 仿真器（如有需求请联系作者获取）/ TECoSim simulator (contact the author if needed)
 
 ### 安装与配置 | Installation and Configuration
+
+以下以 `venv` 为例创建虚拟环境（也可使用 `conda` 等工具）：
+The following uses `venv` as an example (`conda` or other virtual environment tools also work):
 
 ```bash
 # 1. 克隆仓库 | Clone the repository
@@ -82,65 +84,37 @@ venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 ```
 
-首次使用前需修改默认配置文件，见 [基础配置](#基础配置--essential-configurations)。
-Configure the default config files before first use, see [Configuration](#基础配置--essential-configurations).
+安装后，还需要配置 `./config/` 下的文件：
 
-### 首次启动 | First Launch
-
-```bash
-python -m src.main
-```
-
-加载完毕后即可在输入框下达指令 / Once loaded, type your instructions in the prompt.
-
-## 多Agent协作 | Subagent Coordination
-
-Agent 支持通过 `spawn_agent` 工具并发启动多个专业化子Agent，实现任务的并行分解与异步执行：
-The agent supports concurrent subagent spawning via `spawn_agent` for parallel task decomposition:
-
-| Agent 类型 Type | 能力 Capability |
-|----------------|---------------|
-| `explorer` | 只读代码探索、文件搜索、网页获取 / Read-only exploration & search |
-| `worker` | 完整工具集的通用任务执行 / General-purpose with full toolset |
-| `scheduler` | 共享任务看板，负责任务分解与依赖规划 / Shares scoreboard for task planning |
-
-子Agent 支持**前台**（阻塞等待结果）和**后台**（异步运行，完成时自动通知）两种模式。后台 Agent 在 REPL 空闲时通过监听 TUI 自动递交结果。主Agent可自动调用，或者用户显式要求。
-Subagents support **foreground** (blocking) and **background** (async with auto-notification) modes. Background agent results are delivered automatically when the REPL is idle.
-
----
-
-## 基础配置 | Essential Configurations
-
-安装后，需要配置 `./config/` 下的文件：
-After installation, configure these files in `./config/`:
-
-### 1. API 连接配置 | API Connection (`api_configs.json`)
+#### 1. API 连接配置 | API Connection (`api_configs.json`)
 
 必须设置 LLM API 端点与密钥：
 You must set your LLM API endpoint and key:
 
-| 参数 Parameter | 需设置 What to set |
+| 参数 Parameter | 说明 Description |
 |-----------|-------------|
-| `API_URL` | API 请求地址 / Your API base URL (e.g., OpenAI, DeepSeek, etc.) |
-| `API_KEY` | API 密钥 / Your API authentication key |
-| `MAIN_MODEL_NAME` | 主模型（复杂任务）/ Model for complex tasks (e.g., `gpt-4o`, `deepseek-v4-pro`) |
-| `FAST_MODEL_NAME` | 快速模型（简单任务）/ Model for simple tasks (e.g., `gpt-4o-mini`) |
+| `API_URL` | API 基地址 / API base URL (e.g., `https://api.deepseek.com`) |
+| `API_KEY` | API 认证密钥 / API authentication key |
+| `TIMEOUT_MS` | 请求超时（毫秒）/ Request timeout (ms) |
+| `MAIN_MODEL_NAME` | 主模型，用于复杂多步推理 / Main model for complex multi-step reasoning |
+| `MAIN_MODEL_*` | 主模型配套参数（上下文窗口、温度、推理开关、`max_tokens` 等）/ Companion params for the main model (context, temperature, reasoning, `max_tokens`, etc.) |
+| `MEDIUM_MODEL_NAME` | 中等模型，用于结构化决策等中等复杂度任务 / Medium model for structured decisions and moderate-complexity tasks |
+| `MEDIUM_MODEL_*` | 中等模型配套参数 / Companion params for the medium model |
+| `FAST_MODEL_NAME` | 快速模型，用于分类、校验等简单任务 / Fast model for classification, validation, and simple tasks |
+| `FAST_MODEL_*` | 快速模型配套参数 / Companion params for the fast model |
 
-### 2. Agent 运行参数 | Agent Runtime (`agent_configs.json`)
+#### 2. Agent 运行参数 | Agent Runtime (`agent_configs.json`)
 
-| 参数 Parameter | 默认值 Default | 说明 Why it matters |
+| 参数 Parameter | 默认值 Default | 说明 Description |
 |-----------|---------|----------------|
-| `SIMULATOR_PATH` | _(空 empty)_ | **如使用 TECoSim 必须设置** — 仿真器可执行文件路径 / **Must set** if using TECoSim |
+| `SIMULATOR_PATH` | `" "` | **如使用 TECoSim 必须设置** — 仿真器可执行文件路径 / **Must set** if using TECoSim |
 | `BASH_PATH` | `"bash"` | **GNU Bash** 的路径（不支持 cmd/pwsh，见下文）/ Path to **GNU Bash** (cmd/pwsh not supported) |
 | `RIPGREP_PATH` | `"rg"` | `ripgrep` 可执行文件路径 / Path to `ripgrep` executable |
-| `WEB_SEARCH_BACKEND` | _(空 empty)_ | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Set to enable web search |
-| `WEB_SEARCH_API_KEY` | _(空 empty)_ | 网络搜索 API Key / API key for your web search backend |
-| `DISPLAY_RESPONSE_REASON` | `true` | 是否显示 LLM 推理过程（关闭时显示 "Thinking ..." 占位）/ Whether to display LLM reasoning content |
+| `WEB_SEARCH_BACKEND` | `" "` | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Set to enable web search |
+| `WEB_SEARCH_API_KEY` | `" "` | 网络搜索 API Key / API key for your web search backend |
 
-### 3. Bash 与 ripgrep 路径说明 | Bash & ripgrep Notes
-
-**`BASH_PATH` 必须指向 GNU Bash**（不可用 cmd/PowerShell）。Agent 通过 `bash -c` 执行命令，并内置基于 Bash 语义的风险检测引擎。
-**`BASH_PATH` must point to GNU Bash** (not cmd/PowerShell). The agent executes commands via `bash -c` with Bash-semantics-based risk detection.
+**`BASH_PATH` 必须指向 GNU Bash**（不可用 `cmd`, `PowerShell` etc.,）。Agent 通过 `bash -c` 执行命令，并内置基于 Bash 语义的风险检测引擎。Windows操作系统可使用`git bash`。
+**`BASH_PATH` must point to GNU Bash** (not `cmd`, `PowerShell` etc.,). The agent executes commands via `bash -c` with Bash-semantics-based risk detection. For Windows OS, please use `git bash`.
 
 > **⚠️ 安全建议 | Security Advisory** — Agent 可通过 `bash` 执行任意系统命令，风险检测并非绝对可靠。强烈建议在沙箱环境（Docker/VM/隔离服务器）中以最小权限账户运行，并用 `/readonly_add` 保护关键路径。
 > The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonly_add` to protect critical paths.
@@ -149,6 +123,55 @@ You must set your LLM API endpoint and key:
 **ripgrep** — the `grep_file` tool requires ripgrep (`rg`). Install via your package manager, or set `RIPGREP_PATH` in `agent_configs.json`.
 
 > 完整参数列表请参阅 | See [Configuration Reference](./doc/configuration.md) for all available parameters.
+
+### 首次启动 | First Launch
+
+```bash
+python -m src.main
+```
+
+加载完毕后即可在输入框下达指令，开始你的使用 / Once loaded, type your instructions in the prompt and start your first usage.
+
+## 微信集成 | WeChat Integration
+
+通过 CLI 参数 `-wc` / `--wechat` 启用微信机器人模式，使用微信消息与 Agent 交互：
+Enable WeChat Bot mode via `-wc` / `--wechat` to interact with the agent through WeChat messages:
+
+**首次登录 | First Login**
+
+```
+python -m src.main -wc
+```
+
+启动后终端会显示二维码链接，使用微信扫码确认登录。若服务器要求配对验证码，终端会提示输入手机上的验证码。登录凭证保存于 `./config/wechat_bot_cred.json`，下次启动自动恢复，无需重复扫码。
+After launch, a QR code link is shown in the terminal — scan it with WeChat to confirm login. If the server requires a pairing code, the terminal prompts you to enter the code from your phone. Credentials are saved to `./config/wechat_bot_cred.json` and auto-restored on subsequent launches.
+
+**行为特性 | Behavior**
+
+| 特性 Feature | 说明 Description |
+|-------------|------------------|
+| 用户绑定 User Binding | 首个发送消息的用户自动绑定，建立独占会话；其他用户消息被自动拒绝并回复提示 / First user auto-bound — exclusive session; other users blocked with auto-reply |
+| 多模态消息 Multimodal Messaging | 支持接收文字、语音（服务器 ASR 转写为文本）、图片、视频、文件。可主动发送媒体文件（通过 `wechat_send_media` 工具）/ Receive text, voice (server ASR), images, video, files. Can send media proactively via `wechat_send_media` tool |
+| 监听 TUI Listen TUI | 启动后 Agent 进入强制监听模式（仅 Ctrl+C 退出），确保第一时间捕获微信消息 / Agent enters mandatory listen mode (only Ctrl+C exits) to capture WeChat messages immediately |
+| 权限隔离 Permission Isolation | 微信模式下主 Agent 权限被 `WECHAT_BOT_PERMISSION` 完全覆盖，与终端模式独立配置 / Main agent permissions fully overridden by `WECHAT_BOT_PERMISSION`, independent from terminal mode |
+| 工具执行中回复 Mid-Tool Reply | 可配置在 LLM 执行工具调用期间是否仍允许向微信发送中间回复（`WECHAT_BOT_REPLY_DURING_TOOL_CALL`）/ Configurable mid-tool-call reply to WeChat during LLM tool execution |
+| CDN 缓存 CDN Cache | 接收的媒体文件缓存跟随会话持久化，恢复同一会话时避免重复下载 / Media cache is persisted with the session — no re-download when resuming the same session |
+
+---
+
+## 多Agent协作 | Subagent Coordination
+
+Agent 支持通过 `spawn_agent` 工具并发启动多个专业化子Agent，实现任务的并行分解与异步执行。每个子Agent类型拥有不同的工具集与权限预设：
+The agent supports concurrent subagent spawning via `spawn_agent` for parallel task decomposition. Each subagent type has a distinct toolset and permission preset:
+
+| Agent 类型 Type | 工具集 Toolset | 能力 Capability |
+|----------------|---------------|----------------|
+| `explorer` | 探索工具 + 任务工具 / Explore tools + task tools | 代码探索、文件搜索、网页获取、Bash 执行 / Code exploration, file search, web fetch, Bash execution |
+| `worker` | 全工具集（排除问答与定时任务）/ Full toolset (exclude ask question & cron) | 通用任务执行 / General-purpose task execution |
+| `scheduler` | 任务工具 + 探索工具 / Task tools + explore tools | 共享任务看板，负责任务分解与依赖规划 / Shared scoreboard for task decomposition & planning |
+
+子Agent 支持**前台**（阻塞等待所有子Agent完成后汇总结果）和**后台**（异步运行，完成时通过监听 TUI 自动递交结果作为用户消息）两种模式。主 Agent 在一轮中可以同时启动多个不同类型的前台和后台子Agent。
+Subagents support **foreground** (blocking — waits for all spawned agents, returns aggregated results) and **background** (async — completion detected by listen TUI, results injected as user messages) modes. The main agent can launch multiple foreground and background subagents of different types in a single round.
 
 ---
 
@@ -178,15 +201,15 @@ Inside the agent interface, use built-in commands for quick queries:
 ### 命令行参数 | CLI Arguments
 
 ```bash
-python -m src.main                        # 启动Agent / Launch agent
-python -m src.main -l                     # 启用开发者日志 / Launch with developer logs
-python -m src.main -r <UUID>              # 恢复指定会话 / Resume a session
-python -m src.main --nosystem             # 禁用系统提示词 / Disable system prompts
-python -m src.main --notools              # 禁用工具 / Disable agent tools
-python -m src.main --nocrons              # 禁用定时任务 / Disable cron tasks
-python -m src.main --noskills             # 禁用技能 / Disable skills
-python -m src.main --nomcps               # 禁用MCP / Disable MCPs
-python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 / Allow all permissions
+python -m src.main                         # 启动Agent / Launch agent
+python -m src.main -l                      # 启用开发者日志 / Launch with developer logs
+python -m src.main -r <UUID>               # 恢复指定会话 / Resume a session
+python -m src.main --nosystem              # 禁用系统提示词 / Disable system prompts
+python -m src.main --notools               # 禁用工具 / Disable agent tools
+python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
+python -m src.main --noskills              # 禁用技能 / Disable skills
+python -m src.main --nomcps                # 禁用MCP / Disable MCPs
+python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险！） / Allow all permissions (dangerous!)
 ```
 
 ### 子命令 | Sub-commands
@@ -262,6 +285,7 @@ TECoSimAgent/
 │   │   ├── tool_def.py          # 工具定义与实现 / Tool definitions & implementations
 │   │   ├── tool_execute.py      # 工具执行调度器（含子Agent spawn）/ Tool dispatcher (incl. subagent spawn)
 │   │   ├── tool_dispatch.py     # 工具调用分发（call_tools）/ Tool call dispatch
+│   │   ├── wechat_support.py    # 微信桥接（登录/长轮询/消息管道/媒体缓存/回复）/ WeChat bridge (login, long-poll, message queue, media cache, reply)
 │   │   ├── simulator_support.py # 设计/运行管理与仿真器启动 / Design/run management & simulator launch
 │   │   ├── simulator_param.py   # 仿真器配置参数类型定义 / Simulator configuration TypedDicts
 │   │   ├── file_io_support.py   # 文件读写编辑支持 / File read/write/edit support
@@ -275,6 +299,14 @@ TECoSimAgent/
 │   │   ├── summarize_support.py # 会话摘要支持 / Session summarization support
 │   │   ├── mcps_support.py      # MCP 工具路由 / MCP tool router
 │   │   └── scoreboard.py        # 多Agent任务看板 / Task board for multi-agent coordination
+│   ├── wechat/
+│   │   ├── __init__.py          # 微信 Bot SDK 包（基于 wechatbot-sdk）/ WeChat Bot SDK package (based on wechatbot-sdk)
+│   │   ├── client.py            # WeChatBot 编排层 / WeChatBot orchestrator
+│   │   ├── auth.py              # QR 登录流程与凭证持久化 / QR login flow & credential persistence
+│   │   ├── protocol.py          # iLink API HTTP 调用 / iLink API low-level HTTP client
+│   │   ├── types.py             # 数据类型定义（IncomingMessage, CDNMedia 等）/ Dataclass types (IncomingMessage, CDNMedia, etc.)
+│   │   ├── crypto.py            # AES-128-ECB 加解密 / AES-128-ECB encrypt/decrypt
+│   │   └── errors.py            # 错误类型体系 / Error hierarchy
 │   └── utility/
 │       ├── basic_utils.py       # 共享工具函数 / Shared utilities (config, platform, markdown)
 │       ├── command.py           # 内建命令系统 / Built-in command system
@@ -282,7 +314,7 @@ TECoSimAgent/
 │       ├── sys_logger.py        # 日志系统 / Logging system
 │       ├── client.py            # LLM 客户端封装 / LLM client wrapper
 │       ├── ui_info.py           # TUI 组件 / TUI components (spinner, gradients, prompts)
-│       └── agent_listen.py      # 监听TUI（cron/后台Agent/任务监控）/ Listening TUI for cron/background agents/task monitoring
+│       └── agent_listen.py      # 监听TUI（cron/后台Agent/任务/微信监控）/ Listening TUI for cron, background agents, tasks, WeChat
 ├── config/
 │   ├── api_configs.json         # API 连接配置 / API connection configuration
 │   └── agent_configs.json       # Agent 运行参数 / Agent runtime parameters

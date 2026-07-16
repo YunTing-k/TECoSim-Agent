@@ -21,6 +21,7 @@ Revision:
                                       hint to subagent system prompt (avoid PowerShell on Windows)
 2026.6.30      Yu Huang      1.9      Add multi-round results truncate method with pydict keys preserved
 2026.7.3       Yu Huang      2.0      Add more current tools info when subagent is running
+2026.7.15      Yu Huang      2.1      Add merge subagent statistic method
 
 Details:
 ---------
@@ -107,6 +108,8 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     ctx.agent_session = None
     ctx.llm_client = parent_ctx.llm_client
     ctx.url_caches = []
+    ctx.wechat_bot = None
+    ctx.last_wechat_msg = None
     ctx.mcp_router = parent_ctx.mcp_router
     ctx.durable_crons = []
     ctx.session_crons = []
@@ -120,6 +123,8 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     # params
     ctx.agent_id = agent_id
     ctx.session_uuid = agent_id
+    ctx.enable_wechat = False
+    ctx.if_summarized = False
     ctx.session_title = f"subagent-{agent_id}"
     ctx.system_prompts = 0
     ctx.tools_prompts = 0
@@ -143,7 +148,7 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     ctx.loaded_skills = list(parent_ctx.loaded_skills)
     # signals
     ctx.task_end = True
-    ctx.subagent_mute = True
+    ctx.tui_mute = True
     ctx.permissions = dict(parent_ctx.permissions)
 
     if subagent_type in PERMISSION_PRESETS:
@@ -587,3 +592,17 @@ class SubAgent:
             sys_log.debug(f"SubAgent {self.agent_id} ({self.status.value}) dumped to {agent_dir}")
         except Exception as e:
             sys_log.error(f"SubAgent {self.agent_id} dump failed: {e}")
+
+
+def merge_agent_stats(ctx: AgentContext, agent: SubAgent):
+    """merge the subagent's statistic into context"""
+    ctx.user_prompts += agent.stats["user_prompts"]
+    ctx.content_prompts += agent.stats["content_prompts"]
+    ctx.reasoning_prompts += agent.stats["reasoning_prompts"]
+    ctx.tool_calls_prompts += agent.stats["tool_calls_prompts"]
+    ctx.tool_results_prompts += agent.stats["tool_results_prompts"]
+    ctx.total_llm_requests += agent.stats["total_llm_requests"]
+    ctx.total_input_tokens += agent.stats["total_input_tokens"]
+    ctx.total_output_tokens += agent.stats["total_output_tokens"]
+    ctx.total_tokens += agent.stats["total_tokens"]
+    ctx.total_uncached_tokens += agent.stats["total_uncached_tokens"]

@@ -57,6 +57,8 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `SKILL_END_LABEL` | `</skill_content>` | 技能内容结束标记 / Marks the end of skill content |
 | `CRON_START_LABEL` | `<cron_tasks>` | 定时任务内容起始标记 / Marks the start of cron task content |
 | `CRON_END_LABEL` | `</cron_tasks>` | 定时任务内容结束标记 / Marks the end of cron task content |
+| `WECHAT_PROMPT_START_LABEL` | `<wechat_bot>` | 微信消息内容起始标记 / Marks the start of WeChat message content |
+| `WECHAT_PROMPT_END_LABEL` | `</wechat_bot>` | 微信消息内容结束标记 / Marks the end of WeChat message content |
 | `SUBAGENT_START_LABEL` | `<subagent>` | 子 Agent 记录内容起始标记 / Marks the start of subagent record content |
 | `SUBAGENT_END_LABEL` | `</subagent>` | 子 Agent 记录内容结束标记 / Marks the end of subagent record content |
 
@@ -92,6 +94,7 @@ All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/co
 | `TOOL_NAME_SKILL` | `skill` | 调用技能 / Invoke a skill |
 | `TOOL_NAME_WEB_FETCH` | `web_fetch` | 获取网页内容 / Fetch web content |
 | `TOOL_NAME_WEB_SEARCH` | `web_search` | 网络搜索 / Search the web |
+| `TOOL_NAME_WECHAT_SEND_MEDIA` | `wechat_send_media` | 向当前连接的微信用户发送媒体文件（图片/视频/文件）/ Send media file to the current connected WeChat user |
 | `TOOL_NAME_CALL_MCP` | `call_mcp` | 调用 MCP 工具 / Call an MCP tool |
 | `TOOL_NAME_CHECK_SIMULATOR` | `check_simulator` | 检查仿真器可用性 / Check simulator availability |
 | `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design |
@@ -159,6 +162,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `SUBAGENT_ICON` | `▲` | 子 Agent 标记图标 / Subagent marker icon |
 | `SKILL_ICON` | `❖` | 技能标记图标 / Skill marker icon |
 | `CRON_ICON` | `⬟` | 定时任务标记图标 / Cron marker icon |
+| `WECHAT_PROMPT_ICON` | `▶` | 微信消息标记图标 / WeChat message marker icon |
 
 ### 样式与格式 | Styles & Formatting
 
@@ -316,18 +320,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `EDIT_VIEW_LEFT_SPACE_MARGIN` | `5` | 行号左侧空格数 / Left space margin before line numbers |
 | `EDIT_VIEW_LINE_SPACE_MARGIN` | `1` | 行号与内容间空格数 / Space margin between line number and content |
 | `EDIT_VIEW_TAB_WIDTH` | `4` | Tab 字符展开宽度（空格数），确保含 tab 的代码/输出行背景填充对齐 / Tab expansion width in spaces, ensures background fill alignment for tab-containing lines |
-| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
-| `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | exact-family 回退模式标签颜色（quote_norm / unicode_escape）/ Subtle label color for exact-family fallback modes (quote_norm / unicode_escape) |
-| `MATCH_MODE_EXACT` | `exact` | 完全匹配 / Exact string match |
-| `MATCH_MODE_QUOTE_NORM` | `quote_norm` | 引号标准化匹配（弯曲引号 → 直引号）/ Quote normalized match (curly quotes → straight quotes) |
-| `MATCH_MODE_UNICODE_ESCAPE` | `unicode_escape` | Unicode 转义解码匹配（`\\uXXXX` → 实际字符）/ Unicode escape decoded match (`\\uXXXX` → actual character) |
-| `MATCH_MODE_LINE_TRIMMED` | `line_trimmed` | 行尾空白裁剪匹配 / Line trailing whitespace trimmed match |
-| `MATCH_MODE_FLEX_INDENT` | `flex_indent` | 弹性缩进匹配（忽略前导空格差异）/ Flexible indentation match (ignore leading whitespace differences) |
-| `MATCH_MODE_ESCAPE_LITERAL` | `escape_literal` | 转义字面量校正匹配（`\\t`/`\\n` → 实际字符）/ Escape literal corrected match (`\\t`/`\\n` → actual tab/newline) |
-| `MATCH_MODE_TRIMMED_BOUNDARY` | `trimmed_boundary` | 边界裁剪匹配（首尾空白去除）/ Boundary trimmed match (strip leading/trailing whitespace) |
-| `MATCH_MODE_DESC` | _(字典 dict)_ | 匹配模式枚举到 UI 显示的映射 / Map from match mode enum to human-readable description |
-| `MATCH_MODE_EXACT_FAMILY` | `{exact, quote_norm, unicode_escape}` | 精确匹配族（TUI 中灰色标签，非橙色警告）/ Exact match family (grey label in TUI, not orange warning) |
-| `EDIT_FUZZY_WARN_COLOR` | `#FFA500`（橙 orange） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
+| `EDIT_FUZZY_WARN_COLOR` | `MAJOR_COLOR1`（#FF9FF3） | 模糊匹配警告颜色（TUI 中非 exact-family 回退模式标签）/ Fuzzy match warning color (non-exact-family fallback mode label in TUI) |
 | `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | exact-family 回退模式标签颜色（quote_norm / unicode_escape）/ Subtle label color for exact-family fallback modes (quote_norm / unicode_escape) |
 | `MATCH_MODE_EXACT` | `exact` | 完全匹配 / Exact string match |
 | `MATCH_MODE_QUOTE_NORM` | `quote_norm` | 引号标准化匹配（弯曲引号 → 直引号，含破折号/NBSP/全角空格）/ Quote + punctuation normalized match (curly quotes/dashes/NBSP/fullwidth-space → ASCII) |
@@ -427,11 +420,11 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 
 #### 权限控制 | Permission Control
 
-| 常量 Constant | 默认值 Default | 用途 Purpose |
-|----------|---------|---------|
-| `SUBAGENT_PERMISSION_DENIED_INFO` | `"Permission request denied, subagent type does not have access to this tool"` | 子 Agent 权限拒绝时的提示信息 / Info shown when subagent permission is denied |
-| `MAINAGENT_PERMISSION_DENIED_INFO` | `"Permission request denied by user"` | 主 Agent 权限拒绝时的提示信息 / Info shown when main agent permission is denied by user |
-| `MAINAGENT_PERMISSION_DENIED_PREFIX_INFO` | `"Permission request denied by user with comment:"` | 主 Agent 权限拒绝并附注释时的前缀 / Prefix when main agent permission is denied with user comment |
+| 常量 Constant | 默认值 Default                                                       | 用途 Purpose                                                                                           |
+|----------|-------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `MUTE_PERMISSION_DENIED_INFO` | `"Permission request denied, you don't have access to this tool"` | 静默 TUI 权限请求并且权限拒绝时的提示信息 / Info shown when permission is denied when TUI permission request is muted  |
+| `MAINAGENT_PERMISSION_DENIED_INFO` | `"Permission request denied by user"`                             | 主 Agent 权限拒绝时的提示信息 / Info shown when main agent permission is denied by user                         |
+| `MAINAGENT_PERMISSION_DENIED_PREFIX_INFO` | `"Permission request denied by user with comment:"`               | 主 Agent 权限拒绝并附注释时的前缀 / Prefix when main agent permission is denied with user comment                 |
 
 ---
 
@@ -443,8 +436,8 @@ These constants control the agent's core identity and basic behavior:
 | 常量 Constant | 默认值 Default | 说明 Description |
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
-| `TECOSIM_AGENT_MINOR_VERSION` | `2` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `7` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `0` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
@@ -488,3 +481,63 @@ These constants control the agent's core identity and basic behavior:
 | `READ_FILE_LINE_CHAR_LIMIT` | `2000` | LLM 输出单行最大字符数（超出截断并标记）/ Max chars per line in LLM output (truncated with marker) |
 | `READ_LOG_MAX_LINE` | `10000` | 单次读取日志最大行数。与 `READ_FILE_MAX_LINE` 不同，此值专门针对仿真日志读取 / Max lines per log read (separate from `READ_FILE_MAX_LINE`, specific to simulation logs) |
 | `PERMISSION_REQUEST_DSEC_CHAR_MAX` | `500` | 权限请求描述的最大字符数。用户在权限 TUI 中输入注释时超过此长度会被截断 / Max chars for permission request description; user comments exceeding this are truncated |
+| `WECHAT_CRED_PATH` | `"./config/wechat_bot_cred.json"` | 微信机器人凭证配置文件路径 / WeChat bot credential config file path |
+| `WECHAT_MEDIA_CACHE_DIR` | `"wechat_cache"` | 微信媒体缓存目录名（会话目录下）/ WeChat media cache directory name (under session dir) |
+| `WECHAT_MEDIA_CACHE_NAME` | `"cdn_cache.json"` | 微信 CDN 缓存持久化文件名 / WeChat CDN cache persistence file name |
+| `WECHAT_HISTORY_NAME` | `"msg_history.json"` | 微信消息历史持久化文件名 / WeChat message history persistence file name |
+| `WECHAT_VERIFY_CODE_PREFIX1` | `"Please input the verify code on you phone"` | 微信验证码提示 1（首次输入）/ WeChat verify code prompt 1 (first input) |
+| `WECHAT_VERIFY_CODE_PREFIX2` | `"Wrong verify code, please input the correct verify code on you phone"` | 微信验证码提示 2（验证码错误重试）/ WeChat verify code prompt 2 (retry after wrong code) |
+
+---
+
+## 微信机器人交互 | WeChat Bot Interaction
+
+Agent 通过 `--wechat` CLI 参数启动微信机器人模式，与用户通过微信消息交互。以下常量控制微信机器人的登录超时、回复超时、媒体下载阈值、消息摘要长度、队列缓存等行为：
+The agent can be started in WeChat bot mode via the `--wechat` CLI argument. The following constants control login timeouts, reply timeouts, media download thresholds, message summary limits, queue caching, and more:
+
+### 超时参数 | Timeout Parameters
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `WECHAT_BOT_LOGIN_DEFAULT_TIMEOUT_S` | `120` | 微信扫码登录默认超时（秒）/ Default timeout for QR code scan login (seconds) |
+| `WECHAT_BOT_STOP_DEFAULT_TIMEOUT_S` | `10` | 微信机器人优雅停止默认超时（秒）/ Default timeout for graceful bot shutdown (seconds) |
+| `WECHAT_BOT_HEAD_CDN_DEFAULT_TIMEOUT_S` | `10` | CDN HEAD 请求（获取媒体大小）默认超时（秒）/ Default timeout for CDN HEAD requests (seconds) |
+| `WECHAT_BOT_TEXT_REPLY_DEFAULT_TIMEOUT_S` | `30` | 文本回复默认超时（秒）/ Default timeout for text reply (seconds) |
+| `WECHAT_BOT_MEDIA_REPLY_DEFAULT_TIMEOUT_S` | `60` | 媒体文件回复默认超时（秒）/ Default timeout for media file reply (seconds) |
+
+### 消息与媒体参数 | Message & Media Parameters
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `WECHAT_BOT_MUTE_NONFATAL_ERROR_DEFAULT` | `False` | 是否静默非致命错误（`agent_configs.json` 中 `WECHAT_BOT_MUTE_NONFATAL_ERROR` 配置项的默认值）/ Whether to mute non-fatal errors (default for `WECHAT_BOT_MUTE_NONFATAL_ERROR` in agent_configs.json) |
+| `WECHAT_BOT_MSG_SUMMARY_CHAR_MAX` | `100` | 微信消息摘要最大字符数 / Max chars for WeChat message summary |
+| `WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB_DEFAULT` | `100` | 媒体文件自动下载阈值默认值（MB）/ Default threshold for automatic media download (MB) |
+| `WECHAT_MEDIA_CACHE_KEY_MAX_LEN` | `8` | CDN 缓存键随机十六进制长度 / Random hex length for CDN cache keys |
+| `WECHAT_BOT_QUOTED_CHAR_MAX` | `1000` | 引用消息的最大文本提取字符数 / Max chars extracted from quoted reply messages |
+
+### 预置回复列表 | Preset Reply Lists
+
+| 常量 Constant | 类型 Type | 用途 Purpose |
+|----------|------|---------|
+| `WECHAT_BOT_LOCKED_LIST` | `list[str]`（5 条） | 会话锁定时向绑定用户发送的确认消息列表 / Confirmation messages sent to the bound user when the session is locked |
+| `WECHAT_BOT_BLOCK_REPLY_LIST` | `list[str]`（13 条） | 当机器人正服务其他用户时，向新请求用户发送的拒绝消息列表 / Rejection messages sent to new users when the bot is serving another user |
+
+> **实现说明 | Implementation Note**
+> 
+> **可配置覆盖 | Config Overridable**
+> 所有超时参数（`WECHAT_BOT_*_TIMEOUT_S`）和 `mute_nonfatal_error` 可通过 `agent_configs.json` 中的同名键（去掉 `_DEFAULT` 后缀）覆盖默认值。例如 `WECHAT_BOT_LOGIN_TIMEOUT_S` 覆盖 `WECHAT_BOT_LOGIN_DEFAULT_TIMEOUT_S`。
+> All timeout parameters and `mute_nonfatal_error` can be overridden via the same key (without the `_DEFAULT` suffix) in `agent_configs.json`. e.g. `WECHAT_BOT_LOGIN_TIMEOUT_S` overrides `WECHAT_BOT_LOGIN_DEFAULT_TIMEOUT_S`.
+> 
+> **媒体下载流程 | Media Download Flow**
+> 收到微信媒体消息时，Agent 先通过 CDN HEAD 请求获取文件大小，仅当小于 `WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB` 时才下载（AES 解密 → magic-byte 扩展名检测 → CDN 缓存）。已下载的媒体通过 CDN 缓存（`WECHAT_MEDIA_CACHE_NAME`）持久化到磁盘，避免重复下载。
+> On receiving media messages, the Agent first fetches the file size via CDN HEAD, downloading (AES decrypt → magic-byte extension detection → CDN cache) only when under the threshold. Downloaded media are persisted via CDN cache to avoid re-downloads.
+> 
+> **用户绑定 | User Binding**
+> 微信机器人绑定第一个发送消息的用户作为会话拥有者。绑定期间，其他用户发送的消息被屏蔽（随机从 `WECHAT_BOT_BLOCK_REPLY_LIST` 中选取拒绝消息回复）。首用户锁定成功时，随机从 `WECHAT_BOT_LOCKED_LIST` 中选取确认消息回复。
+> The WeChat bot binds the first user who sends a message as the session owner. During binding, messages from other users are blocked (randomly chosen reply from `WECHAT_BOT_BLOCK_REPLY_LIST`). The bound user receives a random lock confirmation from `WECHAT_BOT_LOCKED_LIST`.
+> 
+> **监听 TUI 行为 | Listen TUI Behavior**
+> 当微信机器人启用时，监听 TUI 强制进入且无法通过按键退出（仅 Ctrl+C 可退出）——确保所有微信消息在返回到终端输入模式前被捕获。微信消息到达时，监听循环退出并处理消息。
+> When the WeChat bot is enabled, the listen TUI is always active and cannot be dismissed by keypress (only Ctrl+C exits) — ensuring all incoming WeChat messages are captured before returning to terminal input mode.
+> 
+

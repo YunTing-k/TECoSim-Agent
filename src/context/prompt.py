@@ -41,6 +41,7 @@ Revision:
 2026.6.30      Yu Huang      3.6      Revise visuals of messages print (reminders, crons, skills, subagents) when resuming session
 2026.7.3       Yu Huang      3.7      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
 2026.7.3       Yu Huang      3.8      Fix: overflow of printing LLM response when a line is too long
+2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -192,18 +193,20 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
 def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """get system prompts of TECoSim agent's dynamic boundaries with AgentContext"""
     now = datetime.now()
+
+    bash_available = is_bash_available(ctx.agent_configs["BASH_PATH"])
+    if bash_available:
+        bash_prompts = " - Is bash available: True\n"
+    else:
+        bash_prompts = (
+            f" - Is bash available: False. User should check if bash is available in path: {ctx.agent_configs["BASH_PATH"]} "
+            f"defined in `BASH_PATH`\n")
     git_available = is_git_available()
     if git_available:
         git_prompts = " - Is git available: True\n"
     else:
         git_prompts = f" - Is git available: False\n"
-    bash_available = is_bash_available(ctx.agent_configs["BASH_PATH"])
     ripgrep_available = is_ripgrep_available(ctx.agent_configs["RIPGREP_PATH"])
-    if bash_available:
-        bash_prompts = " - Is bash available: True\n"
-    else:
-        bash_prompts = (f" - Is bash available: False. User should check if bash is available in path: {ctx.agent_configs["BASH_PATH"]} "
-                        f"defined in `BASH_PATH`\n")
     if ripgrep_available:
         grep_prompts = f" - Is `{TOOL_NAME_GREP_FILE}` available: True\n"
     else:
@@ -399,6 +402,11 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
+                """WeChat Bot"""
+                if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
+                    console.print(get_msg_render_strip(
+                        msg, WECHAT_PROMPT_START_LABEL, WECHAT_PROMPT_END_LABEL, WECHAT_PROMPT_ICON, "", as_md))
+                    continue
                 """system reminder"""
                 if (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
                     if not display_sys_reminder:
@@ -772,6 +780,24 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
     console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"],
                                    ctx.agent_configs["DISPLAY_RESPONSE_REASON"]))
 
+    """send to WeChat"""
+    if assistant_tool_calls is not None:
+        if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None:
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+            elif assistant_reasoning is not None:
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+            else:
+                pass
+    else:
+        if ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None:
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+            elif assistant_reasoning is not None:
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+            else:
+                pass
+
     return assistant_tool_calls
 
 
@@ -1075,6 +1101,23 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
             sys_log.warning(f"LLM returned only reasoning content, setting content to empty string for API validity")
             console.print(f"LLM returned only reasoning content, content patched for API validity", style="bold yellow")
             dumped_msg["content"] = ""
+
+    if converted_tool_calls is not None:
+        if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None and assistant_chat != "":
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+            elif assistant_reasoning is not None and assistant_reasoning != "":
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+            else:
+                pass
+    else:
+        if ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None and assistant_chat != "":
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+            elif assistant_reasoning is not None and assistant_reasoning != "":
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+            else:
+                pass
 
     """check context limits"""
     if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:

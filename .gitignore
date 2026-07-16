@@ -5,6 +5,7 @@
 /run.bat
 /update_requirements.bat
 /clean.bat
+/config/wechat_bot_cred.json
 /session/**/*.json
 /session/**/*.log
 /session/**/user_history
@@ -16,6 +17,7 @@
 /src/context/__pycache__
 /src/tool/__pycache__
 /src/utility/__pycache__
+/src/wechat/__pycache__
 /src/agent/__pycache__
 /test/__pycache__
 /test/test_config.py

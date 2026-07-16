@@ -58,6 +58,7 @@ Revision:
                                       Clarify bash uses GNU bash only
 2026.7.3       Yu Huang      5.0      Fix of old=new string replacement in file edit tool & Revise visuals of messages print
                                       (create/query/remove crons, glob, query) when resuming session
+2026.7.15-16   Yu Huang      5.1      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -72,6 +73,7 @@ import subprocess
 import logging
 import tempfile
 
+from pathlib import Path
 from typing import Any
 from datetime import datetime
 from rich.progress import Progress
@@ -130,6 +132,9 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_query_run_def(),
         tool_read_log_def(),
     ]
+    # WeChat tool
+    if ctx.enable_wechat:
+        tool_wechat_send_media_def(),
     # MCP tools
     prompts.extend(ctx.mcp_router.reg_tools)
 
@@ -776,8 +781,8 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute: # (subagent should not use it)
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute: # (subagent should not use it)
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -868,8 +873,8 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -994,8 +999,8 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"Permission denied: subagent lacks {risk} — {reason}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"Permission denied: you don't have permission for `{risk}` with reson: {reason}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -1179,8 +1184,8 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"path: {arguments.get("path", os.getcwd())}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -1317,8 +1322,8 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"multiline: {arguments.get("multiline", False)}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -1431,8 +1436,8 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -1643,8 +1648,8 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -1942,8 +1947,8 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                    ctx, progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2038,8 +2043,8 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
                                          f"purpose: {arguments.get("purpose", "None")}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}, None
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}, None
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}, None
             else:
@@ -2130,8 +2135,8 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"prompt: {arguments["prompt"]}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2247,8 +2252,8 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          f"Web search with keywords {query}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2288,6 +2293,99 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         return {"status": FAIL_LABEL, "info": f"Web search failed failed with error: {e}"}
 
 
+def tool_wechat_send_media_def() -> dict[str, Any]:
+    """tool definition of sending media to the current WeChat user (TOOL_NAME_WECHAT_SEND_MEDIA)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_WECHAT_SEND_MEDIA,
+            "description": "Send a media file (image, video, or general file) to the current connected WeChat user. "
+                           "Automatically classifies the file by extension:\n"
+                           " - .png, .jpg, .jpeg, .gif, .webp, .bmp, .svg are sent as images"
+                           " - .mp4, .mov, .webm, .mkv, .avi are sent as videos"
+                           " - everything else is sent as a general file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the media file to send.",
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def wechat_send_media(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of sending media to the current WeChat user"""
+    func_name = TOOL_NAME_WECHAT_SEND_MEDIA
+    try:
+        """request permission"""
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, func_name,
+                                         f"path: {arguments["path"]}, ",
+                                         progress.console)
+        resume_from_permission(progress)
+        if not token:
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
+            else:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
+        """check WeChat bot"""
+        if not ctx.enable_wechat:
+            return {"status": FAIL_LABEL, "info": "WeChat bot is disabled"}
+        if ctx.wechat_bot is None:
+            return {"status": FAIL_LABEL, "info": "WeChat bot is not running"}
+        if ctx.last_wechat_msg is None:
+            return {"status": FAIL_LABEL, "info": "No active WeChat conversation, need to wait for a user message first"}
+        """check the path"""
+        file_path = Path(arguments["path"])
+        if not file_path.is_file():
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Path: {file_path} is not a file or not exist")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Path: {file_path} is not a file or not exist", style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Path: {file_path} is not a file or not exist"}
+        """check the file size"""
+        file_size = file_path.stat().st_size
+        if file_size > ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"] * 1024 * 1024:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"File {file_path} is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, "
+                          f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: "
+                                   f"File {file_path} is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, "
+                                   f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}", style="bold red")
+            return {"status": FAIL_LABEL,
+                    "info": f"File is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, user should "
+                            f"modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}"}
+        """send the media"""
+        path_str = str(file_path.resolve())
+        ext = file_path.suffix.lower()
+        if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"):
+            content = {"image": path_str}
+        elif ext in (".mp4", ".mov", ".webm", ".mkv", ".avi"):
+            content = {"video": path_str}
+        else:
+            content = {"file": path_str}
+
+        sent, sent_info = ctx.wechat_bot.reply_media_sync(ctx.last_wechat_msg, content)
+        if not sent:
+            return {"status": FAIL_LABEL, "info": f"{sent_info}"}
+
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) sent via WeChat")
+        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) "
+                               f"sent via WeChat", style="bright_black")
+        return {"status": SUCCESS_LABEL, "info": f"Media with path: {path_str} ({file_size} bytes) sent via WeChat"}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Send media failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Send media failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Send media failed with error: {e}"}
+
+
 def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     """tool realization of call tools in MCP with AgentContext"""
     func_name = TOOL_NAME_CALL_MCP
@@ -2302,8 +2400,8 @@ def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progr
         token, info = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2422,8 +2520,8 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                                         f"Description: {arguments["description"]}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2586,8 +2684,8 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:
@@ -2746,8 +2844,8 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                                          f"offset: {arguments.get("offset", "None")}", progress.console)
         resume_from_permission(progress)
         if not token:
-            if ctx.subagent_mute:
-                return {"status": DENIED_LABEL, "info": f"{SUBAGENT_PERMISSION_DENIED_INFO}"}
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
             elif info is None:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
             else:

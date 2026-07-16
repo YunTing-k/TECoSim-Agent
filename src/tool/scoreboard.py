@@ -24,12 +24,12 @@ Each task has an ID, subject, description, status, owner, dependency links, and 
 All CRUD operations are protected by a threading.Lock for concurrent safety.
 
 Status transitions (forward-only, no rollback):
-  pending ──→ in_progress ──→ completed
-       │                        │
-       └──────→ deleted ←───────┘
+  pending ──> in_progress ──> completed ──> (archiveved)
+       │           │
+       └> deleted <┘──> (archiveved)
   - completed / deleted are resolved states, cannot be changed further.
   - in_progress cannot go back to pending.
-  - Any state can be marked as deleted.
+  - Only pending/in_progress state can be marked as deleted.
 
 Dependency management:
   - blocks: IDs of tasks that this task blocks (outgoing edges).
@@ -137,7 +137,7 @@ class Scoreboard:
                 return True
             if dep_id in visited:
                 continue
-            # skip resolved tasks — their dependency links are stale
+            # skip resolved tasks, their dependency links are stale
             if self._tasks[dep_id]["status"] in (TaskStatus.COMPLETED, TaskStatus.DELETED):
                 continue
             visited.add(dep_id)

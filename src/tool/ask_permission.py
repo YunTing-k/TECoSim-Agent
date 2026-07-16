@@ -89,7 +89,7 @@ def ask_permission_tui(ctx: AgentContext, request_type: str, request_desc: str, 
     user_cache = ""
     if ctx.args.dangerously_allow_all:
         return True, None
-    if ctx.subagent_mute:
+    if ctx.tui_mute:
         if request_type in ctx.permissions and ctx.permissions[request_type]:
             return True, None
         return False, None

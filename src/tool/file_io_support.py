@@ -41,6 +41,7 @@ Revision:
 2026.6.13      Yu Huang      3.2      Absorb read_messages/save_messages from prompt.py to break circular import
 2026.7.3       Yu Huang      3.3      Fix of special Unicode render for bash, bash out, edit, write tool
 2026.7.3       Yu Huang      3.4      Bugfix of buffered keyboard press before real TUI interaction
+2026.7.15-16   Yu Huang      3.5      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -206,6 +207,9 @@ def save_sessions(ctx: AgentContext, board: Scoreboard, console: Console, mute: 
     try:
         save_messages(ctx, console, mute)
         ctx.save_context(console, mute)
+        if ctx.enable_wechat and ctx.wechat_bot is not None:
+            ctx.wechat_bot.save_cdn_cache(mute)
+            ctx.wechat_bot.save_msg_history(mute)
         ctx.design_man.save_to_file(console, mute)
         ctx.run_man.save_to_file(console, mute)
         board.save_to_file(console, mute)
@@ -1182,7 +1186,7 @@ def ask_edit_tui(path:str, old_string: str, new_string: str, str_line: list[str]
         console.print(render_preview_multi(path, old_string, new_string, str_line, match_lines, match_mode, render_lexer))
     if ctx.args.dangerously_allow_all:
         return True, None
-    if ctx.subagent_mute:
+    if ctx.tui_mute:
         if ctx.permissions[request_type]:
             return True, None
         return False, None

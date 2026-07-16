@@ -34,6 +34,7 @@ Revision:
 2026.6.13      Yu Huang      2.8      get_subagent_render: ICON TYPE SUBJECT USAGE single-line, current_tool on separate line
 2026.6.29      Yu Huang      2.9      Terminal subagents show └─N toolcalls · duration instead of last tool name & Rights claim modification
 2026.7.3       Yu Huang      3.0      Bugfix of buffered keyboard press before real TUI interaction
+2026.7.15-16   Yu Huang      3.1      Add WeChat bot interaction support
 
 Details:
 ---------
@@ -568,16 +569,17 @@ def resume_from_permission(progress):
 
 def get_user_prompt(ctx: AgentContext) -> str:
     """get the user prompt text"""
-    if ctx.agent_session:
-        flush_terminal_input()
-        if ctx.agent_configs["RANDOM_PROGRESS_TITLE"]:
-            prefix = random.choice(USER_PROMPT_PREFIX_LIST)
-        else:
-            prefix = USER_PROMPT_PREFIX_LIST[0]
+    flush_terminal_input()
+    if ctx.agent_configs["RANDOM_PROGRESS_TITLE"]:
+        prefix = random.choice(USER_PROMPT_PREFIX_LIST)
+    else:
+        prefix = USER_PROMPT_PREFIX_LIST[0]
+    if ctx.agent_session is not None:
         user_input = ctx.agent_session.prompt(ANSI(f"\033[90m{prefix} {USER_PROMPT_FIXED_PREFIX}\033[0m\n"
-                                               f"{AGENT_CONSOLE_ICON} "))
-        return user_input
-    return ""
+                                                   f"{AGENT_CONSOLE_ICON} "))
+    else:
+        raise RuntimeError("Agent session is None")
+    return user_input
 
 
 def render_request(title: str, request_desc: str, request_detail: str | None, active_idx: int):
@@ -744,6 +746,9 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
         try:
             save_messages(ctx, console)
             ctx.save_context(console)
+            if ctx.enable_wechat and ctx.wechat_bot is not None:
+                ctx.wechat_bot.save_cdn_cache()
+                ctx.wechat_bot.save_msg_history()
             ctx.design_man.save_to_file(console)
             ctx.run_man.save_to_file(console)
             board.save_to_file(console)
@@ -764,6 +769,9 @@ def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Ex
     try:
         save_messages(ctx, console)
         ctx.save_context(console)
+        if ctx.enable_wechat and ctx.wechat_bot is not None:
+            ctx.wechat_bot.save_cdn_cache()
+            ctx.wechat_bot.save_msg_history()
         ctx.design_man.save_to_file(console)
         ctx.run_man.save_to_file(console)
         board.save_to_file(console)

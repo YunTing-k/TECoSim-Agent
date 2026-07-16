@@ -159,14 +159,14 @@ class MCPToolRouter:
         asyncio.run(self.reg_all_tools(console))
 
 
-    def update_mcp_permission(self, permissions: dict[str, bool], console: Console):
+    def update_mcp_permission(self, permissions: dict[str, bool], console: Console, enable_all_mcp: bool = False):
         """update permissions list with MCP tools"""
         num = 0
         for tool, _ in self.tool_registry.items():
             if tool in permissions:
                 continue
             else:
-                permissions[tool] = False
+                permissions[tool] = enable_all_mcp
                 num += 1
         sys_log.debug(f"Updated {num} MCP tools' permission")
         console.print(f"Updated [{MAJOR_COLOR2}]{num}[/{MAJOR_COLOR2}] MCP tools' permission")

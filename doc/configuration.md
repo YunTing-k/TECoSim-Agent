@@ -123,6 +123,16 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `SUBAGENT_API_RETRY_COUNT` | 子 Agent API 临时故障重试次数 / Subagent API retry count on transient failures                                                                |
 | `SUBAGENT_TOOL_RESULT_CHAR_LIMIT` | 子 Agent 工具结果最大字符数（超出截断）/ Subagent tool result char limit (truncated if exceeded)                                                     |
 | `SUBAGENT_EARLY_WARN_STEPS` | 子 Agent 提前提醒步数（剩余步数低于此值时发出警告，默认 2）/ Subagent early warning steps (warn when remaining steps fall below this, default 2)                    |
+| `WECHAT_BOT_LOGIN_TIMEOUT_S` | WeChat Bot 登录超时时间（秒）/ WeChat Bot login timeout (seconds) |
+| `WECHAT_BOT_STOP_TIMEOUT_S` | WeChat Bot 停止超时时间（秒）/ WeChat Bot stop timeout (seconds) |
+| `WECHAT_BOT_HEAD_CDN_TIMEOUT_S` | WeChat Bot 头像 CDN 获取超时时间（秒）/ WeChat Bot head CDN fetch timeout (seconds) |
+| `WECHAT_BOT_TEXT_REPLY_TIMEOUT_S` | WeChat Bot 文本回复超时时间（秒）/ WeChat Bot text reply timeout (seconds) |
+| `WECHAT_BOT_MEDIA_REPLY_TIMEOUT_S` | WeChat Bot 媒体回复超时时间（秒）/ WeChat Bot media reply timeout (seconds) |
+| `WECHAT_BOT_MUTE_NONFATAL_ERROR` | 是否禁止 WeChat Bot 的 Non-Fatal Error 打印 / Whether to mute WeChat Bot non-fatal error output |
+| `WECHAT_BOT_REPLY_DURING_TOOL_CALL` | LLM 执行工具调用时是否仍允许 WeChat Bot 回复中间内容 / Whether WeChat Bot can reply with intermediate content during LLM tool calls |
+| `WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB` | WeChat 媒体下载阈值（MB），超过此大小的媒体文件将被拒绝下载 / WeChat media download threshold (MB); larger files will be rejected |
+| `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` | WeChat 媒体上传阈值（MB），超过此大小的媒体文件将被拒绝上传 / WeChat media upload threshold (MB); larger files will be rejected |
+| `WECHAT_BOT_PERMISSION` | WeChat Bot 的独立权限配置（覆盖主 Agent 默认权限），键名为工具的内部 TOOL_NAME_ 标识符或 Bash 风险标签 / WeChat Bot standalone permission config (overrides default agent permissions); keys are internal TOOL_NAME_ identifiers or Bash risk labels |
 
 > **路径类参数说明 | Path Parameters**
 > - `SIMULATOR_PATH`：设置为空字符串 `""` 时可禁用全部仿真功能，Agent 的 `check_simulator` 工具会返回"不可用"。需指向 TECoSim.exe 所在目录（而非 exe 本身）
@@ -154,6 +164,16 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 > - `RENDER_RESPONSE_AS_MD`：控制 LLM 响应是否用 Rich 库的 Markdown 渲染。关闭后以纯文本显示
 >   Controls whether LLM responses are rendered as Markdown via the Rich library. Disable for plain text display
 
+> **WeChat Bot 集成 | WeChat Bot Integration**
+> 通过 CLI 参数 `-wc` / `--wechat` 启用。启动后 Agent 通过微信接收用户消息与指令，监听 TUI 变为强制停留模式（仅 Ctrl+C 可退出），所有权限被 `WECHAT_BOT_PERMISSION` 覆盖。首个发送消息的用户自动绑定为会话拥有者，其他用户的微信消息会被自动拒绝。
+> Enable via CLI flag `-wc` / `--wechat`. When active, the agent receives user messages & commands via WeChat, the listen TUI becomes mandatory (only Ctrl+C exits), all permissions are overridden by `WECHAT_BOT_PERMISSION`, and the first user to send a message is auto-bound as the session owner — other users are auto-rejected.
+> 
+> `WECHAT_BOT_PERMISSION` 是一个嵌套 JSON 对象，键名为工具内部标识符（如 `TOOL_NAME_WRITE_FILE`）或 Bash 风险标签（如 `BASH_REMOVAL_LABEL`），值均为布尔类型。特殊键 `ALL_MCP_TOOLS`（布尔）控制所有 MCP 工具是否默认允许。
+> `WECHAT_BOT_PERMISSION` is a nested JSON object whose keys are tool identifiers (e.g. `TOOL_NAME_WRITE_FILE`) or Bash risk labels (e.g. `BASH_REMOVAL_LABEL`), with boolean values. The special key `ALL_MCP_TOOLS` (boolean) controls whether all MCP tools are allowed by default.
+> 
+> WeChat 消息在终端和 LLM 上下文中通过 XML 标签包裹展示（`WECHAT_PROMPT_START_LABEL` / `WECHAT_PROMPT_END_LABEL`）。更多实现细节（锁定/拒绝回复文案列表、媒体下载流程等）参见 [constants_reference.md](./constants_reference.md)。
+> WeChat messages are wrapped in XML tags in the terminal and LLM context (`WECHAT_PROMPT_START_LABEL` / `WECHAT_PROMPT_END_LABEL`). See [constants_reference.md](./constants_reference.md) for implementation details (lock/block reply lists, media download flow, etc.).
+
 ---
 
 ## 常量文件概览 | Constants File Overview
@@ -164,10 +184,10 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | 类别 Category | 说明 Description |
 |---------------|------------------|
 | 版本号 Version | Agent 当前版本号 / Current agent version |
-| 基础路径 Base Paths | 日志、会话、配置、技能、MCP、cron 等路径 / Paths for logs, sessions, configs, skills, MCPs, crons |
+| 基础路径 Base Paths | 日志、会话、配置、技能、MCP、cron、WeChat 凭证等路径 / Paths for logs, sessions, configs, skills, MCPs, crons, WeChat credentials |
 | 文件命名 File Naming | 会话目录下的子文件命名 / File names under session directories |
-| 状态标签 Status Labels | 工具/操作返回的状态标签（失败、成功、超时、禁用等）及任务状态（pending/in_progress/completed/deleted）/ Status labels for tool returns and task statuses |
-| 工具名称 Tool Names | 所有 Agent 工具的字符串名称，可统一修改 / All agent tool string names, centrally managed |
+| 状态标签 Status Labels | 工具/操作返回的状态标签（失败、成功、超时、禁用、拒绝等）及任务状态（pending/in_progress/completed/deleted）/ Status labels for tool returns (FAIL/SUCCESS/TIMEOUT/DENIED/etc.) and task statuses |
+| 工具名称 Tool Names | 所有 Agent 工具的字符串名称（含 WeChat 工具 `wechat_send_media`），可统一修改 / All agent tool string names (incl. WeChat tool `wechat_send_media`), centrally managed |
 | 工具参数 Tool Params | 各工具的默认参数与行为限制 / Default params and limits for tools |
 | Bash 风险 Bash Risk | Bash 命令的风险分类标签（高风险/中风险/低风险/安全），Agent 据此控制权限 / Risk classification labels for bash commands (High/Med/Low/Safe), used for permission control |
 | UI 配置 UI Configs | 颜色、图标、进度条、提示词列表等界面参数 / Colors, icons, progress bars, prompt lists |
@@ -179,12 +199,8 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | URL 缓存 URL Cache | URL 缓存显示参数 / URL cache display params |
 | MCP 参数 MCP Params | MCP 工具描述显示限制 / MCP tool description limit |
 | 子 Agent SubAgent | 子 Agent 状态、图标、色彩渐变、轮询间隔等参数 / Subagent status labels, icons, color gradients, poll intervals |
+| WeChat Bot | WeChat 凭证路径、媒体缓存路径、消息历史路径、提示标签、默认超时、验证码/锁定/拒绝文案列表 / WeChat credential & media cache & msg history paths, prompt labels, default timeouts, verify/lock/block reply lists |
 
-> **子 Agent 参数 | SubAgent Parameters**
-> - `SUBAGENT_DEFAULT_MAX_STEPS`（默认 `30`）：子 Agent 最多向 LLM 发起的请求轮数。通过 `agent_configs.json` 中的 `SUBAGENT_MAX_STEPS` 可覆盖此默认值 / Overridable via `SUBAGENT_MAX_STEPS` in `agent_configs.json`
-> - `SUBAGENT_DEFAULT_MODEL_TYPE`（默认 `"fast"`）：`"fast"` 使用 FAST_MODEL_* 配置，`"medium"` 使用 MEDIUM_MODEL_* 配置，`"main"` 使用 MAIN_MODEL_* 配置
-> - `SUBAGENT_API_RETRY_COUNT`（默认 `2`）：子 Agent 遇到 API 临时故障时的重试次数
-> - `SUBAGENT_TOOL_RESULT_CHAR_LIMIT`（默认 `50000`）：子 Agent 工具结果超过此字符数时截断，防止子 Agent 输出撑爆主上下文
-> - `SUBAGENT_TIMEOUT_S`（默认 `600`）：子 Agent 运行时间上限。
+
 
 > 完整参数参考（工具名称列表、Bash 风险等级、UI 主题色、图标等）请参阅 | See [constants_reference.md](./constants_reference.md) for the full parameter reference.

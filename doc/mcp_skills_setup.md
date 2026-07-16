@@ -155,5 +155,5 @@ When CLI installation is limited (e.g., complex nested structures needed), direc
 ]
 ```
 
-> **提示 | Tip**: 编辑配置文件后，需要重启 Agent 或通过命令行 `toggle` 后再 `toggle` 来重新加载。
-> After editing the config file, restart the Agent or use the CLI `toggle` then `toggle` again to reload.
+> **提示 | Tip**: 编辑配置文件后，需要重启 Agent 或通过命令行 `toggle` 后再重启 Agent 来重新加载。
+> After editing the config file, restart the Agent or use the CLI `toggle` then restart the Agent to reload.
