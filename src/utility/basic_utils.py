@@ -24,6 +24,7 @@ Revision:
                                       Add multi-round results truncate method with pydict keys preserved
 2026.7.1       Yu Huang      2.1      Support of plain text of HTML tag rendering in LLM's response
 2026.7.3       Yu Huang      2.2      Bugfix of buffered keyboard press before real TUI interaction
+2026.7.17      Yu Huang      2.3      Fix: block quoted won't be suppressed by _escape_html_outside_code
 
 Details:
 ---------
@@ -155,7 +156,13 @@ class _NoLeadingNewlinesMD(Markdown):
             if part.startswith("```"):
                 result.append(part)
             else:
-                result.append(part.replace("<", "&lt;").replace(">", "&gt;"))
+                part = re.sub(
+                    r"</?[a-zA-Z][^>]*>",
+                    lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"),
+                    part,
+                )
+                part = part.replace("<", "&lt;")
+                result.append(part)
         return "".join(result)
 
     def __rich_console__(

@@ -588,8 +588,8 @@ class Scoreboard:
                 path = os.path.join(SESSION_PATH, uuid_str, TASKS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                sys_log.debug(f"Scoreboard of session {self.session_uuid} saved")
                 if not mute:
-                    sys_log.debug(f"Scoreboard of session {self.session_uuid} saved")
                     console.print(f"[{MAJOR_COLOR2}]Scoreboard[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] saved")
             except Exception as e:
                 sys_log.error(f"Failed to save session {self.session_uuid}'s scoreboard with error: {e}")
@@ -612,8 +612,8 @@ class Scoreboard:
                     task = Task(**task_data)
                     self._tasks[task["task_id"]] = task
                 self._next_id = data["next_id"]
+                sys_log.debug(f"Scoreboard of session {self.session_uuid} loaded")
                 if not mute:
-                    sys_log.debug(f"Scoreboard of session {self.session_uuid} loaded")
                     console.print(f"[{MAJOR_COLOR2}]Scoreboard[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                                   f"[/bright_black] loaded")
             except Exception as e:

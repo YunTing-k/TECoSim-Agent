@@ -10,6 +10,7 @@
 ## 简介 | Introduction
 ### 背景 | Background
 现代显示系统是**多层次嵌套的复杂系统**（物理层 → 器件层 → 电路层 → 面板层 → 应用层 → 系统性能层）。层次间的深度耦合产生了横跨多层级的复杂现象——**电压降效应**（IR Drop）、**热电耦合效应**（Thermo-Electrical Coupling）、**显示残影**（Ghost Shadow）等，这些不良现象严重影响显示质量，且无法在单个层次分析捕捉。
+
 Modern display systems are **multi-level nested complex systems** (Physical → Device → Circuit → Panel → Application → System Performance). The deep inter-level coupling produces complex phenomena spanning multiple layers — **IR drop**, **thermo-electrical coupling**, **ghost shadow** — which severely degrade display quality and cannot be captured by single-level analysis.
 
 <div align="center">
@@ -17,6 +18,7 @@ Modern display systems are **multi-level nested complex systems** (Physical → 
 </div>
 
 [TECoSim仿真器](https://github.com/YunTing-k/TECoSim)（暂未开源）正是为建模这些跨层次耦合效应而生，采用**自底向上逐层抽象**与**系统级端到端仿真**相结合的**跨层次协同仿真方法**。
+
 The [TECoSim Simulator](https://github.com/YunTing-k/TECoSim) (not open-source yet) was built specifically to model these cross-level coupling effects, using a **cross-level co-simulation** approach combining **bottom-up abstraction** with **system-level end-to-end simulation**.
 
 ### 敏捷设计的困境 | Dilemma of Agile Design
@@ -116,13 +118,14 @@ You must set your LLM API endpoint and key:
 **`BASH_PATH` 必须指向 GNU Bash**（不可用 `cmd`, `PowerShell` etc.,）。Agent 通过 `bash -c` 执行命令，并内置基于 Bash 语义的风险检测引擎。Windows操作系统可使用`git bash`。
 **`BASH_PATH` must point to GNU Bash** (not `cmd`, `PowerShell` etc.,). The agent executes commands via `bash -c` with Bash-semantics-based risk detection. For Windows OS, please use `git bash`.
 
-> **⚠️ 安全建议 | Security Advisory** — Agent 可通过 `bash` 执行任意系统命令，风险检测并非绝对可靠。强烈建议在沙箱环境（Docker/VM/隔离服务器）中以最小权限账户运行，并用 `/readonly_add` 保护关键路径。
-> The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonly_add` to protect critical paths.
+> **⚠️ 安全建议** — Agent 可通过 `bash` 执行任意系统命令，风险检测并非绝对可靠。强烈建议在沙箱环境（Docker/VM/隔离服务器）中以最小权限账户运行，并用 `/readonly_add` 保护关键路径。
+>
+> **⚠️ Security Advisory** — The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonly_add` to protect critical paths.
 
 **ripgrep** — `grep_file` 工具依赖 ripgrep（`rg`）。安装：`winget install BurntSushi.ripgrep`（Win）/ `sudo apt install ripgrep`（Linux）/ `brew install ripgrep`（macOS）。或在 `agent_configs.json` 中设 `RIPGREP_PATH`。
 **ripgrep** — the `grep_file` tool requires ripgrep (`rg`). Install via your package manager, or set `RIPGREP_PATH` in `agent_configs.json`.
 
-> 完整参数列表请参阅 | See [Configuration Reference](./doc/configuration.md) for all available parameters.
+> 完整参数列表请参阅[配置文档](./doc/configuration.md) | See [Configuration Reference](./doc/configuration.md) for all available parameters.
 
 ### 首次启动 | First Launch
 
@@ -130,7 +133,7 @@ You must set your LLM API endpoint and key:
 python -m src.main
 ```
 
-加载完毕后即可在输入框下达指令，开始你的使用 / Once loaded, type your instructions in the prompt and start your first usage.
+加载完毕后即可在输入框下达指令，开始你的使用 Once loaded, type your instructions in the prompt and start your first usage.
 
 ## 微信集成 | WeChat Integration
 
@@ -154,8 +157,12 @@ After launch, a QR code link is shown in the terminal — scan it with WeChat to
 | 多模态消息 Multimodal Messaging | 支持接收文字、语音（服务器 ASR 转写为文本）、图片、视频、文件。可主动发送媒体文件（通过 `wechat_send_media` 工具）/ Receive text, voice (server ASR), images, video, files. Can send media proactively via `wechat_send_media` tool |
 | 监听 TUI Listen TUI | 启动后 Agent 进入强制监听模式（仅 Ctrl+C 退出），确保第一时间捕获微信消息 / Agent enters mandatory listen mode (only Ctrl+C exits) to capture WeChat messages immediately |
 | 权限隔离 Permission Isolation | 微信模式下主 Agent 权限被 `WECHAT_BOT_PERMISSION` 完全覆盖，与终端模式独立配置 / Main agent permissions fully overridden by `WECHAT_BOT_PERMISSION`, independent from terminal mode |
-| 工具执行中回复 Mid-Tool Reply | 可配置在 LLM 执行工具调用期间是否仍允许向微信发送中间回复（`WECHAT_BOT_REPLY_DURING_TOOL_CALL`）/ Configurable mid-tool-call reply to WeChat during LLM tool execution |
+| 工具执行中交互 Mid-Tool Interaction | 工具调用期间 Agent 可向微信发送中间回复，用户也可随时发送新消息并获得及时响应，无需等待本轮工具调用全部完成 / Agent can send intermediate WeChat replies during tool calls; users can also send messages mid-execution and receive a timely response without waiting for all tool calls to finish |
 | CDN 缓存 CDN Cache | 接收的媒体文件缓存跟随会话持久化，恢复同一会话时避免重复下载 / Media cache is persisted with the session — no re-download when resuming the same session |
+
+> **注意：** 当前微信 SDK 存在较多限制（如引用消息无正文/媒体、无法获取 bot 发出的 `message_id` 等），具体行为与已知问题详见 [微信接入行为](doc/wechat_behavior.md)。
+> 
+> **Note：** The current WeChat SDK has notable limitations (e.g. quoted messages lack text/media, bot outgoing `message_id` not obtainable); see [WeChat Behavior](doc/wechat_behavior.md) for details and known issues.
 
 ---
 
@@ -332,6 +339,7 @@ TECoSimAgent/
 │   ├── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
 │   ├── bash_comparison.md       # Bash 命令风险检测对比 / Bash risk evaluation comparison
 │   ├── rich_pitfalls.md         # Rich 库开发注意事项 / Rich development pitfalls
+│   ├── wechat_behavior.md       # 微信机器人行为与限制 / WeChat bot behavior & limitations
 │   ├── task_management_comparison.md  # 任务管理机制对比研究 / Task management comparison
 │   ├── subagent_comparison.md   # Subagent 架构对比分析 / Subagent architecture comparison
 │   └── ref/                     # 参考系统提示词 / Reference system prompts
@@ -347,6 +355,7 @@ TECoSimAgent/
 - [常量参考 | Constants Reference](./doc/constants_reference.md) — `constants.py` 完整参考：工具名称、Bash风险等级、UI配置等 / Tool names, bash risk levels, UI configs, etc.
 - [MCP 与 Skills 设置指南 | MCP & Skills Setup Guide](./doc/mcp_skills_setup.md) — MCP 服务器与技能详细设置指南 / Detailed setup guide for MCP servers and skills
 - [Rich 开发注意事项 | Rich Development Pitfalls](./doc/rich_pitfalls.md) — 终端 TUI 预览功能开发中遇到的 Rich 库关键问题与解决方案 / Key issues and solutions when developing TUI preview features with the Rich library
+- [微信机器人行为与限制 | WeChat Bot Behavior & Limitations](./doc/wechat_behavior.md) — 微信 SDK 集成中的行为细节、已知限制与处理方法 / Behavioral details, known limitations, and workarounds for the WeChat SDK integration
 - [任务管理机制对比研究 | Task Management Comparison](./doc/task_management_comparison.md) — 四款主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across four major coding agents
 - [Subagent 架构对比分析 | Subagent Architecture Comparison](./doc/subagent_comparison.md) — Claude Code · CodeWhale · Codex · OpenCode 四款 Agent 架构深度对比 / In-depth comparison of subagent/task architectures across four coding agents
 

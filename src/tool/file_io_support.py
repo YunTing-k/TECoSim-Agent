@@ -186,15 +186,15 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
                 serializable_messages.append(msg.copy())
             else:
                 serializable_messages.append(dict(msg))
+        sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
         if not mute:
-            sys_log.debug(f"Messages of session {ctx.session_uuid} converted")
             console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] converted")
 
         path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
         if not mute:
-            sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
             console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] saved")
     except Exception as e:
         sys_log.error(f"Failed to save the messages of session {ctx.session_uuid} with error: {e}")

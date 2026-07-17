@@ -47,13 +47,13 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 | `FAST_MODEL_CONTEXT` | 快速模型上下文窗口大小 / Fast model context window size |
 | `TIMEOUT_MS` | LLM 请求超时时间（毫秒）/ LLM request timeout (milliseconds) |
 
-> **上下文阈值机制 | Context Threshold Mechanism**
-> Agent 使用 `MAIN_MODEL_CONTEXT` 与 `agent_configs.json` 中的 `CONTEXT_THRESHOLD` 配合，当输入 Token 数达到 `CONTEXT × THRESHOLD` 时，向用户发出告警提示（黄色警告），帮助避免上下文溢出。
-> The agent uses `MAIN_MODEL_CONTEXT` together with `CONTEXT_THRESHOLD` from `agent_configs.json`: when input tokens reach `CONTEXT × THRESHOLD`, a yellow warning is shown to prevent context overflow.
+> **上下文阈值机制**： Agent 使用 `MAIN_MODEL_CONTEXT` 与 `agent_configs.json` 中的 `CONTEXT_THRESHOLD` 配合，当输入 Token 数达到 `CONTEXT × THRESHOLD` 时，向用户发出告警提示（黄色警告），帮助避免上下文溢出。
+> 
+> **Context Threshold Mechanism**: The agent uses `MAIN_MODEL_CONTEXT` together with `CONTEXT_THRESHOLD` from `agent_configs.json`: when input tokens reach `CONTEXT × THRESHOLD`, a yellow warning is shown to prevent context overflow.
 
-> **推理模式 | Reasoning Mode**
-> `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `api_configs.json` 中对应模型的 `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` 使用。
-> These are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires the corresponding `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` in `api_configs.json`.
+> **推理模式**： `ENABLE_REASONING` + `REASONING_EFFORT` 专为支持推理能力的模型设计（如 DeepSeek V4）。启用后，Agent 会在 API 请求中附加 `thinking`/`reasoning_effort` 参数。需要配合 `api_configs.json` 中对应模型的 `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` 使用。
+> 
+> **Reasoning Mode**: `ENABLE_REASONING` + `REASONING_EFFORT` are designed for models with reasoning capabilities (e.g., DeepSeek V4). When enabled, the agent attaches `thinking`/`reasoning_effort` params to API requests. Requires the corresponding `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT` in `api_configs.json`.
 
 ---
 
@@ -62,11 +62,19 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 配置文件 `agent_configs.json` 定义了 Agent 的核心运行时行为：
 The `agent_configs.json` file defines the agent's core runtime behavior:
 
-> **⚠️ 高危参数警告 | High-Risk Parameters**
-> 以下参数错误配置可能导致 Agent 功能异常、安全策略失效或系统损坏：
-> - `BASH_PATH` — 指向非 GNU Bash 的 shell 会使风险检测失效，**所有命令都会绕过权限控制**
-> - `SIMULATOR_PATH` — 指向无效路径会导致仿真功能完全不可用
-> - `READ_FILE_MB_LIMIT` — 设置过大可能导致 OOM 或 LLM 上下文溢出
+> **⚠️ 高危参数警告**：以下参数错误配置可能导致 Agent 功能异常、安全策略失效或系统损坏
+> 
+> **⚠️ High-Risk Parameters**: Incorrect configuration of the following may break agent functionality, bypass security policies, or cause system damage
+> - `BASH_PATH` — 指向非 GNU Bash 的 shell 会使风险检测失效，**所有命令都会绕过权限控制** / Points to non-GNU Bash; risk evaluation becomes ineffective and **all commands bypass permission controls**
+> - `RIPGREP_PATH` — 指向无效路径会使 `grep_file` 全文搜索工具完全不可用 / Invalid path disables the `grep_file` full-text search tool completely
+> - `READ_FILE_MB_LIMIT` — 设置过大可能导致 OOM 或 LLM 上下文溢出 / Excessively large value may cause OOM or LLM context overflow
+> - `WECHAT_BOT_PERMISSION` — 微信模式下**直接覆盖主 Agent 全部权限**，误操作可能导致微信用户获得危险工具访问权 / **Fully overrides main agent permissions** in WeChat mode; misconfiguration may grant dangerous tool access to WeChat users
+> - `MAIN_TOOL_RESULT_CHAR_LIMIT` — 设置过大会将大量工具结果注入 LLM 上下文，快速耗尽上下文窗口 / Excessively large value injects massive tool result into LLM context, quickly exhausting the context window
+> - `READ_FILE_LLM_KB_LIMIT` — 设置过大会将超大文件内容直接注入 LLM 上下文，单次读取即可撑爆 / Excessively large value injects huge file content directly into LLM context; a single read may overflow
+> - `SKILL_DESC_CHAR_LIMIT` — 设置过大会导致技能描述占据大量系统提示词，挤占有效上下文空间 / Excessively large value makes skill descriptions consume a large portion of the system prompt, crowding out effective context
+> - `WEB_FETCH_LLM_CHAR_LIMIT` — 设置过大会将过量网页内容注入 LLM 上下文 / Excessively large value injects excessive web fetch content into LLM context
+> - `WEB_SEARCH_RAW_CHAR_LIMIT` — 搜索原始结果字符限制，过高会导致工具结果截断失效 / Raw search result char limit; too high disables truncation and may bloat tool results
+> - `WEB_SEARCH_LLM_CHAR_LIMIT` — 设置过大会将大段搜索结果注入 LLM 上下文 / Excessively large value injects large search result chunks into LLM context
 
 | 参数 Parameter | 说明 Description                                                                                                                       |
 |-----------|--------------------------------------------------------------------------------------------------------------------------------------|
@@ -165,6 +173,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 >   Controls whether LLM responses are rendered as Markdown via the Rich library. Disable for plain text display
 
 > **WeChat Bot 集成 | WeChat Bot Integration**
+> 
 > 通过 CLI 参数 `-wc` / `--wechat` 启用。启动后 Agent 通过微信接收用户消息与指令，监听 TUI 变为强制停留模式（仅 Ctrl+C 可退出），所有权限被 `WECHAT_BOT_PERMISSION` 覆盖。首个发送消息的用户自动绑定为会话拥有者，其他用户的微信消息会被自动拒绝。
 > Enable via CLI flag `-wc` / `--wechat`. When active, the agent receives user messages & commands via WeChat, the listen TUI becomes mandatory (only Ctrl+C exits), all permissions are overridden by `WECHAT_BOT_PERMISSION`, and the first user to send a message is auto-bound as the session owner — other users are auto-rejected.
 > 

@@ -28,6 +28,7 @@ Revision:
 2026.6.29      Yu Huang      2.0      here-doc detection, eval chain substitution, pkg-mgr substitution checks, remove
                                       export/umask/ulimit/stty from safe, fix 3<>file/&>> redirect detection. 408 tests.
 2026.7.3       Yu Huang      2.1      Fix of special Unicode render for bash, bash out, edit, write tool
+2026.7.17      Yu Huang      2.2      Fix: qutoed conetent in bash command is completely replaced in _mask_quoted
 
 Details:
 ---------
@@ -275,8 +276,7 @@ def _mask_quoted(cmd: str) -> str:
     for i, ch in enumerate(cmd):
         if escape:
             escape = False
-            if ch in ('"', '\\'):
-                out[i] = ' '
+            out[i] = ' '
             continue
         if ch == '\\' and in_double:
             escape = True

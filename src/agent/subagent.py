@@ -124,6 +124,8 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     ctx.agent_id = agent_id
     ctx.session_uuid = agent_id
     ctx.enable_wechat = False
+    ctx.wechat_reply_count = 0
+    ctx.wechat_reply_total_count = 0
     ctx.if_summarized = False
     ctx.session_title = f"subagent-{agent_id}"
     ctx.system_prompts = 0

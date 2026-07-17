@@ -35,12 +35,13 @@ Revision:
 2026.6.7       Yu Huang      3.3      Support of agent tasks display & Refactor agent listening
 2026.6.9       Yu Huang      3.4      Add design and run support for simulator
 2026.6.10      Yu Huang      3.5      Add reminder for LLM to manage workflow proactively & Revise the live TUI with the
-                                       same console instance
+                                      same console instance
 2026.6.13      Yu Huang      3.6      Subagent integration: spawn, agent_list registry, background agent orchestration,
 2026.6.14      Yu Huang      3.7      Fix: summary trigger >= with if_summarized guard, tool calls spinner board pass args
                                       stale agent cleanup on session resume
 2026.6.30      Yu Huang      3.8      Refactor the Markdown render style with custom theme
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
+2026.7.17      Yu Huang      4.0      Support of WeChat bot msg insert even if the tool call round is not end
 
 Details:
 ---------
@@ -224,6 +225,7 @@ if __name__ == '__main__':
         sys_log.debug("All tools in main agent are disabled")
         console.print("All tools in main agent are disabled", style=f"bold {MAJOR_COLOR1}")
     ctx.task_end = True  # previous task is always ended
+    as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
 
     """set the terminal title"""
     ui_info.set_terminal_title(ctx.session_title)
@@ -276,7 +278,7 @@ if __name__ == '__main__':
                     """pass prompts to LLM"""
                     pass
             else:
-                """second response with previous loop's tool results or reminder"""
+                """second response with previous loop's tool results or reminder or inserted WeChat messages"""
                 pass
 
             """send LLM request"""
@@ -314,6 +316,12 @@ if __name__ == '__main__':
                 # remind from chat is equivalent to remind from user input, so only update usage
                 prompt.update_task_usage(ctx, None, "chat")
 
+            """user message inserted from WeChat"""
+            _, content = agent_listen.check_wechat(ctx)  # listen WeChat messages and attach context
+            if content:
+                console.print(prompt.get_msg_render_strip(
+                    {"content": content}, WECHAT_PROMPT_START_LABEL, WECHAT_PROMPT_END_LABEL, WECHAT_PROMPT_ICON, "", as_md))
+
         except openai.APITimeoutError:
             """API timeout"""
             if ctx.task_end:  # no tool calls, only user prompt, so pop it
@@ -322,8 +330,8 @@ if __name__ == '__main__':
                     ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
-            sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry")
-            console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, please retry", style="bold yellow")
+            sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, retry")
+            console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, retry", style="bold yellow")
             continue
         except RequestLLMCancelled:
             """LLM API request cancelled"""

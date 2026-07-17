@@ -56,10 +56,9 @@ python -m src.main mcp toggle my-server
 python -m src.main mcp remove my-server
 ```
 
-> **⚠️ Windows 引号问题 | Windows Quoting Issue**
-> cmd.exe 不识别单引号，必须用双引号包裹 JSON，内部双引号用 `\"` 转义。PowerShell 支持单引号，可直接使用。
-
-> cmd.exe does not recognize single quotes — use double quotes with escaped inner quotes (`\"`). PowerShell supports single quotes directly.
+> **⚠️ Windows 引号问题**：cmd.exe 不识别单引号，必须用双引号包裹 JSON，内部双引号用 `\"` 转义。PowerShell 支持单引号，可直接使用。
+>
+> **⚠️ Windows Quoting Issue**: cmd.exe does not recognize single quotes — use double quotes with escaped inner quotes (`\"`). PowerShell supports single quotes directly.
 
 ### 关于 `args` 参数 | About the `args` Parameter
 
@@ -155,5 +154,7 @@ When CLI installation is limited (e.g., complex nested structures needed), direc
 ]
 ```
 
-> **提示 | Tip**: 编辑配置文件后，需要重启 Agent 或通过命令行 `toggle` 后再重启 Agent 来重新加载。
+> **提示 | Tip**: 
+> 
+> 编辑配置文件后，需要重启 Agent 或通过命令行 `toggle` 后再重启 Agent 来重新加载。
 > After editing the config file, restart the Agent or use the CLI `toggle` then restart the Agent to reload.

@@ -12,6 +12,7 @@ Description: QR code login and credential persistence
 Revision:
 ---------
 2026.7.15      Yu Huang      1.0      Add header information
+2026.7.17      Yu Huang      1.1      Add more specific logging header for WeChat SDK
 
 Details:
 ---------
@@ -122,7 +123,7 @@ async def login(
         if on_qr_url:
             on_qr_url(qr_url)
         else:
-            sys_log.info(f"Scan this URL in WeChat: {qr_url}")
+            sys_log.info(f"WeChat SDK log: Scan this URL in WeChat: {qr_url}")
 
         last_status = ""
         current_poll_base_url = FIXED_QR_BASE_URL
@@ -142,14 +143,14 @@ async def login(
                     if on_scanned:
                         on_scanned()
                     else:
-                        sys_log.info(f"WeChat QR scanned — confirm in WeChat")
+                        sys_log.info(f"WeChat SDK log: WeChat QR scanned — confirm in WeChat")
                 elif current == "expired":
                     if on_expired:
                         on_expired()
                     else:
-                        sys_log.warning(f"WeChat QR expired — requesting new one")
+                        sys_log.warning(f"WeChat SDK log: WeChat QR expired — requesting new one")
                 elif current == "confirmed":
-                    sys_log.info(f"WeChat login confirmed")
+                    sys_log.info(f"WeChat SDK log: WeChat login confirmed")
 
             if current == "confirmed":
                 token = status.get("bot_token")
@@ -181,14 +182,14 @@ async def login(
 
             # Too many wrong pairing codes: server blocked this QR — get a new one
             if current == "verify_code_blocked":
-                sys_log.warning("Pairing code blocked after repeated mismatches — requesting new WeChat QR code")
+                sys_log.warning("WeChat SDK log: Pairing code blocked after repeated mismatches — requesting new WeChat QR code")
                 pending_verify_code = None
                 break  # Outer loop requests a new QR (counts toward refresh limit)
 
             # Already bound to this client: reuse existing local credentials
             if current == "binded_redirect":
                 if stored:
-                    sys_log.warning("WeChat Bot already bound — reusing stored credentials")
+                    sys_log.warning("WeChat SDK log: WeChat Bot already bound — reusing stored credentials")
                     return stored
                 raise AuthError(
                     "Server reports this bot is already bound to this client "
@@ -200,7 +201,7 @@ async def login(
                 redirect_host = status.get("redirect_host")
                 if redirect_host:
                     current_poll_base_url = f"https://{redirect_host}"
-                    sys_log.warning(f"WeChat IDC redirect → {redirect_host}")
+                    sys_log.warning(f"WeChat SDK log: WeChat IDC redirect → {redirect_host}")
                 await asyncio.sleep(QR_POLL_INTERVAL)
                 continue
 

@@ -3,10 +3,9 @@
 本文档提供了 `src/constants.py` 中所有常量的完整参考。
 This document provides the full reference for all constants defined in `src/constants.py`.
 
-> **⚠️ 警告 | WARNING**
-> `constants.py` 中的参数直接影响 Agent 的运行行为与安全策略。**除非你完全理解每个参数的作用，请勿随意修改**。错误修改可能导致 Agent 行为异常、安全策略绕过或工具功能异常。如需调整行为，建议优先通过 `agent_configs.json` 或 `api_configs.json` 配置。
-
-> Parameters in `constants.py` directly affect the agent's runtime behavior and security policies. **Do not modify them unless you fully understand each parameter's purpose**. Incorrect modifications may lead to agent malfunction, security bypass, or tool malfunctions. Prefer adjusting behavior via `agent_configs.json` or `api_configs.json` instead.
+> **⚠️ 警告**：`constants.py` 中的参数直接影响 Agent 的运行行为与安全策略。**除非你完全理解每个参数的作用，请勿随意修改**。错误修改可能导致 Agent 行为异常、安全策略绕过或工具功能异常。如需调整行为，建议优先通过 `agent_configs.json` 或 `api_configs.json` 配置。
+> 
+> **⚠️ WARNING**: Parameters in `constants.py` directly affect the agent's runtime behavior and security policies. **Do not modify them unless you fully understand each parameter's purpose**. Incorrect modifications may lead to agent malfunction, security bypass, or tool malfunctions. Prefer adjusting behavior via `agent_configs.json` or `api_configs.json` instead.
 
 ---
 
@@ -38,9 +37,9 @@ Agent tools and internal operations return standardized status labels for unifie
 | `RUN_DONE_LABEL` | `DONE` | 仿真运行成功完成 / Simulation run completed successfully |
 
 > **状态流转说明 | Status Flow**
-> - 工具操作状态：`FAIL` / `FALLBACK` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` 互斥，一次调用返回一个
-> - Scoreboard 任务状态：`pending → in_progress → completed`（不可逆），任何状态均可标记为 `deleted`
-> - 仿真运行状态：`PENDING → DONE` / `CANCELLED` / `TIMEOUT` / `RUNTIME_ERROR`
+> - 工具操作状态 / Tool operation status: `FAIL` / `FALLBACK` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` are mutually exclusive; one per invocation
+> - Scoreboard 任务状态 / Scoreboard task status: `pending → in_progress → completed` (irreversible); any status can be marked as `deleted`
+> - 仿真运行状态 / Simulation run status: `PENDING → DONE` / `CANCELLED` / `TIMEOUT` / `RUNTIME_ERROR`
 
 ---
 
@@ -62,11 +61,9 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `SUBAGENT_START_LABEL` | `<subagent>` | 子 Agent 记录内容起始标记 / Marks the start of subagent record content |
 | `SUBAGENT_END_LABEL` | `</subagent>` | 子 Agent 记录内容结束标记 / Marks the end of subagent record content |
 
-> **显示控制 | Display Control**
-
-> 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；
-
-> When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, `RESUME_DISPLAY_CRONS`, and `RESUME_DISPLAY_SUBAGENT` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews.
+> **显示控制**： 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；
+>
+> **Display Control**: When resuming a session, you can control whether these labeled contents are displayed via `RESUME_DISPLAY_SYS_REMINDER`, `RESUME_DISPLAY_SKILLS`, `RESUME_DISPLAY_CRONS`, and `RESUME_DISPLAY_SUBAGENT` in `agent_configs.json`; use `RESUME_DISPLAY_WRITE_PREVIEW`, `RESUME_DISPLAY_BASH_PREVIEW`, `RESUME_DISPLAY_BASH_RESULT` to control write/bash tool call previews.
 
 ---
 
@@ -198,21 +195,13 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `MARKDOWN_HR_COLOR` | `#696969` | `markdown.hr` | 分割线颜色 / Horizontal rule line color |
 | `MARKDOWN_IMAGE_STYLE` | `#F5A742` | `markdown.image` | 图片占位符文字颜色 / Image placeholder text color |
 
-> **实现说明 | Implementation Note**
-> 
-> **HTML 标签转义 | HTML Tag Escaping (v0.2.7)**
-> Rich 的 Markdown 解析器将 `<...>` 视为内联 HTML 并默认移除，导致 LLM 回复中的尖括号内容（如 `<html>`、`<head>`、`<!DOCTYPE>`）被静默丢弃。`_NoLeadingNewlinesMD` 基础类通过正则 `re.split` 分割代码块与正文，仅在代码块**外部**将 `<` / `>` 替换为 `&lt;` / `&gt;` 实体（Rich 会在渲染时解析回原字符），代码块内部（\`\`\`）保持原始符号不变。
-> Rich's Markdown parser treats `<...>` as inline HTML and strips it by default, causing angle-bracket content (e.g. `<html>`, `<head>`, `<!DOCTYPE>`) in LLM replies to be silently removed. The `_NoLeadingNewlinesMD` base class uses `re.split` to separate code blocks from body text and escapes `<` / `>` as `&lt;` / `&gt;` **only outside** fenced code blocks — Rich resolves these entities back to the original characters at render time.
+> **HTML 标签转义**：Rich 的 Markdown 解析器将 `<...>` 视为内联 HTML 并默认移除，导致 LLM 回复中的尖括号内容（如 `<html>`、`<head>`、`<!DOCTYPE>`）被静默丢弃。`_NoLeadingNewlinesMD` 基础类通过正则 `re.split` 分割代码块与正文，仅在代码块**外部**将 `<` / `>` 替换为 `&lt;` / `&gt;` 实体（Rich 会在渲染时解析回原字符），代码块内部（\`\`\`）保持原始符号不变。
 >
-> **控制字符与零宽字符展开 | Control & Zero-Width Character Expansion (v0.2.7)**
-> `\t`、`\r`、`\b` 等终端控制字符及 `\u0301`（组合重音）、`\u200b`（零宽空格）等零宽字符在宽度测量中被误计为 1 列，导致背景填充错位。修复方案：`_char_display_width()` 正确识别 Unicode 类别（Mn/Mc/Me/Cf/Cc → 0），`_sanitize_control()` 将控制字符替换为等宽可见 Unicode Control Pictures（`\r`→`␍`，`\b`→`␈`，`\0`→`␀`），`.expandtabs(EDIT_VIEW_TAB_WIDTH)` 将 tab 展开为定宽空格。全部在 `fill_str_line()`、`_highlight_and_wrap()`、`_highlight_and_wrap_edit()` 中统一处理。
-> Terminal control characters (`\t`, `\r`, `\b`) and zero-width characters (`\u0301` combining accent, `\u200b` ZWSP) were incorrectly measured as 1 column, causing background fill misalignment. Fix: `_char_display_width()` correctly handles Unicode categories (Mn/Mc/Me/Cf/Cc → 0), `_sanitize_control()` replaces control chars with visible Unicode Control Pictures (`\r`→`␍`, `\b`→`␈`, `\0`→`␀`), and `.expandtabs(EDIT_VIEW_TAB_WIDTH)` expands tabs to spaces. Applied uniformly in `fill_str_line()`, `_highlight_and_wrap()`, `_highlight_and_wrap_edit()`.
-> 表格（`_RoundedTableElement`）、分割线（`_StyledHorizontalRule`）、图片占位符（`_StyledImageItem`）三元素因 Rich 默认实现不读取 Theme 样式名，通过子类化覆盖实现自定义外观。
-> The `table_open`, `hr`, and `image` elements are subclassed (at class level in `ReasonMD`/`ContentMD`) because Rich's default implementations do not read their respective Theme style names.
-> 
-> `CodeBlock` 的 `style_name = "markdown.code_block"` 同样不会被读取——代码块外观仅由 `code_theme`（pygments 主题）和 `Syntax(padding=...)` 控制。
-> `CodeBlock`'s `style_name = "markdown.code_block"` is likewise ignored — code block appearance is solely controlled by `code_theme` (pygments theme) and `Syntax(padding=...)`.
+> **HTML Tag Escaping**: Rich's Markdown parser treats `<...>` as inline HTML and strips it by default, causing angle-bracket content (e.g. `<html>`, `<head>`, `<!DOCTYPE>`) in LLM replies to be silently removed. The `_NoLeadingNewlinesMD` base class uses `re.split` to separate code blocks from body text and escapes `<` / `>` as `&lt;` / `&gt;` **only outside** fenced code blocks — Rich resolves these entities back to the original characters at render time.
 
+> **控制字符与零宽字符展开**：`\t`、`\r`、`\b` 等终端控制字符及 `\u0301`（组合重音）、`\u200b`（零宽空格）等零宽字符在宽度测量中被误计为 1 列，导致背景填充错位。修复方案：`_char_display_width()` 正确识别 Unicode 类别（Mn/Mc/Me/Cf/Cc → 0），`_sanitize_control()` 将控制字符替换为等宽可见 Unicode Control Pictures（`\r`→`␍`，`\b`→`␈`，`\0`→`␀`），`.expandtabs(EDIT_VIEW_TAB_WIDTH)` 将 tab 展开为定宽空格。全部在 `fill_str_line()`、`_highlight_and_wrap()`、`_highlight_and_wrap_edit()` 中统一处理。
+>
+> **Control & Zero-Width Character Expansion**: Terminal control characters (`\t`, `\r`, `\b`) and zero-width characters (`\u0301` combining accent, `\u200b` ZWSP) were incorrectly measured as 1 column, causing background fill misalignment. Fix: `_char_display_width()` correctly handles Unicode categories (Mn/Mc/Me/Cf/Cc → 0), `_sanitize_control()` replaces control chars with visible Unicode Control Pictures (`\r`→`␍`, `\b`→`␈`, `\0`→`␀`), and `.expandtabs(EDIT_VIEW_TAB_WIDTH)` expands tabs to spaces. Applied uniformly in `fill_str_line()`, `_highlight_and_wrap()`, `_highlight_and_wrap_edit()`.
 
 ### 任务看板 | Task Board (Scoreboard)
 
@@ -278,6 +267,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `PROGRESS_DISPLAY_REFRESH_RATE` | `30` | 进度条 TUI 刷新率（次/秒）/ Progress TUI refresh rate (fps) |
 
 > **随机标题机制 | Random Title Mechanism**
+> 
 > 当 `agent_configs.json` 中的 `RANDOM_PROGRESS_TITLE` 设为 `true` 时，Agent 会在三个场景中随机循环显示趣味标题（定义于 `constants.py`）：
 > When `RANDOM_PROGRESS_TITLE` is `true` in `agent_configs.json`, the agent cycles through random fun titles in three scenarios:
 > 
@@ -514,6 +504,8 @@ The agent can be started in WeChat bot mode via the `--wechat` CLI argument. The
 | `WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB_DEFAULT` | `100` | 媒体文件自动下载阈值默认值（MB）/ Default threshold for automatic media download (MB) |
 | `WECHAT_MEDIA_CACHE_KEY_MAX_LEN` | `8` | CDN 缓存键随机十六进制长度 / Random hex length for CDN cache keys |
 | `WECHAT_BOT_QUOTED_CHAR_MAX` | `1000` | 引用消息的最大文本提取字符数 / Max chars extracted from quoted reply messages |
+| `WECHAT_REPLY_BUDGET_MAX` | `10` | 每轮用户消息的回复预算上限 / Max replies per user message round |
+| `WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT` | `> ℹ️ This is the last messgae during tool call ...` | 预算倒数第2条回复时附加的提示文本（提醒用户发送新消息以重置预算）/ Hint appended to the second-to-last reply during tool calls (prompts user to send a new message to reset budget) |
 
 ### 预置回复列表 | Preset Reply Lists
 

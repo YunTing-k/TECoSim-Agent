@@ -59,6 +59,8 @@ Revision:
 2026.7.3       Yu Huang      5.0      Fix of old=new string replacement in file edit tool & Revise visuals of messages print
                                       (create/query/remove crons, glob, query) when resuming session
 2026.7.15-16   Yu Huang      5.1      Add WeChat bot interaction support
+2026.7.17      Yu Huang      5.2      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & WeChat tool
+                                      is correctly inserted to tool prompts
 
 Details:
 ---------
@@ -105,8 +107,9 @@ sys_log = logging.getLogger('logger')
 def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     """create prompts of all available tools (for main agent)"""
     # Agent tools
-    prompts: list[dict[str, Any]] = [
-        # basic tools
+    prompts: list[dict[str, Any]] = []
+    # basic tools
+    prompts.extend([
         tool_ask_user_question_def(),
         tool_spawn_agent_def(),
         tool_create_task_def(),
@@ -123,18 +126,20 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_edit_file_def(),
         tool_skill_def(),
         tool_web_fetch_def(),
-        tool_web_search_def(),
-        # simulation tools
+        tool_web_search_def()
+    ])
+    # WeChat tool
+    if ctx.enable_wechat:
+        prompts.extend([tool_wechat_send_media_def()])
+    # simulation tools
+    prompts.extend([
         tool_check_simulator_def(),
         tool_init_design_def(),
         tool_query_design_def(),
         tool_launch_sim_def(),
         tool_query_run_def(),
-        tool_read_log_def(),
-    ]
-    # WeChat tool
-    if ctx.enable_wechat:
-        tool_wechat_send_media_def(),
+        tool_read_log_def()
+    ])
     # MCP tools
     prompts.extend(ctx.mcp_router.reg_tools)
 
@@ -2362,6 +2367,17 @@ def wechat_send_media(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
             return {"status": FAIL_LABEL,
                     "info": f"File is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, user should "
                             f"modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}"}
+        """check the budget"""
+        if ctx.wechat_reply_count + 1 >= WECHAT_REPLY_BUDGET_MAX:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Only one WeChat message budget left for the last response to user in this round of tool call. "
+                          f"Budget will be rest when user sends new messages.")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: "
+                                   f"Only one WeChat message budget left for the last response to user in this round of tool call. "
+                                   f"Budget will be rest when user sends new messages.", style="bold red")
+            return {"status": FAIL_LABEL,
+                    "info": f"Only one WeChat message budget left for the last response to user in this round of tool call. "
+                            f"Budget will be rest when user sends new messages."}
         """send the media"""
         path_str = str(file_path.resolve())
         ext = file_path.suffix.lower()
@@ -2375,7 +2391,8 @@ def wechat_send_media(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         sent, sent_info = ctx.wechat_bot.reply_media_sync(ctx.last_wechat_msg, content)
         if not sent:
             return {"status": FAIL_LABEL, "info": f"{sent_info}"}
-
+        ctx.wechat_reply_count += 1
+        ctx.wechat_reply_total_count += 1
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) sent via WeChat")
         progress.console.print(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) "
                                f"sent via WeChat", style="bright_black")

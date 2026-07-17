@@ -15,6 +15,7 @@ Revision:
 2026.6.30      Yu Huang      1.3      Add time info string in listen TUI
 2026.7.3       Yu Huang      1.4      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      1.5      Add WeChat bot interaction support
+2026.7.17      Yu Huang      1.6      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 
 Details:
 ---------
@@ -146,9 +147,10 @@ def get_listen_tail(enable_wechat_bot: bool):
     """get tail of listen TUI"""
     if enable_wechat_bot:
         tail_str = Text(f"\n\n  Press Ctrl+C", style=f"{MAJOR_COLOR2}")
+        tail_str = tail_str.append(f" to quit this session", style=f"bright_black")
     else:
         tail_str = Text(f"\n\n  Press any key", style=f"{MAJOR_COLOR2}")
-    tail_str = tail_str.append(f" to quit listening mode and type your words", style=f"bright_black")
+        tail_str = tail_str.append(f" to quit listening mode and type your words", style=f"bright_black")
     return tail_str
 
 
@@ -159,12 +161,21 @@ def check_wechat(ctx: AgentContext) -> tuple[bool, str]:
     if not ctx.wechat_bot.has_pending():
         return False, ""
     else:
+        # get WeChat messages
         msgs = ctx.wechat_bot.pop_pending()
         media_threshold_mb = ctx.agent_configs["WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB"]
         if len(msgs) == 0:
             return False, ""
         else:
             ctx.last_wechat_msg = msgs[-1]
+            # first reply to bounded user
+            if ctx.wechat_bot.budget_prefix:
+                ctx.wechat_reply_count = 1
+                ctx.wechat_reply_total_count += 1
+                ctx.wechat_bot.budget_prefix = False
+            # get new messages and not the first round
+            else:
+                ctx.wechat_reply_count = 0
             ctx.wechat_bot.send_typing_sync(msgs[-1].raw_msg)
             content = get_wechat_list(msgs, media_threshold_mb)
             ctx.messages.append({"role": "user", "content": f"{content}"})
@@ -216,14 +227,12 @@ def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:
                       console=console, auto_refresh=False, transient=True, vertical_overflow="visible") as live:
                 while True:
                     key_press = input_device.read_keys()
-                    wechat_triggerd, content = check_wechat(ctx)  # listen WeChat messages
-                    if wechat_triggerd:
-                        return True
-                    cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks
-                    if cron_triggerd:
-                        return True
-                    agent_triggerd = check_background_agents(ctx)  # listen background agents
-                    if agent_triggerd:
+                    # handle all events first
+                    wechat_triggerd, content = check_wechat(ctx)  # listen WeChat messages and attach context
+                    cron_triggerd = check_cron_tasks(ctx)  # listen cron tasks and attach context
+                    agent_triggerd = check_background_agents(ctx)  # listen background agents and attach context
+                    # check if quit listen TUI
+                    if wechat_triggerd or cron_triggerd or agent_triggerd:
                         return True
                     if key_press:
                         if not enable_wechat_bot:

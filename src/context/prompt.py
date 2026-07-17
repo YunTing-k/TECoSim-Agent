@@ -42,6 +42,7 @@ Revision:
 2026.7.3       Yu Huang      3.7      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
 2026.7.3       Yu Huang      3.8      Fix: overflow of printing LLM response when a line is too long
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
+2026.7.17      Yu Huang      4.0      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 
 Details:
 ---------
@@ -766,6 +767,63 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
             console.print(f"LLM returned only reasoning content, content patched for API validity", style="bold yellow")
             dumped_msg["content"] = ""
 
+    """print the final content"""
+    console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"],
+                                   ctx.agent_configs["DISPLAY_RESPONSE_REASON"]))
+
+    """send to WeChat"""
+    # If there is tool call, and WECHAT_BOT_REPLY_DURING_TOOL_CALL is set:
+    # 1). Only send messages if the budget is >= 1 (ensure that when task end, msg can be sent to user)
+    # 2). Add hint for the last reply during tool call
+    # (If tool call includes WeChat, they will fail if budget is < 1)
+    if assistant_tool_calls is not None:
+        if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None:
+                if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX: # out of budget
+                    pass
+                elif ctx.wechat_reply_count == WECHAT_REPLY_BUDGET_MAX - 2: # last hint
+                    if_send = ctx.wechat_bot.reply_text_sync(
+                        ctx.last_wechat_msg, f"{assistant_chat}\n\n{WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT}")
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+                else:
+                    if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+            elif assistant_reasoning is not None:
+                if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX:
+                    pass
+                elif ctx.wechat_reply_count == WECHAT_REPLY_BUDGET_MAX - 2:  # last hint
+                    if_send = ctx.wechat_bot.reply_text_sync(
+                        ctx.last_wechat_msg, f"{assistant_reasoning}\n\n{WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT}")
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+                else:
+                    if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+            else:
+                pass
+    # If there is no tool call, task is end, WeChat msg should always be sent
+    else:
+        if ctx.wechat_bot is not None and ctx.enable_wechat:
+            if assistant_chat is not None:
+                if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                if if_send:
+                    ctx.wechat_reply_count += 1
+                    ctx.wechat_reply_total_count += 1
+            elif assistant_reasoning is not None:
+                if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                if if_send:
+                    ctx.wechat_reply_count += 1
+                    ctx.wechat_reply_total_count += 1
+            else:
+                pass
+
     """check context limits"""
     if ctx.last_input_tokens >= ctx.api_configs["MAIN_MODEL_CONTEXT"]:
         sys_log.error(f"LLM out of context: {ctx.api_configs["MAIN_MODEL_CONTEXT"]} tokens")
@@ -775,28 +833,6 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
         sys_log.warning(f"LLM's context >= {100 * ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context")
         console.print(f"LLM's context >= {100 * ctx.agent_configs["CONTEXT_THRESHOLD"]}% maximum context",
                       style="bold yellow")
-
-    """print the final content"""
-    console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"],
-                                   ctx.agent_configs["DISPLAY_RESPONSE_REASON"]))
-
-    """send to WeChat"""
-    if assistant_tool_calls is not None:
-        if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
-            if assistant_chat is not None:
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
-            elif assistant_reasoning is not None:
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
-            else:
-                pass
-    else:
-        if ctx.wechat_bot is not None and ctx.enable_wechat:
-            if assistant_chat is not None:
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
-            elif assistant_reasoning is not None:
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
-            else:
-                pass
 
     return assistant_tool_calls
 
@@ -1102,20 +1138,56 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
             console.print(f"LLM returned only reasoning content, content patched for API validity", style="bold yellow")
             dumped_msg["content"] = ""
 
+    """send to WeChat"""
+    # If there is tool call, and WECHAT_BOT_REPLY_DURING_TOOL_CALL is set:
+    # 1). Only send messages if the budget is >= 1 (ensure that when task end, msg can be sent to user)
+    # 2). Add hint for the last reply during tool call
+    # (If tool call includes WeChat, they will fail if budget is < 1)
     if converted_tool_calls is not None:
         if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
             if assistant_chat is not None and assistant_chat != "":
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX:  # out of budget
+                    pass
+                elif ctx.wechat_reply_count == WECHAT_REPLY_BUDGET_MAX - 2:  # last hint
+                    if_send = ctx.wechat_bot.reply_text_sync(
+                        ctx.last_wechat_msg, f"{assistant_chat}\n\n{WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT}")
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+                else:
+                    if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
             elif assistant_reasoning is not None and assistant_reasoning != "":
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX:
+                    pass
+                elif ctx.wechat_reply_count == WECHAT_REPLY_BUDGET_MAX - 2:  # last hint
+                    if_send = ctx.wechat_bot.reply_text_sync(
+                        ctx.last_wechat_msg, f"{assistant_reasoning}\n\n{WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT}")
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
+                else:
+                    if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                    if if_send:
+                        ctx.wechat_reply_count += 1
+                        ctx.wechat_reply_total_count += 1
             else:
                 pass
+    # If there is no tool call, task is end, WeChat msg should always be sent
     else:
         if ctx.wechat_bot is not None and ctx.enable_wechat:
             if assistant_chat is not None and assistant_chat != "":
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_chat)
+                if if_send:
+                    ctx.wechat_reply_count += 1
+                    ctx.wechat_reply_total_count += 1
             elif assistant_reasoning is not None and assistant_reasoning != "":
-                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                if_send = ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, assistant_reasoning)
+                if if_send:
+                    ctx.wechat_reply_count += 1
+                    ctx.wechat_reply_total_count += 1
             else:
                 pass
 

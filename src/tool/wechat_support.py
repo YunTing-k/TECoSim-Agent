@@ -10,6 +10,8 @@ Description: WeChat integration support for TECoSim Agent
 Revision:
 ---------
 2026.7.6-16    Yu Huang      1.0      First implementation
+2026.7.17      Yu Huang      1.1      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & Add quick
+                                      WeChat bot exit
 
 Details:
 ---------
@@ -106,6 +108,9 @@ class WeChatBridge:
         self.text_reply_timeout = config.get("WECHAT_BOT_TEXT_REPLY_TIMEOUT_S", WECHAT_BOT_TEXT_REPLY_DEFAULT_TIMEOUT_S)
         self.media_reply_timeout = config.get("WECHAT_BOT_MEDIA_REPLY_TIMEOUT_S", WECHAT_BOT_MEDIA_REPLY_DEFAULT_TIMEOUT_S)
         self.mute_nonfatal = config.get("WECHAT_BOT_MUTE_NONFATAL_ERROR", WECHAT_BOT_MUTE_NONFATAL_ERROR_DEFAULT)
+        self.if_login = False
+        self.if_bound = False
+        self.budget_prefix = False
         self._media_cache_dir = Path(SESSION_PATH) / session_uuid / WECHAT_MEDIA_CACHE_DIR
         self._media_cache_dir.mkdir(parents=True, exist_ok=True)
         self._media_threshold = config.get("WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB",
@@ -124,6 +129,7 @@ class WeChatBridge:
         self._msg_history: dict[str, dict] = {}  # msg_id -> {text, images, files, videos, voices, timestamp}
         self._history_json = Path(SESSION_PATH) / session_uuid / WECHAT_HISTORY_NAME
 
+    # [Callback functions for WeChat bot]
     def qr_callback(self, url: str):
         """callback for QR scan"""
         sys_log.debug("QR code scan callback is triggered")
@@ -145,16 +151,19 @@ class WeChatBridge:
         self._console.print(
             Panel.fit(cmd_str, title=title, title_align="left", padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
 
+
     def scanned_callback(self):
         """callback for QR scanned"""
         sys_log.debug("QR code of WeChat Bot is scanned, waiting for confirmation ... ")
         self._console.print("QR code of WeChat Bot is scanned, waiting for confirmation ... ",
                            style=f"bold {MAJOR_COLOR1}")
 
+
     def qr_expired_callback(self):
         """callback for QR expired"""
         sys_log.warning("QR code of WeChat Bot expired")
         self._console.print("QR code of WeChat Bot expired", style=f"bold yellow")
+
 
     def verify_code_callback(self, is_retry: bool) -> str:
         """callback for verify code — runs in a temp thread to avoid event-loop deadlock"""
@@ -179,11 +188,13 @@ class WeChatBridge:
             raise value
         return value
 
+
     def error_callback(self, err: Exception):
         """callback for error"""
         sys_log.error(f"WeChat Bot error: {err}")
         if not self.mute_nonfatal:
             self._console.print(f"WeChat Bot error: {err}", style=f"bold red")
+
 
     async def on_message(self, msg: IncomingMessage):
         """callback for incoming message — user binding filter"""
@@ -191,10 +202,12 @@ class WeChatBridge:
         with self._bound_user_lock:
             if self._bound_user_id is None:
                 self._bound_user_id = msg.user_id
+                self.if_bound = True
                 sys_log.info(f"WeChat Bot bound to user: {msg.user_id}")
                 self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] bound to user [{MAJOR_COLOR2}]{msg.user_id}[/{MAJOR_COLOR2}]")
                 try:
                     await self._bot.reply(msg, random.choice(WECHAT_BOT_LOCKED_LIST))
+                    self.budget_prefix = True
                 except Exception as e:
                     sys_log.error(f"Reply locked WeChat user failed with error: {e}")
                     if not self.mute_nonfatal:
@@ -213,11 +226,266 @@ class WeChatBridge:
         await self._collect_media(queued)
         self._store_msg_history(msg, queued)
         self._msg_queue.put(queued)
-        summary = msg_summary(msg)
+        summary = get_msg_summary(msg)
         sys_log.debug(f"WeChat message from {msg.user_id}: {summary}")
 
-    # ── Message queue ───────────────────────────────────────────
+    # [WeChat Bot lifecycle exposed API]
+    def login(self) -> bool:
+        """Block until QR scan + confirmation."""
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="wechat-bot")
+        if self._thread is not None:
+            self._thread.start()
+        else:
+            sys_log.error("WeChat Bot thread is None")
+            self._console.print("WeChat Bot thread is None", style=f"bold red")
+            return False
 
+        if not self._logged_in.wait(timeout=self.login_timeout):
+            self.stop()
+            sys_log.error(f"WeChat Bot login timeout > {self.login_timeout} s before QR scan")
+            self._console.print(f"WeChat Bot login timeout > {self.login_timeout} s before QR scan", style=f"bold red")
+            return False
+        if self._login_error:
+            self.stop()
+            sys_log.error(f"WeChat Bot login failed: {self._login_error}")
+            self._console.print(f"WeChat Bot login failed: {self._login_error}", style=f"bold red")
+            return False
+        self.if_login = True
+        sys_log.debug(f"WeChat Bot login done")
+        self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] login done")
+        return True
+
+
+    def run(self) -> None:
+        """Start long-poll in the daemon thread (non-blocking)."""
+        sys_log.debug("WeChat Bot long-poll started")
+        self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] long-poll started")
+        self._start_poll.set()
+
+
+    def stop(self, mute: bool = False) -> None:
+        """Stop the long-poll thread."""
+        if self._bot:
+            self._bot.stop()
+        sys_log.debug("WeChat Bot long-poll is stopping")
+        if not mute:
+            self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] long-poll is stopping")
+        if self._loop and not self._loop.is_closed():
+            async def _cancel_all():
+                for task in asyncio.all_tasks():
+                    task.cancel()
+            asyncio.run_coroutine_threadsafe(_cancel_all(), self._loop)
+        sys_log.debug("WeChat Bot remaining tasks cancelled")
+        if not mute:
+            self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] remaining tasks cancelled")
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=self.stop_timeout)
+        self.if_login = False
+        self.if_bound = False
+        self.budget_prefix = False
+        sys_log.debug("WeChat Bot thread terminated")
+        if not mute:
+            self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] thread terminated")
+
+    # [WeChat Bot msg status and pop method]
+    def has_pending(self) -> bool:
+        """True when at least one message is waiting in the queue."""
+        return not self._msg_queue.empty()
+
+
+    def pop_pending(self) -> list[WeChatQueuedMsg]:
+        """Drain and return all queued messages. Returns empty list if none."""
+        result = []
+        while True:
+            try:
+                result.append(self._msg_queue.get_nowait())
+            except queue.Empty:
+                break
+        return result
+
+    # [WeChat Bot msg sending API]
+    def send_typing_sync(self, msg: IncomingMessage) -> None:
+        """Show typing indicator to the user who sent *msg*. Safe from main thread."""
+        if not self._bot or not self._loop or self._loop.is_closed():
+            return
+        asyncio.run_coroutine_threadsafe(self._bot.send_typing(msg.user_id), self._loop)
+
+
+    def stop_typing_sync(self, msg: IncomingMessage) -> None:
+        """Cancel typing indicator for the user who sent *msg*. Safe from main thread."""
+        if not self._bot or not self._loop or self._loop.is_closed():
+            return
+        asyncio.run_coroutine_threadsafe(self._bot.stop_typing(msg.user_id), self._loop)
+
+
+    def reply_text_sync(self, msg: IncomingMessage | WeChatQueuedMsg, text: str) -> bool:
+        """Send a text reply to *msg*. Safe from main thread. Returns True on success."""
+        if isinstance(msg, WeChatQueuedMsg):
+            _msg = msg.raw_msg
+        else:
+            _msg = msg
+        if not self._bot or not self._loop or self._loop.is_closed():
+            sys_log.error(f"Reply text failed with error, bot or loop is None or loop is closed")
+            return False
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._bot.reply(_msg, text), self._loop)
+            future.result(timeout=self.text_reply_timeout)
+            sys_log.debug(f"Reply text to user")
+            return True
+        except Exception as e:
+            sys_log.error(f"Reply text failed with error: {e}")
+            if not self.mute_nonfatal:
+                self._console.print(f"Reply text failed with error: {e}", style=f"bold red")
+            return False
+
+
+    def reply_media_sync(self, msg: IncomingMessage | WeChatQueuedMsg, content: dict[str, Any]) -> tuple[bool, str]:
+        """Send a media reply to *msg*. Safe from main thread. Returns True on success.
+
+        *content* is a dict with one of:
+            {"image": bytes}                            — image data
+            {"image": "/path/to/photo.png"}             — image file path
+            {"video": bytes}                            — video data
+            {"video": "/path/to/video.mp4"}             — video file path
+            {"file": bytes, "file_name": "report.pdf"}  — file data + name
+            {"file": "/path/to/report.pdf"}             — file path (name derived from path)
+        """
+        if isinstance(msg, WeChatQueuedMsg):
+            _msg = msg.raw_msg
+        else:
+            _msg = msg
+        if not self._bot or not self._loop or self._loop.is_closed():
+            return False, f"Reply media failed, bot or loop is None or loop is closed"
+        try:
+            resolved = self._resolve_media_content(content)
+            future = asyncio.run_coroutine_threadsafe(self._bot.reply_media(_msg, resolved), self._loop)
+            future.result(timeout=self.media_reply_timeout)
+            sys_log.debug(f"Reply media to user done")
+            return True, SUCCESS_LABEL
+        except Exception as e:
+            sys_log.error(f"Reply media failed with error: {e}")
+            if not self.mute_nonfatal:
+                self._console.print(f"Reply media failed with error: {e}", style=f"bold red")
+            return False, f"Reply media failed with error: {e}"
+
+    # [WeChat Bot data persistence]
+    def load_cdn_cache(self, mute: bool = False) -> None:
+        """Restore CDN cache from JSON.  Entries whose files no longer exist are dropped."""
+        try:
+            if not self._cache_json.exists():
+                sys_log.error(f"WeChat CDN log {self._cache_json} not exist")
+                self._console.print(f"WeChat CDN log {self._cache_json} not exist", style="bold red")
+                return
+            data = json.loads(self._cache_json.read_text("utf-8"))
+            for key, entry in data.items():
+                path = Path(entry["local_path"])
+                if not path.exists():
+                    continue
+                self._cdn_cache[key] = CachedMedia(
+                    type=entry.get("type", "file"),
+                    local_path=entry["local_path"],
+                    file_name=entry.get("file_name"),
+                    size=entry.get("size"),
+                )
+            sys_log.info(f"WeChat CDN log with {len(self._cdn_cache)} entries of session {self.session_uuid} loaded")
+            if not mute:
+                self._console.print(f"[{MAJOR_COLOR2}]WeChat CDN log[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._cdn_cache)}[/{MAJOR_COLOR2}] "
+                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] loaded")
+        except Exception as e:
+            sys_log.error(f"Failed to load session {self.session_uuid}'s WeChat CDN log with error: {e}")
+            self._console.print(f"Failed to load session {self.session_uuid}'s WeChat CDN log with error: {e}", style="bold red")
+
+
+    def save_cdn_cache(self, mute: bool = False) -> None:
+        """Persist CDN cache to JSON (only entries with local_path)."""
+        try:
+            data = {}
+            for key, cm in self._cdn_cache.items():
+                if cm.local_path:
+                    data[key] = {
+                        "local_path": cm.local_path,
+                        "type": cm.type,
+                        "file_name": cm.file_name,
+                        "size": cm.size,
+                    }
+            self._cache_json.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+            sys_log.info(f"WeChat CDN log with {len(self._cdn_cache)} entries of session {self.session_uuid} saved")
+            if not mute:
+                self._console.print(f"[{MAJOR_COLOR2}]WeChat CDN log[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._cdn_cache)}[/{MAJOR_COLOR2}] "
+                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] saved")
+        except Exception as e:
+            sys_log.error(f"Failed to save session {self.session_uuid}'s WeChat CDN log with error: {e}")
+            self._console.print(f"Failed to save session {self.session_uuid}'s WeChat CDN log with error: {e}", style="bold red")
+
+
+    def load_msg_history(self, mute: bool = False) -> None:
+        """Restore message history from JSON."""
+        try:
+            if not self._history_json.exists():
+                return
+            data = json.loads(self._history_json.read_text("utf-8"))
+            self._msg_history = data
+            sys_log.info(f"WeChat msg history with {len(self._msg_history)} entries of session {self.session_uuid} loaded")
+            if not mute:
+                self._console.print(f"[{MAJOR_COLOR2}]WeChat msg history[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._msg_history)}[/{MAJOR_COLOR2}] "
+                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] loaded")
+        except Exception as e:
+            sys_log.error(f"Failed to load session {self.session_uuid}'s WeChat msg history with error: {e}")
+            self._console.print(f"Failed to load session {self.session_uuid}'s WeChat msg history with error: {e}", style="bold red")
+
+
+    def save_msg_history(self, mute: bool = False) -> None:
+        """Persist message history to JSON."""
+        try:
+            self._history_json.write_text(json.dumps(self._msg_history, indent=2, ensure_ascii=False), "utf-8")
+            sys_log.info(f"WeChat msg history with {len(self._msg_history)} entries of session {self.session_uuid} saved")
+            if not mute:
+                self._console.print(f"[{MAJOR_COLOR2}]WeChat msg history[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._msg_history)}[/{MAJOR_COLOR2}] "
+                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] saved")
+        except Exception as e:
+            sys_log.error(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}")
+            self._console.print(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}", style="bold red")
+
+    # [WeChat Bot internal API] Internal bot loop
+    def _poll_loop(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        assert self._loop
+        asyncio.set_event_loop(self._loop)
+        loop = self._loop
+        try:
+            self._bot = WeChatBot(
+                cred_path=WECHAT_CRED_PATH,
+                on_qr_url=self.qr_callback,
+                on_scanned=self.scanned_callback,
+                on_expired=self.qr_expired_callback,
+                on_verify_code=self.verify_code_callback,
+                on_error=self.error_callback,
+            )
+            assert self._bot
+            self._bot.on_message(self.on_message)
+            sys_log.debug("WeChat Bot object created")
+            self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] object created")
+            loop.run_until_complete(self._bot.login())
+        except Exception as e:
+            self._login_error = str(e)
+            sys_log.error(f"WeChat Bot login failed with error: {e}")
+            self._console.print(f"WeChat Bot login failed with error: {e}", style=f"bold red")
+            self._logged_in.set()
+            loop.close()
+            return
+
+        self._logged_in.set()
+        self._start_poll.wait()
+
+        try:
+            loop.run_until_complete(self._bot.start())
+        except Exception as e:
+            sys_log.error(f"WeChat Bot polling failed with error: {e}")
+            self._console.print(f"WeChat Bot polling failed with error: {e}", style=f"bold red")
+        finally:
+            loop.close()
+
+    # [WeChat Bot internal API] Message, media handling function
     async def _collect_media(self, queued: WeChatQueuedMsg) -> None:
         """Download media items under threshold; cache by encrypt_query_param."""
         msg = queued.raw_msg
@@ -237,6 +505,7 @@ class WeChatBridge:
             queued.voices.append(cm)
         # Quoted msgs
         await self._collect_quoted_msg(msg, queued)
+
 
     async def _collect_quoted_msg(self, msg: IncomingMessage, queued: WeChatQueuedMsg) -> None:
         """Parse ref_msg in raw item_list, resolve via _msg_history, and fill queued.quoted_text + quoted_media."""
@@ -267,13 +536,6 @@ class WeChatBridge:
             if queued.quoted_text is None:
                 queued.quoted_text = f"(Quoted message is unavailable)"
 
-    @staticmethod
-    def _parse_cdn_ref(data: dict[str, Any] | None) -> CDNMedia | None:
-        if not data:
-            return None
-        return CDNMedia(encrypt_query_param=data.get("encrypt_query_param", ""),
-                        aes_key=data.get("aes_key", ""),
-                        encrypt_type=data.get("encrypt_type"))
 
     async def _process_one_media(
         self, media: CDNMedia | None, mtype: str,
@@ -296,8 +558,8 @@ class WeChatBridge:
                 data = await self._bot.download_raw(media, aes_key)
                 local_path.write_bytes(data)
                 if mtype in ("image", "video") and not file_name:
-                    real_ext = _detect_ext_by_magic(data, mtype)
-                    guessed_ext = _ext_for_type(mtype)
+                    real_ext = detect_ext_by_magic(data, mtype)
+                    guessed_ext = detect_ext_by_type(mtype)
                     if real_ext != guessed_ext:
                         corrected = local_path.with_suffix(f".{real_ext}")
                         local_path.rename(corrected)
@@ -311,6 +573,7 @@ class WeChatBridge:
 
         self._cdn_cache[cache_key] = cm
         return cm
+
 
     async def _head_cdn(self, encrypt_query_param: str) -> int | None:
         """HEAD the CDN to get Content-Length.  Returns None on failure."""
@@ -328,85 +591,13 @@ class WeChatBridge:
             self._console.print(f"Failed to get Content-Length from {url} with error: {e}", style="bold red")
         return None
 
+
     def _make_media_path(self, cache_key: str, file_name: str | None, mtype: str) -> Path:
         """Build a local path for a downloaded media file (absolute)."""
         prefix = cache_key[:WECHAT_MEDIA_CACHE_KEY_MAX_LEN]
-        suffix = file_name or f"media.{_ext_for_type(mtype)}"
+        suffix = file_name or f"media.{detect_ext_by_type(mtype)}"
         return (self._media_cache_dir / f"{prefix}_{suffix}").resolve()
 
-    def load_cdn_cache(self, mute: bool = False) -> None:
-        """Restore CDN cache from JSON.  Entries whose files no longer exist are dropped."""
-        try:
-            if not self._cache_json.exists():
-                sys_log.error(f"WeChat CDN log {self._cache_json} not exist")
-                self._console.print(f"WeChat CDN log {self._cache_json} not exist", style="bold red")
-                return
-            data = json.loads(self._cache_json.read_text("utf-8"))
-            for key, entry in data.items():
-                path = Path(entry["local_path"])
-                if not path.exists():
-                    continue
-                self._cdn_cache[key] = CachedMedia(
-                    type=entry.get("type", "file"),
-                    local_path=entry["local_path"],
-                    file_name=entry.get("file_name"),
-                    size=entry.get("size"),
-                )
-            if not mute:
-                sys_log.info(f"WeChat CDN log with {len(self._cdn_cache)} entries of session {self.session_uuid} loaded")
-                self._console.print(f"[{MAJOR_COLOR2}]WeChat CDN log[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._cdn_cache)}[/{MAJOR_COLOR2}] "
-                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] loaded")
-        except Exception as e:
-            sys_log.error(f"Failed to load session {self.session_uuid}'s WeChat CDN log with error: {e}")
-            self._console.print(f"Failed to load session {self.session_uuid}'s WeChat CDN log with error: {e}", style="bold red")
-
-    def save_cdn_cache(self, mute: bool = False) -> None:
-        """Persist CDN cache to JSON (only entries with local_path)."""
-        try:
-            data = {}
-            for key, cm in self._cdn_cache.items():
-                if cm.local_path:
-                    data[key] = {
-                        "local_path": cm.local_path,
-                        "type": cm.type,
-                        "file_name": cm.file_name,
-                        "size": cm.size,
-                    }
-            self._cache_json.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
-            if not mute:
-                sys_log.info(f"WeChat CDN log with {len(self._cdn_cache)} entries of session {self.session_uuid} saved")
-                self._console.print(f"[{MAJOR_COLOR2}]WeChat CDN log[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._cdn_cache)}[/{MAJOR_COLOR2}] "
-                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] saved")
-        except Exception as e:
-            sys_log.error(f"Failed to save session {self.session_uuid}'s WeChat CDN log with error: {e}")
-            self._console.print(f"Failed to save session {self.session_uuid}'s WeChat CDN log with error: {e}", style="bold red")
-
-    def load_msg_history(self, mute: bool = False) -> None:
-        """Restore message history from JSON."""
-        try:
-            if not self._history_json.exists():
-                return
-            data = json.loads(self._history_json.read_text("utf-8"))
-            self._msg_history = data
-            if not mute:
-                sys_log.info(f"WeChat msg history with {len(self._msg_history)} entries of session {self.session_uuid} loaded")
-                self._console.print(f"[{MAJOR_COLOR2}]WeChat msg history[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._msg_history)}[/{MAJOR_COLOR2}] "
-                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] loaded")
-        except Exception as e:
-            sys_log.error(f"Failed to load session {self.session_uuid}'s WeChat msg history with error: {e}")
-            self._console.print(f"Failed to load session {self.session_uuid}'s WeChat msg history with error: {e}", style="bold red")
-
-    def save_msg_history(self, mute: bool = False) -> None:
-        """Persist message history to JSON."""
-        try:
-            self._history_json.write_text(json.dumps(self._msg_history, indent=2, ensure_ascii=False), "utf-8")
-            if not mute:
-                sys_log.info(f"WeChat msg history with {len(self._msg_history)} entries of session {self.session_uuid} saved")
-                self._console.print(f"[{MAJOR_COLOR2}]WeChat msg history[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(self._msg_history)}[/{MAJOR_COLOR2}] "
-                                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] saved")
-        except Exception as e:
-            sys_log.error(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}")
-            self._console.print(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}", style="bold red")
 
     def _store_msg_history(self, msg: IncomingMessage, queued: WeChatQueuedMsg) -> None:
         """Store an incoming message in _msg_history keyed by its server message_id."""
@@ -424,66 +615,6 @@ class WeChatBridge:
         }
         self._msg_history[msg_id] = entry
 
-    def send_typing_sync(self, msg: IncomingMessage) -> None:
-        """Show typing indicator to the user who sent *msg*. Safe from main thread."""
-        if not self._bot or not self._loop or self._loop.is_closed():
-            return
-        asyncio.run_coroutine_threadsafe(self._bot.send_typing(msg.user_id), self._loop)
-
-    def stop_typing_sync(self, msg: IncomingMessage) -> None:
-        """Cancel typing indicator for the user who sent *msg*. Safe from main thread."""
-        if not self._bot or not self._loop or self._loop.is_closed():
-            return
-        asyncio.run_coroutine_threadsafe(self._bot.stop_typing(msg.user_id), self._loop)
-
-    def reply_text_sync(self, msg: IncomingMessage | WeChatQueuedMsg, text: str) -> bool:
-        """Send a text reply to *msg*. Safe from main thread. Returns True on success."""
-        if isinstance(msg, WeChatQueuedMsg):
-            _msg = msg.raw_msg
-        else:
-            _msg = msg
-        if not self._bot or not self._loop or self._loop.is_closed():
-            sys_log.error(f"Reply text failed with error, bot or loop is None or loop is closed")
-            return False
-        try:
-            future = asyncio.run_coroutine_threadsafe(self._bot.reply(_msg, text), self._loop)
-            future.result(timeout=self.text_reply_timeout)
-            sys_log.debug(f"Reply text to user")
-            return True
-        except Exception as e:
-            sys_log.error(f"Reply text failed with error: {e}")
-            if not self.mute_nonfatal:
-                self._console.print(f"Reply text failed with error: {e}", style=f"bold red")
-            return False
-
-    def reply_media_sync(self, msg: IncomingMessage | WeChatQueuedMsg, content: dict[str, Any]) -> tuple[bool, str]:
-        """Send a media reply to *msg*. Safe from main thread. Returns True on success.
-
-        *content* is a dict with one of:
-            {"image": bytes}                            — image data
-            {"image": "/path/to/photo.png"}             — image file path
-            {"video": bytes}                            — video data
-            {"video": "/path/to/video.mp4"}             — video file path
-            {"file": bytes, "file_name": "report.pdf"}  — file data + name
-            {"file": "/path/to/report.pdf"}             — file path (name derived from path)
-        """
-        if isinstance(msg, WeChatQueuedMsg):
-            _msg = msg.raw_msg
-        else:
-            _msg = msg
-        if not self._bot or not self._loop or self._loop.is_closed():
-            return False, f"Reply media failed, bot or loop is None or loop is closed"
-        try:
-            resolved = self._resolve_media_content(content)
-            future = asyncio.run_coroutine_threadsafe(self._bot.reply_media(_msg, resolved), self._loop)
-            future.result(timeout=self.media_reply_timeout)
-            sys_log.debug(f"Reply media to user done")
-            return True, SUCCESS_LABEL
-        except Exception as e:
-            sys_log.error(f"Reply media failed with error: {e}")
-            if not self.mute_nonfatal:
-                self._console.print(f"Reply media failed with error: {e}", style=f"bold red")
-            return False, f"Reply media failed with error: {e}"
 
     @staticmethod
     def _resolve_media_content(content: dict[str, Any]) -> dict[str, Any]:
@@ -516,101 +647,8 @@ class WeChatBridge:
             return resolved
         raise ValueError(f"Unsupported media content: {list(content.keys())}")
 
-    def has_pending(self) -> bool:
-        """True when at least one message is waiting in the queue."""
-        return not self._msg_queue.empty()
 
-    def pop_pending(self) -> list[WeChatQueuedMsg]:
-        """Drain and return all queued messages. Returns empty list if none."""
-        result = []
-        while True:
-            try:
-                result.append(self._msg_queue.get_nowait())
-            except queue.Empty:
-                break
-        return result
-
-    def login(self) -> bool:
-        """Block until QR scan + confirmation."""
-        self._thread = threading.Thread(target=self._poll_loop, daemon=True, name="wechat-bot")
-        if self._thread is not None:
-            self._thread.start()
-        else:
-            sys_log.error("WeChat Bot thread is None")
-            self._console.print("WeChat Bot thread is None", style=f"bold red")
-            return False
-
-        if not self._logged_in.wait(timeout=self.login_timeout):
-            self.stop(timeout=self.stop_timeout)
-            sys_log.error(f"WeChat Bot login timeout > {self.login_timeout} s before QR scan")
-            self._console.print(f"WeChat Bot login timeout > {self.login_timeout} s before QR scan", style=f"bold red")
-            return False
-        if self._login_error:
-            self.stop(timeout=self.stop_timeout)
-            sys_log.error(f"WeChat Bot login failed: {self._login_error}")
-            self._console.print(f"WeChat Bot login failed: {self._login_error}", style=f"bold red")
-            return False
-        sys_log.debug(f"WeChat Bot login done")
-        self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] login done")
-        return True
-
-    def run(self) -> None:
-        """Start long-poll in the daemon thread (non-blocking)."""
-        sys_log.debug("WeChat Bot long-poll started")
-        self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] long-poll started")
-        self._start_poll.set()
-
-    def stop(self, timeout: float) -> None:
-        """Stop the long-poll thread."""
-        if self._bot:
-            self._bot.stop()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=timeout)
-        sys_log.debug("WeChat Bot long-poll stopped")
-        self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] long-poll stopped")
-
-    # ── Internal ────────────────────────────────────────────────
-
-    def _poll_loop(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        assert self._loop
-        asyncio.set_event_loop(self._loop)
-        loop = self._loop
-        try:
-            self._bot = WeChatBot(
-                cred_path=WECHAT_CRED_PATH,
-                on_qr_url=self.qr_callback,
-                on_scanned=self.scanned_callback,
-                on_expired=self.qr_expired_callback,
-                on_verify_code=self.verify_code_callback,
-                on_error=self.error_callback,
-            )
-            assert self._bot
-            self._bot.on_message(self.on_message)
-            sys_log.debug("WeChat Bot object created")
-            self._console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] object created")
-            loop.run_until_complete(self._bot.login())
-        except Exception as e:
-            self._login_error = str(e)
-            sys_log.error(f"WeChat Bot login failed with error: {e}")
-            self._console.print(f"WeChat Bot login failed with error: {e}", style=f"bold red")
-            self._logged_in.set()
-            loop.close()
-            return
-
-        self._logged_in.set()
-
-        self._start_poll.wait()
-        try:
-            loop.run_until_complete(self._bot.start())
-        except Exception as e:
-            sys_log.error(f"WeChat Bot polling failed with error: {e}")
-            self._console.print(f"WeChat Bot polling failed with error: {e}", style=f"bold red")
-        finally:
-            loop.close()
-
-
-def _ext_for_type(mtype: str) -> str:
+def detect_ext_by_type(mtype: str) -> str:
     """Default file extension for a media type when file_name is unavailable."""
     return {
         "image": "jpg",
@@ -620,8 +658,8 @@ def _ext_for_type(mtype: str) -> str:
     }.get(mtype, "bin")
 
 
-def _detect_ext_by_magic(data: bytes, mtype: str) -> str:
-    """Detect file extension from magic bytes.  Falls back to _ext_for_type."""
+def detect_ext_by_magic(data: bytes, mtype: str) -> str:
+    """Detect file extension from magic bytes.  Falls back to detect_ext_by_type."""
     if mtype == "image":
         if data[:2] == b'\xff\xd8':
             return "jpg"
@@ -638,11 +676,11 @@ def _detect_ext_by_magic(data: bytes, mtype: str) -> str:
             return "mp4"
         if data[:4] == b'\x1aE\xdf\xa3':
             return "mkv"
-    return _ext_for_type(mtype)
+    return detect_ext_by_type(mtype)
 
 
-def msg_summary(msg: IncomingMessage) -> str:
-    """Build a compact summary string for logging: text preview + media counts."""
+def get_msg_summary(msg: IncomingMessage) -> str:
+    """get a compact summary string for logging: text preview + media counts."""
     if msg.text:
         if len(msg.text) > WECHAT_BOT_MSG_SUMMARY_CHAR_MAX:
             text_part = msg.text[:WECHAT_BOT_MSG_SUMMARY_CHAR_MAX] + " ... "

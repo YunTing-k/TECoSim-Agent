@@ -25,7 +25,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 0
+TECOSIM_AGENT_UPDATE_VERSION: int = 1
 """Basic configs"""
 # basic files/dirs
 LOG_PATH: str = "./log"
@@ -60,27 +60,30 @@ WECHAT_BOT_MSG_SUMMARY_CHAR_MAX: int = 100
 WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB_DEFAULT: int = 100
 WECHAT_MEDIA_CACHE_KEY_MAX_LEN: int = 8
 WECHAT_BOT_QUOTED_CHAR_MAX: int = 1000
+WECHAT_REPLY_BUDGET_MAX: int = 10
+WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT: str = \
+    "> ℹ️ This is the last messgae during tool call from WeChat bot in this round of chat. Budget will be rest when you send new messages."
 WECHAT_BOT_LOCKED_LIST: list[str] = [
-    "✅ Session has been locked. You have exclusive access. Other users will be denied until this session ends.",
-    "✅ Exclusive session initiated. All other incoming requests will be rejected for the duration of this conversation.",
-    "✅ You now hold the session lock. No other users will be admitted until you disconnect.",
-    "✅ Session secured. External access has been disabled for the remainder of this interaction.",
-    "✅ Lock acquired. This session is now single-user. Concurrent requests will be blocked.",
+    "> ✅ Session has been locked. You have exclusive access. Other users will be denied until this session ends.",
+    "> ✅ Exclusive session initiated. All other incoming requests will be rejected for the duration of this conversation.",
+    "> ✅ You now hold the session lock. No other users will be admitted until you disconnect.",
+    "> ✅ Session secured. External access has been disabled for the remainder of this interaction.",
+    "> ✅ Lock acquired. This session is now single-user. Concurrent requests will be blocked.",
 ]
 WECHAT_BOT_BLOCK_REPLY_LIST: list[str] = [
-    "❌ Sorry, I'm currently serving another user. This session won't be available until it ends.",
-    "❌ I'm in a private session right now. No queue, no waiting — please don't hold your breath.",
-    "❌ Occupied. There's no line to wait in — this conversation is exclusive until it's over.",
-    "❌ Another user has locked this session. You won't get through until they're done.",
-    "❌ Currently in an exclusive chat. Don't wait around — this won't open up mid-session.",
-    "❌ I'm a one-person-at-a-time kind of bot. No queue, no waiting list, just come back... eventually.",
-    "❌ Someone else has my full attention right now. I don't do reservations — try again only if you're feeling lucky.",
-    "❌ I'm not ignoring you, but I kind of am. This session is locked, and there's no ETA.",
-    "❌ Session locked. No waitlist. Try again only after the current chat ends.",
-    "❌ Exclusive session in progress. Door's closed, no peeking.",
-    "❌ Occupied. No queue. Come back when it's quiet.",
-    "❌ I'm with someone else and can't switch mid-conversation. There's no waitlist — you'll just have to catch me when I'm free.",
-    "❌ This is a strictly one-on-one session. No interruptions allowed, no line forming. Please don't wait on me.",
+    "> ❌ Sorry, I'm currently serving another user. This session won't be available until it ends.",
+    "> ❌ I'm in a private session right now. No queue, no waiting — please don't hold your breath.",
+    "> ❌ Occupied. There's no line to wait in — this conversation is exclusive until it's over.",
+    "> ❌ Another user has locked this session. You won't get through until they're done.",
+    "> ❌ Currently in an exclusive chat. Don't wait around — this won't open up mid-session.",
+    "> ❌ I'm a one-person-at-a-time kind of bot. No queue, no waiting list, just come back... eventually.",
+    "> ❌ Someone else has my full attention right now. I don't do reservations — try again only if you're feeling lucky.",
+    "> ❌ I'm not ignoring you, but I kind of am. This session is locked, and there's no ETA.",
+    "> ❌ Session locked. No waitlist. Try again only after the current chat ends.",
+    "> ❌ Exclusive session in progress. Door's closed, no peeking.",
+    "> ❌ Occupied. No queue. Come back when it's quiet.",
+    "> ❌ I'm with someone else and can't switch mid-conversation. There's no waitlist — you'll just have to catch me when I'm free.",
+    "> ❌ This is a strictly one-on-one session. No interruptions allowed, no line forming. Please don't wait on me.",
 ]
 # subagent
 MAIN_AGENT_ID: str = "main"

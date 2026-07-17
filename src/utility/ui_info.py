@@ -35,6 +35,7 @@ Revision:
 2026.6.29      Yu Huang      2.9      Terminal subagents show └─N toolcalls · duration instead of last tool name & Rights claim modification
 2026.7.3       Yu Huang      3.0      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      3.1      Add WeChat bot interaction support
+2026.7.17      Yu Huang      3.2      Add quick WeChat bot exit
 
 Details:
 ---------
@@ -744,11 +745,12 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
     token = exit_tui(ctx, console)
     if token:
         try:
-            save_messages(ctx, console)
-            ctx.save_context(console)
             if ctx.enable_wechat and ctx.wechat_bot is not None:
+                ctx.wechat_bot.stop()
                 ctx.wechat_bot.save_cdn_cache()
                 ctx.wechat_bot.save_msg_history()
+            save_messages(ctx, console)
+            ctx.save_context(console)
             ctx.design_man.save_to_file(console)
             ctx.run_man.save_to_file(console)
             board.save_to_file(console)
@@ -757,7 +759,7 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
             console.print(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally", style="bold red")
             sys.exit(-1)
         sys_log.debug(exit_str)
-        console.print(exit_str, style=MAJOR_COLOR2)
+        console.print(exit_str, style=f"bold {MAJOR_COLOR1}")
         sys.exit(-1)
     else:
         sys_log.debug("Exit canceled")
@@ -767,11 +769,12 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
 def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Exception):
     """error exit of agent"""
     try:
-        save_messages(ctx, console)
-        ctx.save_context(console)
         if ctx.enable_wechat and ctx.wechat_bot is not None:
+            ctx.wechat_bot.stop()
             ctx.wechat_bot.save_cdn_cache()
             ctx.wechat_bot.save_msg_history()
+        save_messages(ctx, console)
+        ctx.save_context(console)
         ctx.design_man.save_to_file(console)
         ctx.run_man.save_to_file(console)
         board.save_to_file(console)

@@ -252,8 +252,8 @@ class DesignManager:
                 path = os.path.join(SESSION_PATH, uuid_str, DESIGNS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                sys_log.debug(f"Designs information of session {self.session_uuid} saved")
                 if not mute:
-                    sys_log.debug(f"Designs information of session {self.session_uuid} saved")
                     console.print(f"[{MAJOR_COLOR2}]Designs information[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                                   f"[/bright_black] saved")
             except Exception as e:
@@ -284,8 +284,8 @@ class DesignManager:
                     self._revisions[revision["design_id"]] = revision
                 self._next_design_uuid = data["next_design_uuid"]
                 self._next_design_id = data["next_design_id"]
+                sys_log.debug(f"Designs information of session {self.session_uuid} loaded")
                 if not mute:
-                    sys_log.debug(f"Designs information of session {self.session_uuid} loaded")
                     console.print(f"[{MAJOR_COLOR2}]Designs information[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                                   f"[/bright_black] loaded")
             except Exception as e:
@@ -427,8 +427,8 @@ class RunManager:
                 path = os.path.join(SESSION_PATH, uuid_str, RUNS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                sys_log.debug(f"Runs information of session {self.session_uuid} saved")
                 if not mute:
-                    sys_log.debug(f"Runs information of session {self.session_uuid} saved")
                     console.print(f"[{MAJOR_COLOR2}]Runs information[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                                   f"[/bright_black] saved")
             except Exception as e:
@@ -453,8 +453,8 @@ class RunManager:
                     run = Run(**run_data)
                     self._runs[run["run_id"]] = run
                 self._next_id = data["next_id"]
+                sys_log.debug(f"Runs information of session {self.session_uuid} loaded")
                 if not mute:
-                    sys_log.debug(f"Runs information of session {self.session_uuid} loaded")
                     console.print(f"[{MAJOR_COLOR2}]Runs information[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                                   f"[/bright_black] loaded")
             except Exception as e:

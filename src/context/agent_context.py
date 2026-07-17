@@ -27,6 +27,7 @@ Revision:
 2026.6.13      Yu Huang      2.5      Add background_agents registry + stale agent cleanup on session resume
 2026.6.14      Yu Huang      2.6      Fix: file_read_log path key, bg timeout tracking, if_summarized, cron file guard
 2026.7.15-16   Yu Huang      2.7      Add WeChat bot interaction support
+2026.7.17      Yu Huang      2.8      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 
 Details:
 ---------
@@ -164,6 +165,8 @@ class AgentContext:
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump, shared)
         self.enable_wechat: bool = False  # (don't dump)
+        self.wechat_reply_count: int = 0  # (don't dump)
+        self.wechat_reply_total_count: int = 0
         self.if_summarized: bool = False
         self.session_title: str = DEFAULT_SESSION_TITLE
         self.system_prompts: int = 0  # (don't dump)
@@ -316,6 +319,7 @@ class AgentContext:
     def to_dict(self, console: Console, mute: bool = False) -> dict:
         """convert class to dict"""
         out_dict = {
+            "wechat_reply_total_count": self.wechat_reply_total_count,
             "if_summarized": self.if_summarized,
             "session_title": self.session_title,
             "user_prompts": self.user_prompts,
@@ -339,8 +343,8 @@ class AgentContext:
             "permissions": self.permissions,
             "agent_list": {aid: p.to_dict() for aid, p in self.agent_list.items()},
         }
+        sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
         if not mute:
-            sys_log.debug(f"Context of session {self.session_uuid} converted to dict")
             console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] "
                           f"converted to dict")
         return out_dict
@@ -349,6 +353,7 @@ class AgentContext:
     def from_dict(self, in_dict: dict[str, Any], console: Console, mute: bool = False):
         """convert dict to class"""
         try:
+            self.wechat_reply_total_count = in_dict["wechat_reply_total_count"]
             self.if_summarized = in_dict["if_summarized"]
             self.session_title = in_dict["session_title"]
             self.user_prompts = in_dict["user_prompts"]
@@ -376,8 +381,8 @@ class AgentContext:
                     if not p.if_archived: # non-archived agent in file config when resuming means error (run killed etc.)
                         p.status = AgentStatus.ERROR
                         p.if_archived = True
+            sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
             if not mute:
-                sys_log.debug(f"Context of session {self.session_uuid} converted from dict")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}"
                               f"[/bright_black] converted from dict")
         except Exception as e:
@@ -397,8 +402,8 @@ class AgentContext:
                 json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
             """durable and session cron tasks save"""
             self.save_cron_task()
+            sys_log.debug(f"Context of session {self.session_uuid} saved")
             if not mute:
-                sys_log.debug(f"Context of session {self.session_uuid} saved")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] saved")
         except Exception as e:
             sys_log.error(f"Failed to save session {self.session_uuid}'s context with error: {e}")
@@ -423,8 +428,8 @@ class AgentContext:
                         self.session_crons = json.load(f)
                 else:
                     self.session_crons = []
+            sys_log.debug(f"Context of session {self.session_uuid} loaded")
             if not mute:
-                sys_log.debug(f"Context of session {self.session_uuid} loaded")
                 console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] loaded")
             self.from_dict(in_dict, console, mute)
         except Exception as e:

@@ -12,6 +12,7 @@ Description: WeChat iLink Bot client — lifecycle, messaging, and media orchest
 Revision:
 ---------
 2026.7.15      Yu Huang      1.0      Add header information
+2026.7.17      Yu Huang      1.1      Add more specific logging header for WeChat SDK
 
 Details:
 ---------
@@ -283,7 +284,7 @@ class WeChatBot:
         try:
             await self._api.notify_start(creds.base_url, creds.token)
         except Exception as e:
-            self._log(f"notify_start failed (ignored): {e}")
+            self._log(f"notify_start failed (ignored) failed with error: {e}")
 
         self._log("Long-poll started")
         retry_delay = 1.0
@@ -631,7 +632,7 @@ class WeChatBot:
             self._on_error(err)
 
     def _log(self, msg: str) -> None:
-        sys_log.debug(f"WeChat log: {msg}")
+        sys_log.debug(f"WeChat SDK log: {msg}")
 
 
 def _detect_type(items: list[dict[str, Any]]) -> str:
