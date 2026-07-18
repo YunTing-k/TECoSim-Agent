@@ -97,7 +97,6 @@ PERMISSION_LABEL_TO_NAME_MAP: dict[str, str] = {
     # basic tools
     "TOOL_NAME_SPAWN_AGENT": TOOL_NAME_SPAWN_AGENT,
     "TOOL_NAME_CREATE_CRON": TOOL_NAME_CREATE_CRON,
-    "TOOL_NAME_QUERY_CRON": TOOL_NAME_QUERY_CRON,
     "TOOL_NAME_REMOVE_CRON": TOOL_NAME_REMOVE_CRON,
     "BASH_HIGH_RISK_LABEL": BASH_HIGH_RISK_LABEL,
     "BASH_PACKAGE_LABEL": BASH_PACKAGE_LABEL,
@@ -123,7 +122,7 @@ PERMISSION_LABEL_TO_NAME_MAP: dict[str, str] = {
     "TOOL_NAME_WEB_FETCH": TOOL_NAME_WEB_FETCH,
     "TOOL_NAME_WEB_SEARCH": TOOL_NAME_WEB_SEARCH,
     # WeChat tools
-    "TOOL_NAME_WECHAT_SEND_MEDIA": TOOL_NAME_WECHAT_SEND_MEDIA,
+    "TOOL_NAME_WECHAT_SEND_FILE": TOOL_NAME_WECHAT_SEND_FILE,
     # simulation tool"
     "TOOL_NAME_INIT_DESIGN": TOOL_NAME_INIT_DESIGN,
     "TOOL_NAME_LAUNCH_SIM": TOOL_NAME_LAUNCH_SIM,
@@ -196,7 +195,6 @@ class AgentContext:
             # basic tools
             TOOL_NAME_SPAWN_AGENT: False,
             TOOL_NAME_CREATE_CRON: False,
-            TOOL_NAME_QUERY_CRON: False,
             TOOL_NAME_REMOVE_CRON: False,
             BASH_HIGH_RISK_LABEL: False,
             BASH_PACKAGE_LABEL: False,
@@ -222,7 +220,7 @@ class AgentContext:
             TOOL_NAME_WEB_FETCH: False,
             TOOL_NAME_WEB_SEARCH: False,
             # WeChat tools
-            TOOL_NAME_WECHAT_SEND_MEDIA: False,
+            TOOL_NAME_WECHAT_SEND_FILE: False,
             # simulation tools
             TOOL_NAME_INIT_DESIGN: False,
             TOOL_NAME_LAUNCH_SIM: False,

@@ -61,6 +61,7 @@ Revision:
 2026.7.15-16   Yu Huang      5.1      Add WeChat bot interaction support
 2026.7.17      Yu Huang      5.2      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & WeChat tool
                                       is correctly inserted to tool prompts
+2026.7.18      Yu Huang      5.3      Add tool of checking WeChat status & Disable ask user question in WeChat Bot
 
 Details:
 ---------
@@ -109,8 +110,11 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     # Agent tools
     prompts: list[dict[str, Any]] = []
     # basic tools
+    if not ctx.enable_wechat:
+        prompts.extend([
+            tool_ask_user_question_def()
+        ])
     prompts.extend([
-        tool_ask_user_question_def(),
         tool_spawn_agent_def(),
         tool_create_task_def(),
         tool_update_task_def(),
@@ -130,7 +134,10 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     ])
     # WeChat tool
     if ctx.enable_wechat:
-        prompts.extend([tool_wechat_send_media_def()])
+        prompts.extend([
+            tool_wechat_status_def(),
+            tool_wechat_send_file_def()
+        ])
     # simulation tools
     prompts.extend([
         tool_check_simulator_def(),
@@ -150,7 +157,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
 
 
 def tool_get_agent_version_def() -> dict[str, Any]:
-    """tool definition of getting current version of TECoSim Agent ({TOOL_NAME_VERSION})"""
+    """tool definition of getting current version of TECoSim Agent (TOOL_NAME_VERSION)"""
     tool_def = {
         "type": "function",
         "function": {
@@ -180,7 +187,7 @@ def agent_version(progress: Progress) -> dict[str, Any]:
 
 
 def tool_spawn_agent_def() -> dict[str, Any]:
-    """tool definition of spawning a subagent ({TOOL_NAME_SPAWN_AGENT})"""
+    """tool definition of spawning a subagent (TOOL_NAME_SPAWN_AGENT)"""
     type_enum = list(SUPPORTED_TYPES_DESC.keys())
     type_desc = "  ".join(f"- {k}: {v}" for k, v in SUPPORTED_TYPES_DESC.items())
     tool_def = {
@@ -2298,23 +2305,63 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         return {"status": FAIL_LABEL, "info": f"Web search failed failed with error: {e}"}
 
 
-def tool_wechat_send_media_def() -> dict[str, Any]:
-    """tool definition of sending media to the current WeChat user (TOOL_NAME_WECHAT_SEND_MEDIA)"""
+def tool_wechat_status_def() -> dict[str, Any]:
+    """tool definition of get the current status of WeChat bot (TOOL_NAME_WECHAT_STATUS)"""
     tool_def = {
         "type": "function",
         "function": {
-            "name": TOOL_NAME_WECHAT_SEND_MEDIA,
-            "description": "Send a media file (image, video, or general file) to the current connected WeChat user. "
-                           "Automatically classifies the file by extension:\n"
-                           " - .png, .jpg, .jpeg, .gif, .webp, .bmp, .svg are sent as images"
-                           " - .mp4, .mov, .webm, .mkv, .avi are sent as videos"
+            "name": TOOL_NAME_WECHAT_STATUS,
+            "description": "Get the current status of the WeChat Bot connection, including login state, the bounded WeChat "
+                           "user ID, queued messages, logged user messages, and CDN download statistics for images/videos/"
+                           "voices/files",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def wechat_status(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of getting the current status of WeChat bot"""
+    func_name = TOOL_NAME_WECHAT_STATUS
+    try:
+        """check WeChat bot"""
+        if not ctx.enable_wechat:
+            return {"status": FAIL_LABEL, "info": "WeChat bot is disabled"}
+        if ctx.wechat_bot is None:
+            return {"status": FAIL_LABEL, "info": "WeChat bot is not running"}
+        """get status"""
+        status = ctx.wechat_bot.get_status()
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done")
+        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done", style="bright_black")
+        return {"status": SUCCESS_LABEL, "info": status}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Get WeChat bot status failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Get WeChat bot status failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Get WeChat bot status failed with error: {e}"}
+
+
+def tool_wechat_send_file_def() -> dict[str, Any]:
+    """tool definition of sending media/file to the current WeChat user (TOOL_NAME_WECHAT_SEND_FILE)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_WECHAT_SEND_FILE,
+            "description": "Send a image, video, or general file to the current connected WeChat user. Automatically "
+                           "classifies the file by its extension:\n"
+                           " - `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp` are sent as images"
+                           " - `.mp4`, `.mov`, `.webm`, `.mkv`, `.avi` are sent as videos"
                            " - everything else is sent as a general file",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Absolute path to the media file to send.",
+                        "description": "Absolute path to the file to send.",
                     }
                 },
                 "required": ["path"],
@@ -2325,9 +2372,9 @@ def tool_wechat_send_media_def() -> dict[str, Any]:
     return tool_def
 
 
-def wechat_send_media(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
-    """tool realization of sending media to the current WeChat user"""
-    func_name = TOOL_NAME_WECHAT_SEND_MEDIA
+def wechat_send_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of sending media to the current WeChat user with AgentContext"""
+    func_name = TOOL_NAME_WECHAT_SEND_FILE
     try:
         """request permission"""
         pause_for_permission(progress)
@@ -2381,7 +2428,7 @@ def wechat_send_media(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         """send the media"""
         path_str = str(file_path.resolve())
         ext = file_path.suffix.lower()
-        if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"):
+        if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
             content = {"image": path_str}
         elif ext in (".mp4", ".mov", ".webm", ".mkv", ".avi"):
             content = {"video": path_str}

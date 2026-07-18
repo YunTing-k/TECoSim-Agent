@@ -175,7 +175,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
                     "tool_call_id": tc["id"],
                     "content": json.dumps({
                         "status": FAIL_LABEL,
-                        "info": f"Failed to parse {TOOL_NAME_SPAWN_AGENT} tool call's arguments with error: {e}. Please recheck."},
+                        "info": f"Failed to parse {TOOL_NAME_SPAWN_AGENT} tool call's arguments with error: {e}. Please re-check."},
                         ensure_ascii=False),
                 })
                 continue
@@ -196,7 +196,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
                 "tool_call_id": tc["id"],
                 "content": json.dumps({
                     "status": FAIL_LABEL,
-                    "info": f"Failed to parse this tool call's arguments with error: {e}. Please recheck."}, ensure_ascii=False),
+                    "info": f"Failed to parse this tool call's arguments with error: {e}. Please re-check."}, ensure_ascii=False),
             })
             continue
         sys_log.debug(f"Using tool: {func_name}")

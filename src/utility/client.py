@@ -22,7 +22,7 @@ Revision:
 2026.6.3       Yu Huang      2.0      Add tool choice in branch LLM request
 2026.6.3       Yu Huang      2.1      Support of task displays in scoreboard
 2026.6.10      Yu Huang      2.2      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
-                                       the same console instance
+                                      the same console instance
 2026.6.13      Yu Huang      2.3      Add request_branch_medium + select_branch_func for 3-tier model switching
 
 Details:

@@ -34,7 +34,7 @@ The counter `ctx.wechat_reply_count` tracks the number of replies sent in the cu
 | 第 1-7 次回复 / Replies 1-7 (count 0..6) | 正常发送文本及媒体 / Normal text and media sending |
 | 第 8 次回复 / Reply 8 (count == 7) | 正常发送 / Normal sending |
 | 第 9 次回复 / Reply 9 (count == 8) | 文本消息尾部附加预算警告提示 `WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT` / Budget warning hint appended to text message |
-| 第 10 次回复 / Reply 10 (count == 9) | 仅允许纯文本回复；媒体发送工具 `wechat_send_media` 将被拒绝（条件：`wechat_reply_count + 1 >= WECHAT_REPLY_BUDGET_MAX`）/ Text-only reply allowed; media send tool `wechat_send_media` is rejected |
+| 第 10 次回复 / Reply 10 (count == 9) | 仅允许纯文本回复；媒体发送工具 `wechat_send_file` 将被拒绝（条件：`wechat_reply_count + 1 >= WECHAT_REPLY_BUDGET_MAX`）/ Text-only reply allowed; media send tool `wechat_send_file` is rejected |
 | 预算耗尽后 / After budget exhausted (count >= 10) | 不再发送任何消息，直到用户发来新消息 / No more messages sent until the user sends a new message |
 
 ---
@@ -122,10 +122,17 @@ On `stop()`, `_stopped` is set to shut down the long-poll loop, then `run_corout
 
 ---
 
-## 10. 锁定/拒绝回复文案 | Lock/Block Reply Messages
+## 10. 预设回复文案 | Preset Reply Messages
 
-用户绑定成功后发送的锁定确认消息和被拒绝用户的回复消息均以 `> ` 引用前缀发送，在微信中呈现为灰色引用块样式，与普通文本消息形成视觉区分。文案列表定义于 `constants.py` 的 `WECHAT_BOT_LOCKED_LIST` 和 `WECHAT_BOT_BLOCK_REPLY_LIST`，每次随机选取一条发送。
-The lock confirmation (on successful binding) and block rejection (to non-bound users) messages are all sent with a `> ` quote prefix, rendering as grey quote blocks in WeChat — visually distinct from regular text. Message lists are defined in `constants.py` as `WECHAT_BOT_LOCKED_LIST` and `WECHAT_BOT_BLOCK_REPLY_LIST`; one is randomly selected per use.
+WeChat Bot 共有四类预设回复文案，均以 `> ` 引用前缀发送，在微信中呈现为灰色引用块样式，与普通文本消息形成视觉区分。所有列表定义于 `constants.py`，每次随机选取一条发送。
+Four categories of preset reply messages are defined, all sent with a `> ` quote prefix, rendering as grey quote blocks in WeChat — visually distinct from regular text. All lists are defined in `constants.py`; one entry is randomly selected per use.
+
+| 列表 List | 条目数 Count | 触发时机 Trigger |
+|---|---|---|
+| `WECHAT_BOT_LOCKED_LIST` | 5 | 首个用户绑定成功时发送 / Sent when the first user is successfully bound |
+| `WECHAT_BOT_BLOCK_REPLY_LIST` | 13 | 非绑定用户发消息时发送，消息被丢弃 / Sent to non-bound users who send messages; their messages are discarded |
+| `WECHAT_BOT_NORMAL_EXIT_LIST` | 5 | Agent 正常退出（Ctrl+C 确认）时发送 / Sent on normal agent exit (Ctrl+C confirmed) |
+| `WECHAT_BOT_ERROR_EXIT_LIST` | 5 | Agent 异常退出时发送，消息尾部附带错误详情 / Sent on abnormal agent exit, with error details appended |
 
 ---
 
@@ -141,14 +148,42 @@ Voice messages directly extract ASR transcription text without downloading audio
 
 ### 上传 / Upload
 
-Agent 通过 `wechat_send_media` 工具发送媒体文件时，文件扩展名自动分类：
-When the Agent sends media files via the `wechat_send_media` tool, files are auto-classified by extension:
+Agent 通过 `wechat_send_file` 工具发送媒体文件时，文件扩展名自动分类：
+When the Agent sends media files via the `wechat_send_file` tool, files are auto-classified by extension:
 
 | 扩展名 Extension | 发送类型 Send Type |
 |---|---|
-| `.png` `.jpg` `.jpeg` `.gif` `.webp` `.bmp` `.svg` | 图片 / Image |
+| `.png` `.jpg` `.jpeg` `.gif` `.webp` `.bmp` | 图片 / Image |
 | `.mp4` `.mov` `.webm` `.mkv` `.avi` | 视频 / Video |
 | 其他 / Others | 文件 / File |
 
 文件大小受 `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` 限制，超限文件拒绝发送。
 File size is limited by `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB`; oversized files are rejected.
+
+---
+
+## 12. "正在输入..." 状态行为 | "Typing..." Indicator Behavior
+
+通过实验观察到，Bot 调用 `sendtyping(status=1)` 后，不同 WeChat 客户端的表现存在显著且稳定的差异：
+Through experiments, the behavior of `sendtyping(status=1)` differs significantly and consistently across WeChat clients:
+
+| 客户端 / Client | 行为 / Behavior |
+|---|---|
+| **Windows/macOS 电脑端 / Desktop** | `sendtyping` 持续约 **15 秒**后自动消失，行为稳定，首次调用与发消息后再次调用表现一致 / Lasts ~**15 seconds** then auto-expires; behavior is stable and consistent whether first call or re-call after sending a message. |
+| **Android 手机端 / Android Mobile** | 若 `sendtyping` 在 Bot 刚发完消息后**立即**调用（间隔极短，例如 `reply()` 后紧接 `send_typing_sync()`），"正在输入..."仅闪现约 1 秒即消失。若发消息与 `sendtyping` 之间存在**一定时间间隔**，则 typing 可持续显示足够长时间。即 Android 端对 typing 调用与上一条消息之间的时间间隔敏感 / If `sendtyping` is called **immediately** after the Bot sends a message (very short interval, e.g., `reply()` immediately followed by `send_typing_sync()`), the indicator flashes for ~1 second and disappears. If a **sufficient delay** exists between the message and the `sendtyping` call, typing can persist for a meaningful duration. In other words, Android is sensitive to the timing gap between the last message and the typing call. |
+
+以上行为与是否主动调用 `stop_typing` 无关——通过 `send()`（不含 `stop_typing`）发送消息后效果相同。
+Both behaviors are independent of `stop_typing` — using `send()` (which lacks `stop_typing`) produces the same result.
+
+### 限制根因未知 / Root cause unknown
+
+上述行为差异的具体原因未可知——可能来自 WeChat 不同客户端对 typing 状态的渲染策略差异，也可能与服务端处理逻辑有关。当前仅为实验观察记录，不对"服务端做了什么"做任何推断。
+The root cause of this behavioral difference is unknown — it could stem from client-side rendering policies for typing state across WeChat platforms, or could relate to server-side handling. This section records experimental observations only, without speculating about server internals.
+
+### 对本项目的实际影响 / Practical impact on this project
+
+Tool 执行期间（如 `sleep 20` 等耗时命令），Agent 的主线程被阻塞，无法周期性调用 `send_typing_sync` 刷新 typing 状态。且 `reply()` 内部的 `stop_typing` 和 `prompt.py` 中的 `send_typing_sync` 交替调用后，中间没有间隔，Android 端 typing 在极短时间内消失。
+During tool execution (e.g., `sleep 20` or other long-running commands), the Agent's main thread is blocked and cannot periodically call `send_typing_sync` to refresh the typing state. Additionally, after the alternation of `stop_typing` (inside `reply()`) and `send_typing_sync` (in `prompt.py`), the absence of a timing gap causes the typing indicator on Android to disappear within a very short time.
+
+**当前策略 / Current strategy：** 接受此限制，不尝试在 Tool 执行期间递归刷新 typing 状态。中途推理文本发送后，本轮 typing 不再恢复。
+Accept this limitation — do not attempt to recursively refresh typing during tool execution. Once intermediate reasoning text is sent, typing is not restored for the remainder of the turn.

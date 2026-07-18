@@ -75,9 +75,9 @@ def config_cron(durable_crons: list[CronDump], session_crons: list[CronDump], co
             continue
     sys_log.debug(f"Configured {len(cron_list)} cron tasks from durable config file. "
                   f"{len(durable_crons) - len(cron_list)} out of {len(durable_crons)} tasks ignored")
-    console.print(f"Configured [{MAJOR_COLOR2}]{len(cron_list)}[/{MAJOR_COLOR2}] cron tasks from durable config file. "
-                  f"[{MAJOR_COLOR2}]{len(durable_crons) - len(cron_list)}[/{MAJOR_COLOR2}] out of "
-                  f"[{MAJOR_COLOR2}]{len(durable_crons)}[/{MAJOR_COLOR2}] tasks ignored")
+    console.print(f"Configured [{MAJOR_COLOR2}]{len(cron_list)}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]durable config file[/{MAJOR_COLOR2}]. "
+                  f"([{MAJOR_COLOR2}]{len(durable_crons) - len(cron_list)}[/{MAJOR_COLOR2}] out of "
+                  f"[{MAJOR_COLOR2}]{len(durable_crons)}[/{MAJOR_COLOR2}] tasks ignored)")
 
     """configure session cron tasks"""
     durable_num = len(cron_list)
@@ -110,9 +110,9 @@ def config_cron(durable_crons: list[CronDump], session_crons: list[CronDump], co
     session_num = len(cron_list) - durable_num
     sys_log.debug(f"Configured {session_num} cron tasks from session config file. "
                   f"{len(session_crons) - session_num} out of {len(session_crons)} tasks ignored")
-    console.print(f"Configured [{MAJOR_COLOR2}]{session_num}[/{MAJOR_COLOR2}] cron tasks from session config file. "
-                  f"[{MAJOR_COLOR2}]{len(session_crons) - session_num}[/{MAJOR_COLOR2}] out of "
-                  f"[{MAJOR_COLOR2}]{len(session_crons)}[/{MAJOR_COLOR2}] tasks ignored")
+    console.print(f"Configured [{MAJOR_COLOR2}]{session_num}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]session config file[/{MAJOR_COLOR2}]. "
+                  f"([{MAJOR_COLOR2}]{len(session_crons) - session_num}[/{MAJOR_COLOR2}] out of "
+                  f"[{MAJOR_COLOR2}]{len(session_crons)}[/{MAJOR_COLOR2}] tasks ignored)")
     return cron_list, id_list
 
 

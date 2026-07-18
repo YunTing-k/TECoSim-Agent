@@ -11,6 +11,7 @@ Revision:
 ---------
 2026.6.12      Yu Huang      1.0      First implementation
 2026.7.15-16   Yu Huang      1.1      Add WeChat bot interaction support
+2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status
 
 Details:
 ---------
@@ -95,8 +96,11 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
         elif func_name == TOOL_NAME_WEB_SEARCH:
             results = tool_def.web_search(arguments, ctx, progress)
             user_addon = None
-        elif func_name == TOOL_NAME_WECHAT_SEND_MEDIA:
-            results = tool_def.wechat_send_media(arguments, ctx, progress)
+        elif func_name == TOOL_NAME_WECHAT_STATUS:
+            results = tool_def.wechat_status(ctx, progress)
+            user_addon = None
+        elif func_name == TOOL_NAME_WECHAT_SEND_FILE:
+            results = tool_def.wechat_send_file(arguments, ctx, progress)
             user_addon = None
         elif func_name == TOOL_NAME_CHECK_SIMULATOR:
             results = tool_def.check_simulator(ctx, progress)

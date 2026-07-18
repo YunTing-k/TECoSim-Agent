@@ -12,6 +12,7 @@ Revision:
 2026.7.6-16    Yu Huang      1.0      First implementation
 2026.7.17      Yu Huang      1.1      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & Add quick
                                       WeChat bot exit
+2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status & SILK voice is processed as other media types
 
 Details:
 ---------
@@ -304,18 +305,40 @@ class WeChatBridge:
         return result
 
     # [WeChat Bot msg sending API]
-    def send_typing_sync(self, msg: IncomingMessage) -> None:
+    def send_typing_sync(self, msg: IncomingMessage | WeChatQueuedMsg) -> None:
         """Show typing indicator to the user who sent *msg*. Safe from main thread."""
+        if isinstance(msg, WeChatQueuedMsg):
+            _msg = msg.raw_msg
+        else:
+            _msg = msg
         if not self._bot or not self._loop or self._loop.is_closed():
+            sys_log.error("Send typing failed, bot or loop is None or loop is closed")
             return
-        asyncio.run_coroutine_threadsafe(self._bot.send_typing(msg.user_id), self._loop)
+        try:
+            asyncio.run_coroutine_threadsafe(self._bot.send_typing(_msg.user_id), self._loop)
+            sys_log.debug("Send typing to user done")
+        except Exception as e:
+            sys_log.error(f"Send typing failed with error: {e}")
+            if not self.mute_nonfatal:
+                self._console.print(f"Send typing failed with error: {e}", style=f"bold red")
 
 
-    def stop_typing_sync(self, msg: IncomingMessage) -> None:
+    def stop_typing_sync(self, msg: IncomingMessage | WeChatQueuedMsg) -> None:
         """Cancel typing indicator for the user who sent *msg*. Safe from main thread."""
+        if isinstance(msg, WeChatQueuedMsg):
+            _msg = msg.raw_msg
+        else:
+            _msg = msg
         if not self._bot or not self._loop or self._loop.is_closed():
+            sys_log.error("Stop typing failed, bot or loop is None or loop is closed")
             return
-        asyncio.run_coroutine_threadsafe(self._bot.stop_typing(msg.user_id), self._loop)
+        try:
+            asyncio.run_coroutine_threadsafe(self._bot.stop_typing(_msg.user_id), self._loop)
+            sys_log.debug("Stop typing to user done")
+        except Exception as e:
+            sys_log.error(f"Stop typing failed with error: {e}")
+            if not self.mute_nonfatal:
+                self._console.print(f"Stop typing failed with error: {e}", style=f"bold red")
 
 
     def reply_text_sync(self, msg: IncomingMessage | WeChatQueuedMsg, text: str) -> bool:
@@ -446,6 +469,77 @@ class WeChatBridge:
             sys_log.error(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}")
             self._console.print(f"Failed to save session {self.session_uuid}'s WeChat msg history with error: {e}", style="bold red")
 
+
+    def get_cdn_status(self) -> str:
+        """get the status of WeChat CDN"""
+        img_count = 0
+        img_downloaded = 0
+        img_downloaded_size = 0
+        video_count = 0
+        video_downloaded = 0
+        video_downloaded_size = 0
+        voice_count = 0
+        voice_ms = 0
+        voice_downloaded = 0
+        voice_downloaded_size = 0
+        voice_downloaded_ms = 0
+        file_count = 0
+        file_downloaded = 0
+        file_downloaded_size = 0
+        total_downloaded_size = 0
+        for item in self._cdn_cache.values():
+            if item.type == "image":
+                img_count += 1
+                if item.local_path is not None:
+                    img_downloaded += 1
+                if item.size is not None:
+                    img_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "video":
+                video_count += 1
+                if item.local_path is not None:
+                    video_downloaded += 1
+                if item.size is not None:
+                    video_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "voice":
+                voice_count += 1
+                if item.duration_ms:
+                    voice_ms += item.duration_ms
+                if item.local_path is not None:
+                    voice_downloaded += 1
+                    voice_downloaded_ms += item.duration_ms
+                if item.size is not None:
+                    voice_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "file":
+                file_count += 1
+                if item.local_path is not None:
+                    file_downloaded += 1
+                if item.size is not None:
+                    file_downloaded_size += item.size
+                    total_downloaded_size += item.size
+        cdn_str = (f"WeChat CDN Status:\n"
+                   f" - Image: `{img_count}` received (`{img_downloaded}` downloaded, `{img_downloaded_size / (1024 * 1024)}` MB)\n"
+                   f" - Video: `{video_count}` received (`{video_downloaded}` downloaded, `{video_downloaded_size / (1024 * 1024)}` MB)\n"
+                   f" - Voice: `{voice_count}` received, total `{voice_ms / 1000}` s, "
+                   f"(`{voice_downloaded}` downloaded, `{voice_downloaded_size / (1024 * 1024)}` MB, `{voice_downloaded_ms / 1000}` s)\n"
+                   f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{file_downloaded_size / (1024 * 1024)}` MB)\n"
+                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024)}` MB\n")
+        return cdn_str
+
+
+    def get_status(self) -> str:
+        """get the status of WeChat bot"""
+        status_str = (f"Session UUID: `{self.session_uuid if self.session_uuid else "None"}`\n"
+                      f"Login Status: {"`ONLINE`" if self.if_login else "`OFFLINE`"}\n"
+                      f"Login Error: `{self._login_error if self._login_error else "None"}`\n`"
+                      f"Bounded User: `{self._bound_user_id if self.if_bound else "None"}`\n\n"
+                      f"Queued Messages: `{self._msg_queue.qsize()}`\n"
+                      f"Logged User Messages: `{len(self._msg_history)}`\n"
+                      f"{self.get_cdn_status()}")
+        return status_str
+
     # [WeChat Bot internal API] Internal bot loop
     def _poll_loop(self) -> None:
         self._loop = asyncio.new_event_loop()
@@ -470,7 +564,6 @@ class WeChatBridge:
             self._login_error = str(e)
             sys_log.error(f"WeChat Bot login failed with error: {e}")
             self._console.print(f"WeChat Bot login failed with error: {e}", style=f"bold red")
-            self._logged_in.set()
             loop.close()
             return
 
@@ -499,9 +592,9 @@ class WeChatBridge:
             cm = await self._process_one_media(v.media, "video", None, None, None)
             queued.videos.append(cm)
         for v in msg.voices:
-            cm = CachedMedia(type="voice", text=v.text, duration_ms=v.duration_ms)
-            if v.media:
-                cm.cdn_ref = v.media
+            cm = await self._process_one_media(v.media, "voice", None, None, None)
+            cm.text = v.text
+            cm.duration_ms = v.duration_ms
             queued.voices.append(cm)
         # Quoted msgs
         await self._collect_quoted_msg(msg, queued)
@@ -557,6 +650,7 @@ class WeChatBridge:
                 assert self._bot
                 data = await self._bot.download_raw(media, aes_key)
                 local_path.write_bytes(data)
+                # detect if the actual format is equal to the given type
                 if mtype in ("image", "video") and not file_name:
                     real_ext = detect_ext_by_magic(data, mtype)
                     guessed_ext = detect_ext_by_type(mtype)
@@ -595,7 +689,7 @@ class WeChatBridge:
     def _make_media_path(self, cache_key: str, file_name: str | None, mtype: str) -> Path:
         """Build a local path for a downloaded media file (absolute)."""
         prefix = cache_key[:WECHAT_MEDIA_CACHE_KEY_MAX_LEN]
-        suffix = file_name or f"media.{detect_ext_by_type(mtype)}"
+        suffix = file_name or f"{mtype}.{detect_ext_by_type(mtype)}"
         return (self._media_cache_dir / f"{prefix}_{suffix}").resolve()
 
 
@@ -807,7 +901,7 @@ def get_cached_media_str(cm: CachedMedia, threshold_mb: int, show_text: bool = F
     if show_text and cm.text:
         parts.append(f"text in voice: \"{cm.text}\"")
     if cm.duration_ms is not None:
-        parts.append(f"voice duration: `{cm.duration_ms}` ms")
+        parts.append(f"voice duration: `{cm.duration_ms / 1000}` s")
     if cm.local_path:
         parts.append(f"local path: `{cm.local_path}`")
     elif cm.size is not None:
@@ -821,5 +915,5 @@ def get_cached_media_str(cm: CachedMedia, threshold_mb: int, show_text: bool = F
     if cm.file_name:
         parts.append(f"file name: `{cm.file_name}`")
     if cm.size is not None:
-        parts.append(f"file size: `{cm.size}` bytes")
+        parts.append(f"file size: `{cm.size / (1024 * 1024)}` MB")
     return " | ".join(parts)

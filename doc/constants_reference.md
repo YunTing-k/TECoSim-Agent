@@ -72,33 +72,34 @@ The agent wraps special content inserted into LLM messages with standardized lab
 `src/constants.py` 中集中定义了所有 Agent 工具的字符串名称（`TOOL_NAME_*` 常量）。如需修改某个工具的名称（例如避免与 MCP 工具重名），只需在此修改一处即可全局生效：
 All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/constants.py`. To rename a tool (e.g., to avoid conflicts with MCP tools), change it here — it takes effect everywhere:
 
-| 常量 Constant | 默认名称 Default Name | 用途 Purpose |
-|----------|--------------|---------|
-| `TOOL_NAME_VERSION` | `agent_version` | 获取 Agent 版本 / Get agent version |
-| `TOOL_NAME_ASK_QUESTION` | `ask_user_question` | 向用户提问 / Ask user structured questions |
-| `TOOL_NAME_CREATE_CRON` | `create_cron` | 创建定时任务 / Create a cron task |
-| `TOOL_NAME_QUERY_CRON` | `query_cron` | 查询定时任务列表 / Query cron task list |
-| `TOOL_NAME_REMOVE_CRON` | `remove_cron` | 删除定时任务 / Remove a cron task |
-| `TOOL_NAME_CREATE_TASK` | `create_task` | 创建任务 / Create a task |
-| `TOOL_NAME_UPDATE_TASK` | `update_task` | 更新任务 / Update a task |
-| `TOOL_NAME_QUERY_TASK` | `query_task` | 查询任务（获取详情或列表）/ Query task (get detail or list) |
-| `TOOL_NAME_BASH` | `bash` | 执行 Shell 命令 / Execute shell commands |
-| `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns |
-| `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents |
-| `TOOL_NAME_READ_FILE` | `read_file` | 读取文件 / Read file |
-| `TOOL_NAME_WRITE_FILE` | `write_file` | 写入文件 / Write file |
-| `TOOL_NAME_EDIT_FILE` | `edit_file` | 编辑文件 / Edit file |
-| `TOOL_NAME_SKILL` | `skill` | 调用技能 / Invoke a skill |
-| `TOOL_NAME_WEB_FETCH` | `web_fetch` | 获取网页内容 / Fetch web content |
-| `TOOL_NAME_WEB_SEARCH` | `web_search` | 网络搜索 / Search the web |
-| `TOOL_NAME_WECHAT_SEND_MEDIA` | `wechat_send_media` | 向当前连接的微信用户发送媒体文件（图片/视频/文件）/ Send media file to the current connected WeChat user |
-| `TOOL_NAME_CALL_MCP` | `call_mcp` | 调用 MCP 工具 / Call an MCP tool |
-| `TOOL_NAME_CHECK_SIMULATOR` | `check_simulator` | 检查仿真器可用性 / Check simulator availability |
-| `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design |
-| `TOOL_NAME_QUERY_DESIGN` | `query_design` | 查询设计列表 / Query design list |
-| `TOOL_NAME_LAUNCH_SIM` | `launch_sim` | 启动仿真 / Launch a simulation |
-| `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行记录 / Query simulation run records |
-| `TOOL_NAME_READ_LOG` | `read_log` | 读取仿真日志 / Read simulation logs |
+| 常量 Constant | 默认名称 Default Name | 用途 Purpose                                                                                  |
+|----------|--------------|---------------------------------------------------------------------------------------------|
+| `TOOL_NAME_VERSION` | `agent_version` | 获取 Agent 版本 / Get agent version                                                             |
+| `TOOL_NAME_ASK_QUESTION` | `ask_user_question` | 向用户提问 / Ask user structured questions                                                       |
+| `TOOL_NAME_CREATE_CRON` | `create_cron` | 创建定时任务 / Create a cron task                                                                 |
+| `TOOL_NAME_QUERY_CRON` | `query_cron` | 查询定时任务列表 / Query cron task list                                                             |
+| `TOOL_NAME_REMOVE_CRON` | `remove_cron` | 删除定时任务 / Remove a cron task                                                                 |
+| `TOOL_NAME_CREATE_TASK` | `create_task` | 创建任务 / Create a task                                                                        |
+| `TOOL_NAME_UPDATE_TASK` | `update_task` | 更新任务 / Update a task                                                                        |
+| `TOOL_NAME_QUERY_TASK` | `query_task` | 查询任务（获取详情或列表）/ Query task (get detail or list)                                              |
+| `TOOL_NAME_BASH` | `bash` | 执行 Shell 命令 / Execute shell commands                                                        |
+| `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns                                                                 |
+| `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents                                                               |
+| `TOOL_NAME_READ_FILE` | `read_file` | 读取文件 / Read file                                                                            |
+| `TOOL_NAME_WRITE_FILE` | `write_file` | 写入文件 / Write file                                                                           |
+| `TOOL_NAME_EDIT_FILE` | `edit_file` | 编辑文件 / Edit file                                                                            |
+| `TOOL_NAME_SKILL` | `skill` | 调用技能 / Invoke a skill                                                                       |
+| `TOOL_NAME_WEB_FETCH` | `web_fetch` | 获取网页内容 / Fetch web content                                                                  |
+| `TOOL_NAME_WEB_SEARCH` | `web_search` | 网络搜索 / Search the web                                                                       |
+| `TOOL_NAME_WECHAT_STATUS` | `wechat_status` | 获取微信机器人当前连接状态（登录、绑定用户、消息队列、CDN 下载统计）/ Get WeChat Bot connection status (login, bound user, message queue, CDN stats) |
+| `TOOL_NAME_WECHAT_SEND_FILE` | `wechat_send_file` | 向当前连接的微信用户发送文件（图片/视频/文件）/ Send image/video/file to the current connected WeChat user |
+| `TOOL_NAME_CALL_MCP` | `call_mcp` | 调用 MCP 工具 / Call an MCP tool                                                                |
+| `TOOL_NAME_CHECK_SIMULATOR` | `check_simulator` | 检查仿真器可用性 / Check simulator availability                                                     |
+| `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design                                                                  |
+| `TOOL_NAME_QUERY_DESIGN` | `query_design` | 查询设计列表 / Query design list                                                                  |
+| `TOOL_NAME_LAUNCH_SIM` | `launch_sim` | 启动仿真 / Launch a simulation                                                                  |
+| `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行记录 / Query simulation run records                                                       |
+| `TOOL_NAME_READ_LOG` | `read_log` | 读取仿真日志 / Read simulation logs                                                               |
 
 ---
 
@@ -513,6 +514,8 @@ The agent can be started in WeChat bot mode via the `--wechat` CLI argument. The
 |----------|------|---------|
 | `WECHAT_BOT_LOCKED_LIST` | `list[str]`（5 条） | 会话锁定时向绑定用户发送的确认消息列表 / Confirmation messages sent to the bound user when the session is locked |
 | `WECHAT_BOT_BLOCK_REPLY_LIST` | `list[str]`（13 条） | 当机器人正服务其他用户时，向新请求用户发送的拒绝消息列表 / Rejection messages sent to new users when the bot is serving another user |
+| `WECHAT_BOT_NORMAL_EXIT_LIST` | `list[str]`（5 条） | Agent 正常退出时向绑定用户发送的告别消息列表 / Farewell messages sent to the bound user on normal agent exit |
+| `WECHAT_BOT_ERROR_EXIT_LIST` | `list[str]`（5 条） | Agent 异常退出时向绑定用户发送的错误通知消息列表 / Error notification messages sent to the bound user on abnormal agent exit |
 
 > **实现说明 | Implementation Note**
 > 
@@ -527,6 +530,10 @@ The agent can be started in WeChat bot mode via the `--wechat` CLI argument. The
 > **用户绑定 | User Binding**
 > 微信机器人绑定第一个发送消息的用户作为会话拥有者。绑定期间，其他用户发送的消息被屏蔽（随机从 `WECHAT_BOT_BLOCK_REPLY_LIST` 中选取拒绝消息回复）。首用户锁定成功时，随机从 `WECHAT_BOT_LOCKED_LIST` 中选取确认消息回复。
 > The WeChat bot binds the first user who sends a message as the session owner. During binding, messages from other users are blocked (randomly chosen reply from `WECHAT_BOT_BLOCK_REPLY_LIST`). The bound user receives a random lock confirmation from `WECHAT_BOT_LOCKED_LIST`.
+> 
+> **退出通知 | Exit Notification**
+> Agent 正常退出（Ctrl+C 后确认退出）或异常退出时，会向绑定用户发送一条随机选择的告别/错误通知消息（分别来自 `WECHAT_BOT_NORMAL_EXIT_LIST` 和 `WECHAT_BOT_ERROR_EXIT_LIST`），随后停止机器人、保存缓存及消息历史。
+> On normal exit (confirmed after Ctrl+C) or abnormal exit, the agent sends a randomly chosen farewell/error notification to the bound user (from `WECHAT_BOT_NORMAL_EXIT_LIST` and `WECHAT_BOT_ERROR_EXIT_LIST` respectively), then stops the bot, saves CDN cache and message history.
 > 
 > **监听 TUI 行为 | Listen TUI Behavior**
 > 当微信机器人启用时，监听 TUI 强制进入且无法通过按键退出（仅 Ctrl+C 可退出）——确保所有微信消息在返回到终端输入模式前被捕获。微信消息到达时，监听循环退出并处理消息。

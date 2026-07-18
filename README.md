@@ -107,13 +107,13 @@ You must set your LLM API endpoint and key:
 
 #### 2. Agent 运行参数 | Agent Runtime (`agent_configs.json`)
 
-| 参数 Parameter | 默认值 Default | 说明 Description |
-|-----------|---------|----------------|
-| `SIMULATOR_PATH` | `" "` | **如使用 TECoSim 必须设置** — 仿真器可执行文件路径 / **Must set** if using TECoSim |
-| `BASH_PATH` | `"bash"` | **GNU Bash** 的路径（不支持 cmd/pwsh，见下文）/ Path to **GNU Bash** (cmd/pwsh not supported) |
-| `RIPGREP_PATH` | `"rg"` | `ripgrep` 可执行文件路径 / Path to `ripgrep` executable |
-| `WEB_SEARCH_BACKEND` | `" "` | 网络搜索后端，可选：`Exa`、`Tavily`、`Linkup`、`DDGS` / Set to enable web search |
-| `WEB_SEARCH_API_KEY` | `" "` | 网络搜索 API Key / API key for your web search backend |
+| 参数 Parameter | 默认值 Default | 说明 Description                                                                                                        |
+|-----------|---------|-----------------------------------------------------------------------------------------------------------------------|
+| `SIMULATOR_PATH` | `" "` | **如使用 TECoSim 必须设置** — 仿真器可执行文件路径 / **Must set** if using TECoSim                                                     |
+| `BASH_PATH` | `"bash"` | **GNU Bash** 的路径（不支持 cmd/pwsh，见下文）/ Path to **GNU Bash** (cmd/pwsh not supported)                                     |
+| `RIPGREP_PATH` | `"rg"` | `ripgrep` 可执行文件路径 / Path to `ripgrep` executable                                                                      |
+| `WEB_SEARCH_BACKEND` | `" "` | 网络搜索后端，可选：[`Exa`](https://exa.ai/)、[`Tavily`](https://www.tavily.com/)、[`Linkup`](https://www.linkup.so/)、`DDGS` / Set to enable web search |
+| `WEB_SEARCH_API_KEY` | `" "` | 网络搜索 API Key / API key for your web search backend                                                                    |
 
 **`BASH_PATH` 必须指向 GNU Bash**（不可用 `cmd`, `PowerShell` etc.,）。Agent 通过 `bash -c` 执行命令，并内置基于 Bash 语义的风险检测引擎。Windows操作系统可使用`git bash`。
 **`BASH_PATH` must point to GNU Bash** (not `cmd`, `PowerShell` etc.,). The agent executes commands via `bash -c` with Bash-semantics-based risk detection. For Windows OS, please use `git bash`.
@@ -124,6 +124,10 @@ You must set your LLM API endpoint and key:
 
 **ripgrep** — `grep_file` 工具依赖 ripgrep（`rg`）。安装：`winget install BurntSushi.ripgrep`（Win）/ `sudo apt install ripgrep`（Linux）/ `brew install ripgrep`（macOS）。或在 `agent_configs.json` 中设 `RIPGREP_PATH`。
 **ripgrep** — the `grep_file` tool requires ripgrep (`rg`). Install via your package manager, or set `RIPGREP_PATH` in `agent_configs.json`.
+
+`DDGS`：无需 API Key，[`Exa`](https://exa.ai/)、[`Tavily`](https://www.tavily.com/)、[`Linkup`](https://www.linkup.so/)：需注册账号获取 API Key 后填入 `WEB_SEARCH_API_KEY` /
+`DDGS`: No API key required, [`Exa`](https://exa.ai/), [`Tavily`](https://www.tavily.com/), [`Linkup`](https://www.linkup.so/): Requires account registration and API key in `WEB_SEARCH_API_KEY`
+
 
 > 完整参数列表请参阅[配置文档](./doc/configuration.md) | See [Configuration Reference](./doc/configuration.md) for all available parameters.
 
@@ -151,14 +155,14 @@ After launch, a QR code link is shown in the terminal — scan it with WeChat to
 
 **行为特性 | Behavior**
 
-| 特性 Feature | 说明 Description |
-|-------------|------------------|
-| 用户绑定 User Binding | 首个发送消息的用户自动绑定，建立独占会话；其他用户消息被自动拒绝并回复提示 / First user auto-bound — exclusive session; other users blocked with auto-reply |
-| 多模态消息 Multimodal Messaging | 支持接收文字、语音（服务器 ASR 转写为文本）、图片、视频、文件。可主动发送媒体文件（通过 `wechat_send_media` 工具）/ Receive text, voice (server ASR), images, video, files. Can send media proactively via `wechat_send_media` tool |
-| 监听 TUI Listen TUI | 启动后 Agent 进入强制监听模式（仅 Ctrl+C 退出），确保第一时间捕获微信消息 / Agent enters mandatory listen mode (only Ctrl+C exits) to capture WeChat messages immediately |
-| 权限隔离 Permission Isolation | 微信模式下主 Agent 权限被 `WECHAT_BOT_PERMISSION` 完全覆盖，与终端模式独立配置 / Main agent permissions fully overridden by `WECHAT_BOT_PERMISSION`, independent from terminal mode |
+| 特性 Feature | 说明 Description                                                                                                                                                                                                                                 |
+|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 用户绑定 User Binding | 首个发送消息的用户自动绑定，建立独占会话；其他用户消息被自动拒绝并回复提示 / First user auto-bound — exclusive session; other users blocked with auto-reply                                                                                                                         |
+| 多模态消息 Multimodal Messaging | 支持接收文字、语音（服务器 ASR 转写为文本）、图片、视频、文件。可主动发送媒体与文件（通过 `wechat_send_file` 工具）/ Receive text, voice (server ASR), images, video, files. Can send media and file proactively via `wechat_send_file` tool                                                          |
+| 监听 TUI Listen TUI | 启动后 Agent 进入强制监听模式（仅 Ctrl+C 退出），确保第一时间捕获微信消息 / Agent enters mandatory listen mode (only Ctrl+C exits) to capture WeChat messages immediately                                                                                                   |
+| 权限隔离 Permission Isolation | 微信模式下主 Agent 权限被 `WECHAT_BOT_PERMISSION` 完全覆盖，与终端模式独立配置 / Main agent permissions fully overridden by `WECHAT_BOT_PERMISSION`, independent from terminal mode                                                                                   |
 | 工具执行中交互 Mid-Tool Interaction | 工具调用期间 Agent 可向微信发送中间回复，用户也可随时发送新消息并获得及时响应，无需等待本轮工具调用全部完成 / Agent can send intermediate WeChat replies during tool calls; users can also send messages mid-execution and receive a timely response without waiting for all tool calls to finish |
-| CDN 缓存 CDN Cache | 接收的媒体文件缓存跟随会话持久化，恢复同一会话时避免重复下载 / Media cache is persisted with the session — no re-download when resuming the same session |
+| CDN 缓存 CDN Cache | 接收的媒体文件缓存跟随会话持久化，恢复同一会话时避免重复下载 / Media cache is persisted with the session — no re-download when resuming the same session                                                                                                                     |
 
 > **注意：** 当前微信 SDK 存在较多限制（如引用消息无正文/媒体、无法获取 bot 发出的 `message_id` 等），具体行为与已知问题详见 [微信接入行为](doc/wechat_behavior.md)。
 > 

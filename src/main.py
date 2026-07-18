@@ -42,6 +42,7 @@ Revision:
 2026.6.30      Yu Huang      3.8      Refactor the Markdown render style with custom theme
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 2026.7.17      Yu Huang      4.0      Support of WeChat bot msg insert even if the tool call round is not end
+2026.7.18      Yu Huang      4.1      Support of fixing orphan and missing tool results in context & Add session summary in WeChat Bot
 
 Details:
 ---------
@@ -275,8 +276,13 @@ if __name__ == '__main__':
                             ctx.session_title = title if title else ERROR_SESSION_TITLE
                             ui_info.set_terminal_title(ctx.session_title)
                 else:
+                    # session summarization
+                    if not ctx.if_summarized and ctx.user_prompts >= ctx.agent_configs["LLM_SUMMARY_TRIGGER"]:
+                        ctx.if_summarized = True
+                        title = summarize_support.summarize_session(ctx=ctx, console=console)
+                        ctx.session_title = title if title else ERROR_SESSION_TITLE
+                        ui_info.set_terminal_title(ctx.session_title)
                     """pass prompts to LLM"""
-                    pass
             else:
                 """second response with previous loop's tool results or reminder or inserted WeChat messages"""
                 pass
@@ -350,6 +356,8 @@ if __name__ == '__main__':
             sys_log.error(f"Tool calls are cancelled, but the interrupt is not handled properly")
             console.print(f"Tool calls are cancelled, but the interrupt is not handled properly", style="bold red")
             ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")
+            # if user don't exit, try to fix the tool calls in messages
+            prompt.msg_fix_toolcall(ctx.messages, console)
         except KeyboardInterrupt:
             """User interrupt"""
             ui_info.normal_exit(ctx, board, console, "TECoSim Agent exits with KeyboardInterrupt")

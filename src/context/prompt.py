@@ -43,6 +43,7 @@ Revision:
 2026.7.3       Yu Huang      3.8      Fix: overflow of printing LLM response when a line is too long
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 2026.7.17      Yu Huang      4.0      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
+2026.7.18      Yu Huang      4.1      Revise WeChat Bot typing status & Support of fixing orphan and missing tool results in context
 
 Details:
 ---------
@@ -167,7 +168,7 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "Prefer one short sentence over three.\n"
                 "# Session-specific guidance\n"
                 " - If a user denies your tool call, they may provide a comment explaining why. If you don't understand, "
-                f"use {TOOL_NAME_ASK_QUESTION} to ask them\n"
+                f"use `{TOOL_NAME_ASK_QUESTION}` to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"
                 f"# Subagent Guidelines\n"
@@ -333,6 +334,7 @@ def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console)
         pass
     else:
         resumed_prompts = read_messages(session_uuid, console)
+        msg_fix_toolcall(resumed_prompts, console)
         print_messages(resumed_prompts, ctx, console)
         messages = messages + resumed_prompts
     return messages
@@ -381,6 +383,72 @@ def get_msg_render_strip(msg: dict[str, Any], label_start: str, label_end: str, 
         content = inner.strip()
     render = get_msg_render(content, icon, info, as_md)
     return render
+
+
+def msg_fix_toolcall(messages: list[dict[str, Any]], console: Console, mute: bool = False):
+    """Restore tool-call/tool-result pairing integrity in the conversation history.
+    1. Orphan tool results — role: tool messages whose tool_call_id matches no assistant message's tool_calls[].id are removed.
+    2. Missing tool results — assistant messages with tool_calls that lack corresponding role: tool messages get a synthetic
+       error result appended right after the existing tool-result block.
+    """
+    # 1. Collect all valid tool_call_ids from assistant messages, keyed by index.
+    assistant_ids: dict[int, set[str]] = {}
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            assistant_ids[i] = {tc["id"] for tc in msg["tool_calls"] if tc.get("id")}
+
+    all_valid_ids: set[str] = set()
+    for ids in assistant_ids.values():
+        all_valid_ids.update(ids)
+
+    # 2. Build set of tool_call_ids that already have corresponding results.
+    matched_ids: set[str] = set()
+    for msg in messages:
+        if msg.get("role") == "tool":
+            tc_id = msg.get("tool_call_id")
+            if tc_id and tc_id in all_valid_ids:
+                matched_ids.add(tc_id)
+
+    # 3. Remove orphan tool results (iterate backward to keep indices stable).
+    i = len(messages) - 1
+    while i >= 0:
+        msg = messages[i]
+        if msg.get("role") == "tool" and msg.get("tool_call_id") not in all_valid_ids:
+            messages.pop(i)
+            sys_log.warning(f"Orphan tool results with tool call ID: {msg.get("tool_call_id")} is removed")
+            if not mute:
+                console.print(f"Orphan tool results with tool call ID: {msg.get("tool_call_id")} is removed",
+                              style="bold yellow")
+        i -= 1
+
+    # 4. Insert synthetic error results for missing tool calls.
+    #    Process assistants in reverse index order so insertions don't shift earlier indices.
+    for assistant_idx in sorted(assistant_ids.keys(), reverse=True):
+        missing_ids = assistant_ids[assistant_idx] - matched_ids
+        if not missing_ids:
+            continue
+
+        # Find the end of the tool-result block belonging to this assistant.
+        # (We removed orphans, so every tool message after this assistant belongs to it until the next non-tool message.)
+        insert_idx = assistant_idx + 1
+        while insert_idx < len(messages) and messages[insert_idx].get("role") == "tool":
+            insert_idx += 1
+
+        for tc in messages[assistant_idx]["tool_calls"]:
+            call_id = tc.get("id")
+            if call_id and call_id in missing_ids:
+                messages.insert(insert_idx, {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": json.dumps({
+                        "status": UNKNOWN_LABEL,
+                        "info": f"(Tool result was lost due to an unexpected error. Re-execute this tool call if necessary)"
+                    }, ensure_ascii=False),
+                })
+                sys_log.warning(f"Missing tool results with tool call ID: {call_id} is inserted")
+                if not mute:
+                    console.print(f"Missing tool results with tool call ID: {call_id} is inserted", style="bold yellow")
+                insert_idx += 1
 
 
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
@@ -775,6 +843,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
     # If there is tool call, and WECHAT_BOT_REPLY_DURING_TOOL_CALL is set:
     # 1). Only send messages if the budget is >= 1 (ensure that when task end, msg can be sent to user)
     # 2). Add hint for the last reply during tool call
+    # 3). Typing status is set
     # (If tool call includes WeChat, they will fail if budget is < 1)
     if assistant_tool_calls is not None:
         if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
@@ -792,6 +861,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
                     if if_send:
                         ctx.wechat_reply_count += 1
                         ctx.wechat_reply_total_count += 1
+                ctx.wechat_bot.send_typing_sync(ctx.last_wechat_msg)
             elif assistant_reasoning is not None:
                 if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX:
                     pass
@@ -806,6 +876,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
                     if if_send:
                         ctx.wechat_reply_count += 1
                         ctx.wechat_reply_total_count += 1
+                ctx.wechat_bot.send_typing_sync(ctx.last_wechat_msg)
             else:
                 pass
     # If there is no tool call, task is end, WeChat msg should always be sent
@@ -1142,6 +1213,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     # If there is tool call, and WECHAT_BOT_REPLY_DURING_TOOL_CALL is set:
     # 1). Only send messages if the budget is >= 1 (ensure that when task end, msg can be sent to user)
     # 2). Add hint for the last reply during tool call
+    # 3). Typing status is set
     # (If tool call includes WeChat, they will fail if budget is < 1)
     if converted_tool_calls is not None:
         if ctx.agent_configs["WECHAT_BOT_REPLY_DURING_TOOL_CALL"] and ctx.wechat_bot is not None and ctx.enable_wechat:
@@ -1159,6 +1231,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
                     if if_send:
                         ctx.wechat_reply_count += 1
                         ctx.wechat_reply_total_count += 1
+                ctx.wechat_bot.send_typing_sync(ctx.last_wechat_msg)
             elif assistant_reasoning is not None and assistant_reasoning != "":
                 if (ctx.wechat_reply_count + 1) >= WECHAT_REPLY_BUDGET_MAX:
                     pass
@@ -1173,6 +1246,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
                     if if_send:
                         ctx.wechat_reply_count += 1
                         ctx.wechat_reply_total_count += 1
+                ctx.wechat_bot.send_typing_sync(ctx.last_wechat_msg)
             else:
                 pass
     # If there is no tool call, task is end, WeChat msg should always be sent

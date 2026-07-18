@@ -25,7 +25,7 @@ MCP params, and more.
 """TECoSim Agent version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 1
+TECOSIM_AGENT_UPDATE_VERSION: int = 2
 """Basic configs"""
 # basic files/dirs
 LOG_PATH: str = "./log"
@@ -84,6 +84,20 @@ WECHAT_BOT_BLOCK_REPLY_LIST: list[str] = [
     "> ❌ Occupied. No queue. Come back when it's quiet.",
     "> ❌ I'm with someone else and can't switch mid-conversation. There's no waitlist — you'll just have to catch me when I'm free.",
     "> ❌ This is a strictly one-on-one session. No interruptions allowed, no line forming. Please don't wait on me.",
+]
+WECHAT_BOT_NORMAL_EXIT_LIST: list[str] = [
+    "> 👋 Agent is shutting down. It was great chatting with you. Take care!",
+    "> 👋 Signing off now. Thanks for the conversation — see you next time!",
+    "> 👋 Agent session ending. I've enjoyed our chat. Goodbye for now!",
+    "> 👋 Going offline. Feel free to reach out anytime. Until next time!",
+    "> 👋 Agent disconnecting. Have a wonderful day ahead. Bye!",
+]
+WECHAT_BOT_ERROR_EXIT_LIST: list[str] = [
+    "> ❗ Oops! The agent encountered an unexpected error and had to shut down. Please try again later.",
+    "> ❗ Something went wrong on our end. The agent has stopped unexpectedly. We apologize for the inconvenience.",
+    "> ❗ An internal error occurred and the agent has disconnected. Please restart the conversation when ready.",
+    "> ❗ The agent crashed due to an unforeseen issue. Sorry about that — please reconnect shortly.",
+    "> ❗ Unexpected shutdown. The agent hit a snag and had to exit. Feel free to start a new session.",
 ]
 # subagent
 MAIN_AGENT_ID: str = "main"
@@ -186,7 +200,8 @@ TOOL_NAME_EDIT_FILE: str = "edit_file"
 TOOL_NAME_SKILL: str = "skill"
 TOOL_NAME_WEB_FETCH: str = "web_fetch"
 TOOL_NAME_WEB_SEARCH: str = "web_search"
-TOOL_NAME_WECHAT_SEND_MEDIA: str = "wechat_send_media"
+TOOL_NAME_WECHAT_STATUS: str = "wechat_status"
+TOOL_NAME_WECHAT_SEND_FILE: str = "wechat_send_file"
 TOOL_NAME_CALL_MCP: str = "call_mcp"
 # simulation tools
 TOOL_NAME_CHECK_SIMULATOR: str = "check_simulator"

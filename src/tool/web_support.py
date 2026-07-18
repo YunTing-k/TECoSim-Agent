@@ -16,7 +16,7 @@ Revision:
 2026.5.30      Yu Huang      1.4      Revise spinner logic with SIGINT pass through
 2026.6.1       Yu Huang      1.5      Define all used status labels in constants.py
 2026.6.10      Yu Huang      1.6      Main/Fast model can configure deepseek support dependently & Define all inserted message
-                                       labels in constans.py & Revise the live TUI with the same console instance
+                                      labels in constans.py & Revise the live TUI with the same console instance
 2026.6.13      Yu Huang      1.7      Switch to configurable model tier (WEB_FETCH_MODEL/WEB_SEARCH_MODEL) via select_branch_func
 2026.6.29      Yu Huang      1.8      Fallback to DDGS when Exa/Tavily/Linkup backend fails
 

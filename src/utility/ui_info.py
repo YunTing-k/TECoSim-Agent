@@ -36,6 +36,7 @@ Revision:
 2026.7.3       Yu Huang      3.0      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      3.1      Add WeChat bot interaction support
 2026.7.17      Yu Huang      3.2      Add quick WeChat bot exit
+2026.7.18      Yu Huang      3.3      Add text reply to WeChat user when agent stops or fails
 
 Details:
 ---------
@@ -746,6 +747,7 @@ def normal_exit(ctx: AgentContext, board: Scoreboard, console: Console, exit_str
     if token:
         try:
             if ctx.enable_wechat and ctx.wechat_bot is not None:
+                ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, random.choice(WECHAT_BOT_NORMAL_EXIT_LIST))
                 ctx.wechat_bot.stop()
                 ctx.wechat_bot.save_cdn_cache()
                 ctx.wechat_bot.save_msg_history()
@@ -770,6 +772,8 @@ def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Ex
     """error exit of agent"""
     try:
         if ctx.enable_wechat and ctx.wechat_bot is not None:
+            ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg,
+                                           random.choice(WECHAT_BOT_ERROR_EXIT_LIST) + f"\n\n**Error detail**: `{error}`")
             ctx.wechat_bot.stop()
             ctx.wechat_bot.save_cdn_cache()
             ctx.wechat_bot.save_msg_history()

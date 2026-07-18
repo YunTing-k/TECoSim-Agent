@@ -15,7 +15,7 @@ Revision:
 2026.5.30      Yu Huang      1.3      Revise spinner logic with SIGINT pass through
 2026.6.2       Yu Huang      1.4      Refactor LLM title summarize with tool call but not chat response
 2026.6.10      Yu Huang      1.5      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
-                                       the same console instance
+                                      the same console instance
 2026.6.13      Yu Huang      1.6      Switch to configurable model tier (LLM_SUMMARY_MODEL) via select_branch_func
 
 Details:
