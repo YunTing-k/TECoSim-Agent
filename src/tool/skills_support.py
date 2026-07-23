@@ -12,6 +12,7 @@ Revision:
 2026.5.14      Yu Huang      1.0      First implementation
 2026.6.2       Yu Huang      1.1      Revise the mark of skill content & Add CLI command support of skill list
 2026.6.10      Yu Huang      1.2      Define all inserted message labels in constans.py
+2026.7.23      Yu Huang      1.3      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -21,14 +22,12 @@ commands. Skills are injectable into the agent context as system-level instructi
 """
 import os
 import logging
-import sys
 import yaml, glob
 
 from rich.text import Text
 from rich.panel import Panel
 from argparse import Namespace
 from rich.console import Console
-from pathlib import Path
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -123,12 +122,13 @@ def skill_entry_cli(args: Namespace, console: Console):
         sys.exit(-1)
 
     """skill action doesn't entry main program"""
+    sys_log.info("Program end for skill entry cli")
     sys.exit(0)
 
 
 def skill_list_cli(console: Console):
     """query all available skills (no truncate)"""
-    skills = load_all_skill_metas(skills_root=SKILLS_PATH, console=console)
+    skills = load_all_skill_metas(skills_root=str(AGENT_PATH / SKILLS_PATH), console=console)
     title = f"Available Skills ({len(skills)})"
     cmd_str = Text()
     for skill in skills:

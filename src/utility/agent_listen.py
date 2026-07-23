@@ -41,7 +41,7 @@ from src.tool.cron_support import check_cron_tasks
 from src.tool.scoreboard import Scoreboard, TaskStatus, Task, get_tasks_render
 from src.tool.tool_execute import check_background_agents
 from src.utility.ui_info import get_subagent_render
-from src.agent.progress import SubAgentProgress
+from src.agent.agent_types import SubAgentProgress
 from src.tool.wechat_support import get_wechat_list
 from src.utility.basic_utils import create_clean_input, grad_color_hex_list, format_time_sec
 from src.context.prompt import get_msg_render_strip

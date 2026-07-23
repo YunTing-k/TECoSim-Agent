@@ -186,7 +186,7 @@ def get_answers(questions: list[dict[str, Any]], selected_indices: list[int],
     return answers
 
 
-def get_answers_render(answers: list[dict[str, Any]], console: Console):
+def get_answers_render(answers: list[dict[str, Any]]) -> Text:
     """render collected answers to console"""
     render = Text()
     render.append("User's choices:\n", style=f"bold {MAJOR_COLOR2}")
@@ -202,7 +202,7 @@ def get_answers_render(answers: list[dict[str, Any]], console: Console):
         render.append("\n")
     if render.plain.endswith("\n"):
         render.rstrip()
-    console.print(render)
+    return render
 
 
 def init_options_choice(questions: list[dict[str, Any]]) -> list[list[bool] | int]:

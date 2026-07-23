@@ -34,6 +34,7 @@ Revision:
 2026.6.29      Yu Huang      3.2      Subagent summary: summaries.json for foreground + background resume display
 2026.6.30      Yu Huang      3.3      Add multi-round results truncate method with pydict keys preserved
 2026.7.15      Yu Huang      3.4      Add merge subagent statistic method
+2026.7.23      Yu Huang      3.5      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -60,7 +61,7 @@ from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
 from src.tool.ask_permission import ask_permission_tui
 from src.utility.basic_utils import truncate_tool_result
 from src.agent.subagent import SubAgent, merge_agent_stats
-from src.agent.progress import AgentStatus, SubAgentProgress
+from src.agent.agent_types import AgentStatus, SubAgentProgress
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -231,11 +232,14 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
         token, comment = ask_permission_tui(ctx, TOOL_NAME_SPAWN_AGENT, desc, progress.console)
         resume_from_permission(progress)
         if not token:
-            denied_info = f"All subagent spawns in this round of tool call are denied by user"
-            if comment:
-                denied_info += f" with comment: {comment}"
+            if ctx.tui_mute:
+                denied_info = f"{MUTE_PERMISSION_DENIED_INFO}"
+            elif comment is None:
+                denied_info = f"{MAINAGENT_PERMISSION_DENIED_INFO}"
+            else:
+                denied_info = f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {comment}"
             for i, tc in enumerate(all_agent_calls):
-                info = denied_info if i == 0 else f"Subagent spawn denied (see above)"
+                info = denied_info
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -317,7 +321,7 @@ def execute_background_agents(agent_calls: list[dict[str, Any]], main_ctx: Agent
 
 def _save_subagent_summaries(session_uuid: str, entries: dict[str, dict]) -> None:
     """persist subagent summaries keyed by tool_call_id to summaries.json (read-merge-write)"""
-    path = os.path.join(SESSION_PATH, session_uuid, SUBAGENT_DUMP_DIR, SUBAGENT_SUMMARIES_NAME)
+    path = str(AGENT_PATH / SESSION_PATH / session_uuid / SUBAGENT_DUMP_DIR / SUBAGENT_SUMMARIES_NAME)
     try:
         summaries: dict[str, dict] = {}
         if os.path.exists(path):
@@ -374,25 +378,25 @@ def check_background_agents(main_ctx: AgentContext) -> bool:
             msg_content = (
                 f"{SUBAGENT_START_LABEL}\n"
                 f"Background agent {agent_id_str} timed out ({timeout_s:.0f}s). User should set `SUBAGENT_TIMEOUT_S` "
-                f"in {AGENT_CONFIGS_PATH} to increase.\n"
+                f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase.\n"
                 f"Result: {agent.result or '(There is no results from subagent)'}.\n"
                 f"Error: {agent.error or '(There is no error info from subagent)'}.\n"
                 f"{SUBAGENT_END_LABEL}"
             )
             sys_log.warning(f"Background agent {agent.agent_id} timed out ({timeout_s:.0f}s).. User should set "
-                            f"`SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase.")
+                            f"`SUBAGENT_TIMEOUT_S` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase.")
         elif agent.status == AgentStatus.RUNNING and agent.result is None:
             msg_content = (
                 f"{SUBAGENT_START_LABEL}\n"
                 f"Background agent {agent_id_str} exhausted all {agent.max_steps} steps without completing. User should "
-                f"set `SUBAGENT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase, or you should give a more specific "
+                f"set `SUBAGENT_MAX_STEPS` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase, or you should give a more specific "
                 f"prompt.\n"
                 f"Result: {agent.result or '(There is no results from subagent)'}.\n"
                 f"Error: {agent.error or '(There is no error info from subagent)'}.\n"
                 f"{SUBAGENT_END_LABEL}"
             )
             sys_log.warning(f"Background agent {agent.agent_id} exhausted {agent.max_steps} steps without completing. "
-                            f"User should set `SUBAGENT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase.")
+                            f"User should set `SUBAGENT_MAX_STEPS` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase.")
         elif agent.status == AgentStatus.ERROR:
             msg_content = (
                 f"{SUBAGENT_START_LABEL}\n"
@@ -503,15 +507,15 @@ def execute_subagents(agent_calls: list[dict[str, Any]], main_ctx: AgentContext,
                 sys_log.warning(f"Subagent {agent.agent_id} done, there is no results from subagent")
         elif agent.status == AgentStatus.TIMEOUT:
             result = {"status": TIMEOUT_LABEL, "info": f"Subagent exceeded configured time limit ({agent.timeout_s:.0f}s). "
-                                                       f"User should set `SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase."}
+                                                       f"User should set `SUBAGENT_TIMEOUT_S` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase."}
             sys_log.warning(f"Subagent {agent.agent_id} exceeded configured time limit ({agent.timeout_s:.0f}s). User should "
-                            f"set `SUBAGENT_TIMEOUT_S` in {AGENT_CONFIGS_PATH} to increase.")
+                            f"set `SUBAGENT_TIMEOUT_S` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase.")
         elif agent.status == AgentStatus.RUNNING and agent.result is None:
             result = {"status": FAIL_LABEL,
                       "info": f"Subagent used all {agent.max_steps} steps without completing. User should set `SUBAGENT_MAX_STEPS` "
-                              f"in {AGENT_CONFIGS_PATH} to increase, or you should give a more specific prompt."}
+                              f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase, or you should give a more specific prompt."}
             sys_log.warning(f"Subagent {agent.agent_id} used all {agent.max_steps} steps without completing. User should "
-                            f"set `SUBAGENT_MAX_STEPS` in {AGENT_CONFIGS_PATH} to increase")
+                            f"set `SUBAGENT_MAX_STEPS` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)} to increase")
         elif agent.status == AgentStatus.PENDING:
             result = {"status": UNKNOWN_LABEL,
                       "info": f"Subagent terminated with {AgentStatus.PENDING.value} status with unknown reason.",

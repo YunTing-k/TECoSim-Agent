@@ -15,6 +15,7 @@ Revision:
 2026.6.13      Yu Huang      1.3      Bugfix: one-shot cron tasks now check next_time before firing
 2026.6.13      Yu Huang      1.4      Add sys_log on cron fire (task id + type) and trigger summary
 2026.7.3       Yu Huang      1.5      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
+2026.7.23      Yu Huang      1.6      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -23,7 +24,6 @@ repetitive and one-shot tasks. Provides task checking/triggering (appends cron p
 (UUID-based ID), and a listening TUI (gradient color animation) that fires before user input. Also provides CLI operations
 for durable cron management.
 """
-import sys
 import json
 import uuid
 import logging
@@ -73,9 +73,9 @@ def config_cron(durable_crons: list[CronDump], session_crons: list[CronDump], co
             sys_log.warning(f"Configure durable cron task with config: {cron} failed with error: {e}")
             console.print(f"Configure durable cron task with config: {cron} failed with error: {e}", style="bold yellow")
             continue
-    sys_log.debug(f"Configured {len(cron_list)} cron tasks from durable config file. "
-                  f"{len(durable_crons) - len(cron_list)} out of {len(durable_crons)} tasks ignored")
-    console.print(f"Configured [{MAJOR_COLOR2}]{len(cron_list)}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]durable config file[/{MAJOR_COLOR2}]. "
+    sys_log.debug(f"Configured {len(cron_list)} cron tasks from durable config file "
+                  f"({len(durable_crons) - len(cron_list)} out of {len(durable_crons)} tasks ignored)")
+    console.print(f"Configured [{MAJOR_COLOR2}]{len(cron_list)}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]durable config file[/{MAJOR_COLOR2}] "
                   f"([{MAJOR_COLOR2}]{len(durable_crons) - len(cron_list)}[/{MAJOR_COLOR2}] out of "
                   f"[{MAJOR_COLOR2}]{len(durable_crons)}[/{MAJOR_COLOR2}] tasks ignored)")
 
@@ -108,9 +108,9 @@ def config_cron(durable_crons: list[CronDump], session_crons: list[CronDump], co
             console.print(f"Configure session cron task with config: {cron} failed with error: {e}", style="bold yellow")
             continue
     session_num = len(cron_list) - durable_num
-    sys_log.debug(f"Configured {session_num} cron tasks from session config file. "
-                  f"{len(session_crons) - session_num} out of {len(session_crons)} tasks ignored")
-    console.print(f"Configured [{MAJOR_COLOR2}]{session_num}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]session config file[/{MAJOR_COLOR2}]. "
+    sys_log.debug(f"Configured {session_num} cron tasks from session config file "
+                  f"({len(session_crons) - session_num} out of {len(session_crons)} tasks ignored)")
+    console.print(f"Configured [{MAJOR_COLOR2}]{session_num}[/{MAJOR_COLOR2}] cron tasks from [{MAJOR_COLOR2}]session config file[/{MAJOR_COLOR2}] "
                   f"([{MAJOR_COLOR2}]{len(session_crons) - session_num}[/{MAJOR_COLOR2}] out of "
                   f"[{MAJOR_COLOR2}]{len(session_crons)}[/{MAJOR_COLOR2}] tasks ignored)")
     return cron_list, id_list
@@ -193,9 +193,9 @@ def gen_cron_id(id_list: list[str]) -> str:
 
 
 def get_cron_create_str(arguments: dict[str, Any], if_fail: bool) -> str:
-    """get cron create string with arguments only for display"""
-    cron_str: str = arguments.get("cron", "(Empty cron pattern)")
-    prompt: str = arguments.get("prompt", "(Empty cron prompt)")
+    """get cron create string from arguments only for display"""
+    cron_str: str = arguments.get("cron", "(Failed to get cron pattern)")
+    prompt: str = arguments.get("prompt", "(Failed to get cron prompt)")
     if len(prompt) > CRON_PROMPT_DISPLAY_CHAR_MAX:
         prompt = prompt[:CRON_PROMPT_DISPLAY_CHAR_MAX] + "..."
     if_repeat: bool = arguments.get("if_repeat", True)
@@ -250,16 +250,17 @@ def cron_entry_cli(args: Namespace, console: Console):
         sys.exit(-1)
 
     """session action doesn't entry main program"""
+    sys_log.info("Program end for cron entry cli")
     sys.exit(0)
 
 
 def cron_list_cli(console: Console):
     """query all durable cron tasks"""
     try:
-        durable_crons: list[CronDump] = basic_utils.load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+        durable_crons: list[CronDump] = basic_utils.load_configs(configs_path=str(AGENT_PATH / CRON_CONFIGS_PATH), name="Durable Crons", console=console)
     except Exception as e:
-        sys_log.error(f"Failed to load durable cron tasks from: {CRON_CONFIGS_PATH} with error {e}")
-        console.print(f"Failed to load durable cron tasks from: {CRON_CONFIGS_PATH} with error {e}", style="bold red")
+        sys_log.error(f"Failed to load durable cron tasks from: {str(AGENT_PATH / CRON_CONFIGS_PATH)} with error {e}")
+        console.print(f"Failed to load durable cron tasks from: {str(AGENT_PATH / CRON_CONFIGS_PATH)} with error {e}", style="bold red")
         return
 
     title = f"Durable Cron Tasks ({len(durable_crons)})"
@@ -281,7 +282,7 @@ def cron_list_cli(console: Console):
 
     hint = Text()
     hint.append(f"  Tips: You can remove any durable cron task with following command in shell: ", style=f"bright_black")
-    hint.append(f"python -m src.main cron remove ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"{AGENT_EXECUTE} cron remove ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[Cron ID]\n", style=f"bold {MAJOR_COLOR1}")
     hint.append(f"        You can only remove session-specific cron task with builtin command: ", style=f"bright_black")
     hint.append(f"/cron_remove", style=f"bold {MAJOR_COLOR2}")
@@ -297,10 +298,10 @@ def cron_remove_cli(args: Namespace, console: Console):
         """load cron tasks"""
         id_str: str = args.id
         try:
-            durable_crons: list[CronDump] = basic_utils.load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+            durable_crons: list[CronDump] = basic_utils.load_configs(configs_path=str(AGENT_PATH / CRON_CONFIGS_PATH), name="Durable Crons", console=console)
         except Exception as e:
-            sys_log.error(f"Failed to load durable cron tasks from: {CRON_CONFIGS_PATH} with error {e}")
-            console.print(f"Failed to load durable cron tasks from: {CRON_CONFIGS_PATH} with error {e}", style="bold red")
+            sys_log.error(f"Failed to load durable cron tasks from: {str(AGENT_PATH / CRON_CONFIGS_PATH)} with error {e}")
+            console.print(f"Failed to load durable cron tasks from: {str(AGENT_PATH / CRON_CONFIGS_PATH)} with error {e}", style="bold red")
             return
         """find cron task with ID"""
         del_idx = -1
@@ -322,7 +323,7 @@ def cron_remove_cli(args: Namespace, console: Console):
             return
         """remove and save"""
         del durable_crons[del_idx]
-        with open(CRON_CONFIGS_PATH, "w", encoding="utf-8") as f:
+        with open(str(AGENT_PATH / CRON_CONFIGS_PATH), "w", encoding="utf-8") as f:
             json.dump(durable_crons, f, indent=2, ensure_ascii=False)
         sys_log.debug(f"Remove durable cron task with id: {id_str} successfully")
         console.print(f"Remove durable cron task with id: [{MAJOR_COLOR2}]{id_str}[/{MAJOR_COLOR2}] successfully", style="bright_black")

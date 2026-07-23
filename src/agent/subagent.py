@@ -22,6 +22,7 @@ Revision:
 2026.6.30      Yu Huang      1.9      Add multi-round results truncate method with pydict keys preserved
 2026.7.3       Yu Huang      2.0      Add more current tools info when subagent is running
 2026.7.15      Yu Huang      2.1      Add merge subagent statistic method
+2026.7.23      Yu Huang      2.2      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -45,7 +46,7 @@ from src.tool.scoreboard import Scoreboard
 from src.tool import tool_def
 from src.tool.tool_dispatch import call_tools
 from src.utility.basic_utils import truncate_tool_result
-from src.agent.progress import AgentStatus, SubAgentProgress, SUPPORTED_TYPES, PERMISSION_PRESETS, SUPPORTED_TYPES_DESC
+from src.agent.agent_types import AgentStatus, SubAgentProgress, SUPPORTED_TYPES, PERMISSION_PRESETS, SUPPORTED_TYPES_DESC
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -78,6 +79,8 @@ _TOOL_DISPLAY_KEYS: dict[str, str] = {
     TOOL_NAME_LAUNCH_SIM: "subject",
     TOOL_NAME_QUERY_RUN: "run_id",
     TOOL_NAME_READ_LOG: "run_id",
+    # WeChat tools
+    TOOL_NAME_WECHAT_SEND_FILE: "path",
 }
 
 
@@ -415,7 +418,7 @@ class SubAgent:
             "stream": False,
             "messages": self.ctx.messages,
             "tools": self.ctx.tools,
-            "timeout": self.ctx.api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
+            "timeout": self.ctx.api_configs.get("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS) / 1000,
         }
 
         if self.ctx.api_configs.get(f"{prefix}ENABLE_REASONING"):
@@ -557,7 +560,7 @@ class SubAgent:
 
     def dump(self):
         try:
-            agent_dir = os.path.join(SESSION_PATH, self._parent_session_uuid, SUBAGENT_DUMP_DIR, self.agent_id)
+            agent_dir = str(AGENT_PATH / SESSION_PATH / self._parent_session_uuid / SUBAGENT_DUMP_DIR / self.agent_id)
             os.makedirs(agent_dir, exist_ok=True)
 
             self.progress.status = self.status
@@ -569,7 +572,7 @@ class SubAgent:
             with open(os.path.join(agent_dir, MESSAGES_NAME), "w", encoding="utf-8") as f:
                 json.dump(self.ctx.messages, f, indent=2, ensure_ascii=False)
 
-            with open(os.path.join(agent_dir, "stats.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(agent_dir, SUBAGENT_STATS_NAME), "w", encoding="utf-8") as f:
                 json.dump({
                     "agent_id": self.agent_id,
                     "subagent_type": self.subagent_type,

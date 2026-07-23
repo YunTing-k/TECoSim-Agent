@@ -17,7 +17,7 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 >   **Medium model**: default reasoning tier for subagents, balancing performance and cost
 > - **快速模型（FAST_MODEL）**：用于非循环的辅助任务，如网页内容总结、搜索结果摘要等；固定为非流式，降低延迟与成本
 >   **Fast model**: used for non-loop auxiliary tasks (web fetch summarization, search result summarization); non-streaming for lower latency & cost
-> - 三个模型共享同一个 `TIMEOUT_MS` 超时配置 / All three models share the same `TIMEOUT_MS`
+> - 三个模型共享同一个 `LLM_TIMEOUT_MS` 超时配置 / All three models share the same `LLM_TIMEOUT_MS`
 
 | 参数 Parameter | 说明 Description |
 |-----------|-------------|
@@ -45,7 +45,7 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 | `FAST_MODEL_REASONING_EFFORT` | 快速模型推理强度（`low`/`medium`/`high`）/ Fast model reasoning effort |
 | `FAST_MODEL_DEEPSEEK_SUPPORT` | 快速模型是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support for fast model |
 | `FAST_MODEL_CONTEXT` | 快速模型上下文窗口大小 / Fast model context window size |
-| `TIMEOUT_MS` | LLM 请求超时时间（毫秒）/ LLM request timeout (milliseconds) |
+| `LLM_TIMEOUT_MS` | LLM 请求超时时间（毫秒）/ LLM request timeout (milliseconds) |
 
 > **上下文阈值机制**： Agent 使用 `MAIN_MODEL_CONTEXT` 与 `agent_configs.json` 中的 `CONTEXT_THRESHOLD` 配合，当输入 Token 数达到 `CONTEXT × THRESHOLD` 时，向用户发出告警提示（黄色警告），帮助避免上下文溢出。
 > 
@@ -125,6 +125,9 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RESUME_DISPLAY_GREP_PREVIEW` | 恢复会话时是否预览 grep 搜索的文件匹配 / Whether to preview grep file search matches when resuming session                                                                                                                          |
 | `RESUME_DISPLAY_GREP_RESULT` | 恢复会话时是否预览 grep 搜索的详细信息 / Whether to preview grep search detailed results when resuming session                                                                                                                      |
 | `RESUME_DISPLAY_SUBAGENT` | 恢复会话时是否显示子 Agent 运行记录 / Whether to display subagent run records when resuming session                                                                                                                               |
+| `RESUME_DISPLAY_WEB_FETCH_RESULT` | 恢复会话时是否预览 web_fetch 获取的网页内容 / Whether to preview web_fetch fetched page content when resuming session                                                                                                               |
+| `RESUME_DISPLAY_WEB_SEARCH_RESULT` | 恢复会话时是否预览 web_search 搜索结果 / Whether to preview web_search results when resuming session                                                                                                                               |
+| `RESUME_DISPLAY_WECHAT_STATUS_RESULT` | 恢复会话时是否预览 wechat_status 状态信息 / Whether to preview wechat_status information when resuming session                                                                                                                       |
 | `SUBAGENT_MAX_STEPS` | 子 Agent 最大步骤数（LLM 请求次数），超出后自动终止 / Max steps for subagents                                                                                                                                                           |
 | `SUBAGENT_MODEL_TYPE` | 子 Agent 模型类型：`"main"`、`"medium"` 或 `"fast"` / Model type for subagents                                                                                                                                              |
 | `SUBAGENT_TIMEOUT_S` | 子 Agent 超时时间（秒），超时后自动终止 / Subagent timeout in seconds                                                                                                                                                               |

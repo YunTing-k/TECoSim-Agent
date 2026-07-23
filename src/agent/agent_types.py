@@ -31,7 +31,7 @@ class AgentStatus(str, Enum):
     TIMEOUT = AGENT_TIMEOUT_LABEL
     ERROR = AGENT_ERROR_LABEL
     DONE = AGENT_DONE_LABEL
-    UNKNOWN = AGENT_UNKNOWN_LABEL  # defensive: never set at runtime, only used as fallback on resume deserialization
+    UNKNOWN = AGENT_UNKNOWN_LABEL
 
 @dataclass
 class SubAgentProgress:

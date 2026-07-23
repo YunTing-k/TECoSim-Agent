@@ -24,6 +24,7 @@ Revision:
 2026.6.3       Yu Huang      2.2      Revise session list info & Add configurable title in yes or no request TUI
 2026.6.13      Yu Huang      2.3      Bugfix: session list displays N/A instead of -0.0K when token data unavailable
 2026.6.29      Yu Huang      2.4      Add session title info when removing sessions
+2026.7.23      Yu Huang      2.5      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -32,7 +33,6 @@ auto-suggest, multiline support), resumes existing sessions by UUID, and provide
 confirmation TUI). `cmd_lexer` parses builtin commands (starting with "/") and dispatches to `BuiltinCommands`.
 """
 import os
-import sys
 import uuid
 import json
 import shutil
@@ -187,7 +187,7 @@ def create_session(console: Console, cmd_object: BuiltinCommands) -> tuple[str, 
     uuid_obj = uuid.uuid4()
     uuid_str = uuid_obj.__str__()
     # path = "./session/" + uuid_str
-    path = os.path.join(SESSION_PATH, uuid_str)
+    path = str(AGENT_PATH / SESSION_PATH / uuid_str)
     if not os.path.exists(path):
         try:
             os.makedirs(path)
@@ -212,7 +212,7 @@ def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinComma
         uuid_obj = uuid.UUID(session_uuid)
         uuid_str = uuid_obj.__str__()
         # path = "./session/" + uuid_str
-        path = os.path.join(SESSION_PATH, uuid_str)
+        path = str(AGENT_PATH / SESSION_PATH / uuid_str)
         if not os.path.exists(path):
             sys_log.error(f"Resuming session of {uuid_str}'s path not exist")
             console.print(f"Resuming session of {uuid_str}'s path not exist", style="bold red")
@@ -252,12 +252,13 @@ def session_entry_cli(args: Namespace, console: Console):
         sys.exit(-1)
 
     """session action doesn't entry main program"""
+    sys_log.info("Program end for session entry cli")
     sys.exit(0)
 
 
 def session_list_cli(console: Console):
     """query all sessions"""
-    session_dir = SESSION_PATH
+    session_dir = str(AGENT_PATH / SESSION_PATH)
     if not os.path.exists(session_dir):
         sys_log.error(f"Session directory {session_dir} does not exist")
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
@@ -282,6 +283,7 @@ def session_list_cli(console: Console):
             sys_log.error(f"Failed to load session {item}'s context with error {e}")
             console.print(f"Failed to load session {item}'s context with error {e}", style="bold red")
 
+    sys_log.info(f"Loaded {len(sessions_list)} sessions")
     title = f"Available Sessions ({len(sessions_list)})"
     cmd_str = Text()
     for session in sessions_list:
@@ -300,7 +302,7 @@ def session_list_cli(console: Console):
 
 def session_remove_cli(args: Namespace, console: Console):
     """remove a session"""
-    session_dir = SESSION_PATH
+    session_dir = str(AGENT_PATH / SESSION_PATH)
     if not os.path.exists(session_dir):
         sys_log.error(f"Session directory {session_dir} does not exist")
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
@@ -325,7 +327,7 @@ def session_remove_cli(args: Namespace, console: Console):
             return
 
         """read session title"""
-        context_file = os.path.join(os.path.join(session_dir, uuid_str), CONTEXT_NAME)
+        context_file = os.path.join(session_dir, uuid_str, CONTEXT_NAME)
         session_title = UNKNOWN_SESSION_TITLE
         try:
             with open(context_file, 'r', encoding='utf-8') as f:

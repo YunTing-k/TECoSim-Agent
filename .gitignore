@@ -3,8 +3,9 @@
 /.idea
 /gateway.bat
 /run.bat
-/update_requirements.bat
+/requirements.bat
 /clean.bat
+/pack.bat
 /config/wechat_bot_cred.json
 /session/**/*.json
 /session/**/*.log
@@ -21,6 +22,7 @@
 /src/agent/__pycache__
 /test/__pycache__
 /test/test_config.py
+/dist/
 /log/*.txt
 /ssim.log
 /changelog.txt

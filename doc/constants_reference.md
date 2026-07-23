@@ -380,6 +380,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 |----------|---------|---------|
 | `SUBAGENT_DUMP_DIR` | `"agents"` | 子 Agent 数据持久化子目录名 / Subagent dump subdirectory name |
 | `SUBAGENT_SUMMARIES_NAME` | `"summaries.json"` | 子 Agent 摘要持久化文件名 / Subagent summaries file name |
+| `SUBAGENT_STATS_NAME` | `"subagent_stats.json"` | 子 Agent 统计信息持久化文件名 / Subagent stats persistence file name |
 | `SUBAGENT_DEFAULT_MAX_STEPS` | `30` | 子 Agent 默认最大步数 / Subagent default max steps |
 | `SUBAGENT_DEFAULT_WARN_STEPS` | `2` | 子 Agent 默认提前提醒步数 / Subagent default early warning steps |
 | `SUBAGENT_DEFAULT_TIMEOUT_S` | `600` | 子 Agent 默认超时（秒）/ Subagent default timeout (seconds) |
@@ -428,7 +429,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `0` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `3` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
@@ -467,7 +468,7 @@ These constants control the agent's core identity and basic behavior:
 | `BASH_TIMEOUT_MS_DEFAULT` | `120000` (2 min) | Bash 命令默认超时。Agent 的 `bash` 工具若不指定 timeout 参数则使用此值 / Default bash command timeout; used when no timeout argument is given |
 | `BASH_TIMEOUT_MS_MAX` | `600000` (10 min) | Bash 命令最大超时上限。Agent 拒绝任何超过此值的 timeout 参数，防止误设过长超时 / Max bash command timeout; the agent rejects any timeout exceeding this limit |
 | `SIMULATOR_TIMEOUT_DEFAULT_S` | `3600` (1 hour) | 仿真运行默认超时（秒）/ Default simulation timeout (seconds) |
-| `DEFAULT_TIMEOUT_MS` | `1000000` (~16 min) | LLM API 请求默认超时（毫秒）/ Default LLM API request timeout (ms) |
+| `DEFAULT_LLM_TIMEOUT_MS` | `1000000` (~16 min) | LLM API 请求默认超时（毫秒）/ Default LLM API request timeout (ms) |
 | `READ_FILE_MAX_LINE` | `10000` | 单次读取文件最大行数。超过此行数后不再继续读取 / Max lines per file read; stops reading beyond this limit |
 | `READ_FILE_LINE_CHAR_LIMIT` | `2000` | LLM 输出单行最大字符数（超出截断并标记）/ Max chars per line in LLM output (truncated with marker) |
 | `READ_LOG_MAX_LINE` | `10000` | 单次读取日志最大行数。与 `READ_FILE_MAX_LINE` 不同，此值专门针对仿真日志读取 / Max lines per log read (separate from `READ_FILE_MAX_LINE`, specific to simulation logs) |
@@ -476,8 +477,8 @@ These constants control the agent's core identity and basic behavior:
 | `WECHAT_MEDIA_CACHE_DIR` | `"wechat_cache"` | 微信媒体缓存目录名（会话目录下）/ WeChat media cache directory name (under session dir) |
 | `WECHAT_MEDIA_CACHE_NAME` | `"cdn_cache.json"` | 微信 CDN 缓存持久化文件名 / WeChat CDN cache persistence file name |
 | `WECHAT_HISTORY_NAME` | `"msg_history.json"` | 微信消息历史持久化文件名 / WeChat message history persistence file name |
-| `WECHAT_VERIFY_CODE_PREFIX1` | `"Please input the verify code on you phone"` | 微信验证码提示 1（首次输入）/ WeChat verify code prompt 1 (first input) |
-| `WECHAT_VERIFY_CODE_PREFIX2` | `"Wrong verify code, please input the correct verify code on you phone"` | 微信验证码提示 2（验证码错误重试）/ WeChat verify code prompt 2 (retry after wrong code) |
+| `WECHAT_VERIFY_CODE_PREFIX1` | `"Please input the verify code on you device"` | 微信验证码提示 1（首次输入）/ WeChat verify code prompt 1 (first input) |
+| `WECHAT_VERIFY_CODE_PREFIX2` | `"Wrong verify code, please input the correct verify code on you device"` | 微信验证码提示 2（验证码错误重试）/ WeChat verify code prompt 2 (retry after wrong code) |
 
 ---
 

@@ -63,11 +63,19 @@ Traditional design requires experts to **manually translate** design intent into
 
 ### 环境要求 | Requirements
 
-- **Python**: 3.12.x
+- **Python**: 3.12.x（Windows 用户可使用预构建的 exe，无需安装 Python / Windows users can use the pre-built exe — no Python required）
 - **操作系统 OS**: Windows / Linux / macOS
 - **可选 Optional**: TECoSim 仿真器（如有需求请联系作者获取）/ TECoSim simulator (contact the author if needed)
 
 ### 安装与配置 | Installation and Configuration
+
+#### 方式一：预构建 exe（Windows系统） | Option 1: Pre-Built exe (Windows OS)
+
+1. 从 [Releases](https://github.com/YunTing-k/TECoSimAgent/releases) 下载最新的 `TECoSim-Agent_win64.zip` / Download the latest `TECoSim-Agent_win64.zip` from [Releases](https://github.com/YunTing-k/TECoSimAgent/releases)
+2. 解压压缩包 / Unzip the archive
+3. 直接跳到下方**配置**步骤 / Skip to the **Configuration** steps below
+
+#### 方式二：源码安装（Linux/macOS/高级用户） | Option 2: Source Install (Linux/macOS/Advanced Users)
 
 以下以 `venv` 为例创建虚拟环境（也可使用 `conda` 等工具）：
 The following uses `venv` as an example (`conda` or other virtual environment tools also work):
@@ -87,6 +95,7 @@ pip install -r requirements.txt
 ```
 
 安装后，还需要配置 `./config/` 下的文件：
+After installation, files in `./config/` need to be configured:
 
 #### 1. API 连接配置 | API Connection (`api_configs.json`)
 
@@ -97,7 +106,7 @@ You must set your LLM API endpoint and key:
 |-----------|-------------|
 | `API_URL` | API 基地址 / API base URL (e.g., `https://api.deepseek.com`) |
 | `API_KEY` | API 认证密钥 / API authentication key |
-| `TIMEOUT_MS` | 请求超时（毫秒）/ Request timeout (ms) |
+| `LLM_TIMEOUT_MS` | 请求超时（毫秒）/ Request timeout (ms) |
 | `MAIN_MODEL_NAME` | 主模型，用于复杂多步推理 / Main model for complex multi-step reasoning |
 | `MAIN_MODEL_*` | 主模型配套参数（上下文窗口、温度、推理开关、`max_tokens` 等）/ Companion params for the main model (context, temperature, reasoning, `max_tokens`, etc.) |
 | `MEDIUM_MODEL_NAME` | 中等模型，用于结构化决策等中等复杂度任务 / Medium model for structured decisions and moderate-complexity tasks |
@@ -134,10 +143,104 @@ You must set your LLM API endpoint and key:
 ### 首次启动 | First Launch
 
 ```bash
+# 预构建 exe（Windows）| Pre-built exe (Windows)
+TECoSimAgent.exe
+
+# 源码运行 | Source
 python -m src.main
 ```
 
 加载完毕后即可在输入框下达指令，开始你的使用 Once loaded, type your instructions in the prompt and start your first usage.
+
+## 基本使用 | Basic Usage
+
+### 命令行参数 | CLI Arguments
+
+```bash
+# 预构建 exe（Windows）| Pre-built exe (Windows)
+TECoSimAgent.exe                           # 启动Agent / Launch agent
+TECoSimAgent.exe -l                        # 启用开发者日志 / Launch with developer logs
+TECoSimAgent.exe -r <UUID>                 # 恢复指定会话 / Resume a session
+TECoSimAgent.exe -wc                       # 启用微信机器人模式 / Enable WeChat Bot mode
+TECoSimAgent.exe --nosystem                # 禁用系统提示词 / Disable system prompts
+TECoSimAgent.exe --notools                 # 禁用工具 / Disable agent tools
+TECoSimAgent.exe --nocrons                 # 禁用定时任务 / Disable cron tasks
+TECoSimAgent.exe --noskills                # 禁用技能 / Disable skills
+TECoSimAgent.exe --nomcps                  # 禁用MCP / Disable MCPs
+TECoSimAgent.exe --dangerously_allow_all   # ⚠️ 允许所有权限（危险！） / Allow all permissions (dangerous!)
+
+# 源码运行（Linux/macOS/Windows）| Source (Linux/macOS/Windows)
+python -m src.main                         # 启动Agent / Launch agent
+python -m src.main -l                      # 启用开发者日志 / Launch with developer logs
+python -m src.main -r <UUID>               # 恢复指定会话 / Resume a session
+python -m src.main -wc                     # 启用微信机器人模式 / Enable WeChat Bot mode
+python -m src.main --nosystem              # 禁用系统提示词 / Disable system prompts
+python -m src.main --notools               # 禁用工具 / Disable agent tools
+python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
+python -m src.main --noskills              # 禁用技能 / Disable skills
+python -m src.main --nomcps                # 禁用MCP / Disable MCPs
+python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险！） / Allow all permissions (dangerous!)
+```
+
+### 子命令 | Sub-commands
+
+```bash
+# 预构建 exe（Windows）| Pre-built exe (Windows)
+TECoSimAgent.exe session list                # 列出所有会话 / List all sessions
+TECoSimAgent.exe session remove <UUID>       # 删除指定会话 / Remove a session
+TECoSimAgent.exe cron list                   # 列出持久化定时任务 / List durable cron tasks
+TECoSimAgent.exe cron remove <ID>            # 删除持久化定时任务 / Remove a durable cron task
+TECoSimAgent.exe skill list                  # 列出所有可用技能 / List all available skills
+TECoSimAgent.exe mcp list                    # 列出所有 MCP 服务器 / List all MCP servers
+TECoSimAgent.exe mcp add <name> <type> <params>  # 添加 MCP 服务器 / Add an MCP server
+TECoSimAgent.exe mcp toggle <name>           # 启用/禁用 MCP 服务器 / Enable/disable an MCP server
+TECoSimAgent.exe mcp remove <name>           # 移除 MCP 服务器 / Remove an MCP server
+
+# 源码运行（Linux/macOS/Windows）| Source (Linux/macOS/Windows)
+python -m src.main session list              # 列出所有会话 / List all sessions
+python -m src.main session remove <UUID>     # 删除指定会话 / Remove a session
+python -m src.main cron list                 # 列出持久化定时任务 / List durable cron tasks
+python -m src.main cron remove <ID>          # 删除持久化定时任务 / Remove a durable cron task
+python -m src.main skill list                # 列出所有可用技能 / List all available skills
+python -m src.main mcp list                  # 列出所有 MCP 服务器 / List all MCP servers
+python -m src.main mcp add <name> <type> <params>  # 添加 MCP 服务器 / Add an MCP server
+python -m src.main mcp toggle <name>         # 启用/禁用 MCP 服务器 / Enable/disable an MCP server
+python -m src.main mcp remove <name>         # 移除 MCP 服务器 / Remove an MCP server
+```
+
+### 内建命令 | Built-in Commands
+
+在 Agent 交互界面中，所有命令以 `/` 开头：
+All commands start with `/` in the agent interaction interface:
+
+| 命令 Command | 功能 Description |
+|---------|-------------|
+| `/help` | 查看所有可用命令 / Show all available commands |
+| `/design_list` | 查询设计列表 / Query design list |
+| `/run_list` | 查询仿真运行记录 / Query simulation run records |
+| `/context` | 查看 Token 用量与上下文统计 / View token usage and context stats |
+| `/fread_list` | 查看所有已读文件 / View all read files |
+| `/url_caches` | 查看缓存的 URL / View cached URLs |
+| `/session_list` | 查看所有会话 / View all sessions |
+| `/session_remove <UUID>` | 删除指定会话 / Remove a session |
+| `/readonly_list` | 查看只读路径 / View read-only paths |
+| `/readonly_add <PATH> [PATH...]` | 添加只读路径 / Add read-only paths |
+| `/readonly_remove <idx> [idx...]` | 移除只读路径 / Remove read-only paths |
+| `/permission_list` | 查看权限配置 / View permission configs |
+| `/permission_toggle <NAME>` | 切换权限开关 / Toggle a permission |
+| `/skill_list` | 列出可用技能 / List available skills |
+| `/skills_loaded` | 列出已加载技能 / List loaded skills |
+| `/<skill_name>` | 手动加载技能 / Manually load a skill |
+| `/mcp_list` | 查看 MCP 信息 / View MCP information |
+| `/cron_list` | 查看定时任务列表 / View cron task list |
+| `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
+| `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
+| `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
+| `/agent_list` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
+| `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
+| `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
+
+---
 
 ## 微信集成 | WeChat Integration
 
@@ -147,6 +250,10 @@ Enable WeChat Bot mode via `-wc` / `--wechat` to interact with the agent through
 **首次登录 | First Login**
 
 ```
+# 预构建 exe（Windows）| Pre-built exe (Windows)
+TECoSimAgent.exe -wc
+
+# 源码运行 | Source
 python -m src.main -wc
 ```
 
@@ -163,6 +270,9 @@ After launch, a QR code link is shown in the terminal — scan it with WeChat to
 | 权限隔离 Permission Isolation | 微信模式下主 Agent 权限被 `WECHAT_BOT_PERMISSION` 完全覆盖，与终端模式独立配置 / Main agent permissions fully overridden by `WECHAT_BOT_PERMISSION`, independent from terminal mode                                                                                   |
 | 工具执行中交互 Mid-Tool Interaction | 工具调用期间 Agent 可向微信发送中间回复，用户也可随时发送新消息并获得及时响应，无需等待本轮工具调用全部完成 / Agent can send intermediate WeChat replies during tool calls; users can also send messages mid-execution and receive a timely response without waiting for all tool calls to finish |
 | CDN 缓存 CDN Cache | 接收的媒体文件缓存跟随会话持久化，恢复同一会话时避免重复下载 / Media cache is persisted with the session — no re-download when resuming the same session                                                                                                                     |
+
+如有权限修改需要，微信机器人模式下的全部权限定义在 `./config/agent_configs.json` 中的 `WECHAT_BOT_PERMISSION` 字段中。
+All WeChat Bot permissions are defined in `WECHAT_BOT_PERMISSION` inside `./config/agent_configs.json` — modify there to adjust access.
 
 > **注意：** 当前微信 SDK 存在较多限制（如引用消息无正文/媒体、无法获取 bot 发出的 `message_id` 等），具体行为与已知问题详见 [微信接入行为](doc/wechat_behavior.md)。
 > 
@@ -204,77 +314,6 @@ The agent integrates full TECoSim simulator workflow management:
 Inside the agent interface, use built-in commands for quick queries:
 - `/design_list` — 列出所有设计 / List all designs
 - `/run_list` — 列出所有仿真运行 / List all simulation runs
-
----
-
-## 基本使用 | Basic Usage
-
-### 命令行参数 | CLI Arguments
-
-```bash
-python -m src.main                         # 启动Agent / Launch agent
-python -m src.main -l                      # 启用开发者日志 / Launch with developer logs
-python -m src.main -r <UUID>               # 恢复指定会话 / Resume a session
-python -m src.main --nosystem              # 禁用系统提示词 / Disable system prompts
-python -m src.main --notools               # 禁用工具 / Disable agent tools
-python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
-python -m src.main --noskills              # 禁用技能 / Disable skills
-python -m src.main --nomcps                # 禁用MCP / Disable MCPs
-python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险！） / Allow all permissions (dangerous!)
-```
-
-### 子命令 | Sub-commands
-
-```bash
-# 会话管理 | Session management
-python -m src.main session list              # 列出所有会话 / List all sessions
-python -m src.main session remove <UUID>     # 删除指定会话 / Remove a session
-
-# 持久化定时任务管理 | Durable cron management
-python -m src.main cron list                 # 列出持久化定时任务 / List durable cron tasks
-python -m src.main cron remove <ID>          # 删除持久化定时任务 / Remove a durable cron task
-
-# 技能管理 | Skill management
-python -m src.main skill list                # 列出所有可用技能 / List all available skills
-
-# MCP 管理 | MCP management
-python -m src.main mcp list                  # 列出所有 MCP 服务器 / List all MCP servers
-python -m src.main mcp add <name> <type> <params>  # 添加 MCP 服务器 / Add an MCP server
-python -m src.main mcp toggle <name>         # 启用/禁用 MCP 服务器 / Enable/disable an MCP server
-python -m src.main mcp remove <name>         # 移除 MCP 服务器 / Remove an MCP server
-```
-
-### 内建命令 | Built-in Commands
-
-在 Agent 交互界面中，所有命令以 `/` 开头：
-All commands start with `/` in the agent interaction interface:
-
-| 命令 Command | 功能 Description |
-|---------|-------------|
-| `/help` | 查看所有可用命令 / Show all available commands |
-| `/design_list` | 查询设计列表 / Query design list |
-| `/run_list` | 查询仿真运行记录 / Query simulation run records |
-| `/context` | 查看 Token 用量与上下文统计 / View token usage and context stats |
-| `/fread_list` | 查看所有已读文件 / View all read files |
-| `/url_caches` | 查看缓存的 URL / View cached URLs |
-| `/session_list` | 查看所有会话 / View all sessions |
-| `/session_remove <UUID>` | 删除指定会话 / Remove a session |
-| `/readonly_list` | 查看只读路径 / View read-only paths |
-| `/readonly_add <PATH> [PATH...]` | 添加只读路径 / Add read-only paths |
-| `/readonly_remove <idx> [idx...]` | 移除只读路径 / Remove read-only paths |
-| `/permission_list` | 查看权限配置 / View permission configs |
-| `/permission_toggle <NAME>` | 切换权限开关 / Toggle a permission |
-| `/skill_list` | 列出可用技能 / List available skills |
-| `/skills_loaded` | 列出已加载技能 / List loaded skills |
-| `/<skill_name>` | 手动加载技能 / Manually load a skill |
-| `/mcp_list` | 查看 MCP 信息 / View MCP information |
-| `/cron_list` | 查看定时任务列表 / View cron task list |
-| `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
-| `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
-| `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
-| `/agent_list` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
-| `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
-| `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
 
 ---
 

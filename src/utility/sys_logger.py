@@ -17,6 +17,7 @@ Revision:
 2026.6.2       Yu Huang      1.5      Refactor logger with composition + explicit delegation + monkey-patch
 2026.6.7       Yu Huang      1.6      Fix the bug of logging error of emoji
 2026.6.14      Yu Huang      1.7      Fix: auto-create log directory on init
+2026.7.23      Yu Huang      1.8      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -29,7 +30,7 @@ import logging
 import datetime
 import colorlog
 
-from src.constants import LOG_PATH
+from src.constants import *
 
 LOG_LEVEL_PARAM = 25
 logging.addLevelName(LOG_LEVEL_PARAM, "PARAM")
@@ -59,13 +60,13 @@ class Logger:
             datefmt='%H:%M:%S',
             log_colors=self.config
         )
-        os.makedirs(LOG_PATH, exist_ok=True)
+        os.makedirs(str(AGENT_PATH / LOG_PATH), exist_ok=True)
         if self.dev_log:
             sh = logging.StreamHandler()
             sh.setLevel(logging.DEBUG)
             sh.setFormatter(log_format)
             self._logger.addHandler(sh)
-        fh = logging.FileHandler(filename=os.path.join(LOG_PATH, self.name + '_' + time_format + '.txt'), mode='w', encoding='utf-8')
+        fh = logging.FileHandler(filename=str(AGENT_PATH / LOG_PATH / (self.name + '_' + time_format + '.txt')), mode='w', encoding='utf-8')
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(log_format)
         self._logger.addHandler(fh)

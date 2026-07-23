@@ -111,7 +111,7 @@ class TestGetAnswersRender(unittest.TestCase):
             "answer": "Red",
         }]
         with patch.object(self.console, 'print') as mock_print:
-            get_answers_render(answers, self.console)
+            self.console.print(get_answers_render(answers))
             mock_print.assert_called_once()
             render = mock_print.call_args[0][0]
             self.assertIn("Color", render.plain)
@@ -123,7 +123,7 @@ class TestGetAnswersRender(unittest.TestCase):
             {"question": "Size?", "header": "Size", "answer": "Large"},
         ]
         with patch.object(self.console, 'print') as mock_print:
-            get_answers_render(answers, self.console)
+            self.console.print(get_answers_render(answers))
             render = mock_print.call_args[0][0]
             self.assertIn("Red + Blue", render.plain)
             self.assertIn("Large", render.plain)
@@ -135,7 +135,7 @@ class TestGetAnswersRender(unittest.TestCase):
             "answer": QUESTION_NO_CHOICE_LABEL,
         }]
         with patch.object(self.console, 'print') as mock_print:
-            get_answers_render(answers, self.console)
+            self.console.print(get_answers_render(answers))
             render = mock_print.call_args[0][0]
             self.assertIn(QUESTION_NO_CHOICE_LABEL, render.plain)
 
@@ -147,13 +147,13 @@ class TestGetAnswersRender(unittest.TestCase):
             "other_text": "my custom input",
         }]
         with patch.object(self.console, 'print') as mock_print:
-            get_answers_render(answers, self.console)
+            self.console.print(get_answers_render(answers))
             render = mock_print.call_args[0][0]
             self.assertIn("my custom input", render.plain)
 
     def test_render_empty_answers(self):
         with patch.object(self.console, 'print') as mock_print:
-            get_answers_render([], self.console)
+            self.console.print(get_answers_render([]))
             mock_print.assert_called_once()
             render = mock_print.call_args[0][0]
             self.assertIn("User's choices", render.plain)

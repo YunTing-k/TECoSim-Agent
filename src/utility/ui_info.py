@@ -37,6 +37,7 @@ Revision:
 2026.7.15-16   Yu Huang      3.1      Add WeChat bot interaction support
 2026.7.17      Yu Huang      3.2      Add quick WeChat bot exit
 2026.7.18      Yu Huang      3.3      Add text reply to WeChat user when agent stops or fails
+2026.7.23      Yu Huang      3.4      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -44,7 +45,6 @@ TUI components for the agent: gradient color utilities (RGB/hex conversion, vert
 startup banner, context usage bar, loading spinner with rapid interrupt via SIGINT-to-thread injection, yes/no request TUI,
 exit confirmation TUI, user prompt input, and normal/error exit handlers with session saving.
 """
-import sys
 import time
 import signal
 import random
@@ -66,7 +66,7 @@ from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, get_tasks_render
 from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec, create_clean_input, flush_terminal_input
-from src.agent.progress import SubAgentProgress
+from src.agent.agent_types import SubAgentProgress
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -140,7 +140,7 @@ def console_tecosim_agent_info(console: Console):
     colored_banner = vertical_color_grad_text(banner, hex_to_rgb(MAJOR_COLOR1), hex_to_rgb(MAJOR_COLOR2))
 
     dev_info = (
-        "\n\nCopyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. Licensed under Apache 2.0.\n"
+        "\n\nCopyright (c) 2026, Shanghai Jiao Tong University and Yu Huang. Licensed under Apache 2.0\n"
         "Developed by Yu Huang at SMIL Lab, School of Integrated Circuits, Shanghai Jiao Tong University."
     )
     colored_dev_info = vertical_color_grad_text(dev_info, hex_to_rgb(MAJOR_COLOR2), hex_to_rgb(MAJOR_COLOR2))
@@ -231,7 +231,7 @@ def render_subagent_line(p: SubAgentProgress, running_color: str = "") -> Text:
         icon_style = "bold yellow"
         name_style = "bold yellow"
         usage_style = "bright_black"
-    elif sv == AGENT_UNKNOWN_LABEL:  # defensive: never set at runtime, fallback on resume deserialization
+    elif sv == AGENT_UNKNOWN_LABEL:
         icon_style = "bold yellow"
         name_style = "bold yellow"
         usage_style = "bright_black"
@@ -249,7 +249,7 @@ def render_subagent_line(p: SubAgentProgress, running_color: str = "") -> Text:
     line.append(f" {p.input_tokens / 1000:.1f} K", style=usage_style)
     line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
     line.append(f" {p.output_tokens / 1000:.1f} K", style=usage_style)
-    is_ended = sv in (AGENT_DONE_LABEL, AGENT_ERROR_LABEL, AGENT_TIMEOUT_LABEL, AGENT_UNKNOWN_LABEL)  # UNKNOWN: defensive
+    is_ended = sv in (AGENT_DONE_LABEL, AGENT_ERROR_LABEL, AGENT_TIMEOUT_LABEL, AGENT_UNKNOWN_LABEL)
     if is_ended and p.tool_calls_done > 0:
         elapsed = p.elapsed_s if p.elapsed_s > 0 else (time.time() - p.start_time if p.start_time > 0 else 0)
         duration_str = format_time_sec(elapsed)
@@ -670,7 +670,7 @@ def render_exit(ctx: AgentContext, active_idx: int):
     body = Text()
     body.append(f"\nAre you sure to exit TECoSim Agent?\n", style="white")
     body.append(f"Tip: You can always resume this session with ", style="white")
-    body.append(f"python -m src.main -r ", style=f"bold {MAJOR_COLOR2}")
+    body.append(f"{AGENT_EXECUTE} -r ", style=f"bold {MAJOR_COLOR2}")
     body.append(f"{ctx.session_uuid}\n\n", style=f"bold {MAJOR_COLOR1}")
     str_list = ["Yes", "No"]
     for i in range(2):

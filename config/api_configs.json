@@ -1,7 +1,7 @@
 {
     "API_URL": "http://localhost:8080/openai",
     "API_KEY": "sk-1234",
-    "TIMEOUT_MS": 1000000,
+    "LLM_TIMEOUT_MS": 1000000,
 
     "MAIN_MODEL_NAME": "dpsko/deepseek-v4-pro",
     "MAIN_MODEL_DEEPSEEK_SUPPORT": true,

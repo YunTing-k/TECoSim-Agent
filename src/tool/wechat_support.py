@@ -13,6 +13,7 @@ Revision:
 2026.7.17      Yu Huang      1.1      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & Add quick
                                       WeChat bot exit
 2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status & SILK voice is processed as other media types
+2026.7.23      Yu Huang      1.3      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 
 Details:
 ---------
@@ -41,7 +42,6 @@ import aiohttp
 import io, qrcode
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional, Any
 from urllib.parse import quote
 from collections import defaultdict
@@ -112,7 +112,7 @@ class WeChatBridge:
         self.if_login = False
         self.if_bound = False
         self.budget_prefix = False
-        self._media_cache_dir = Path(SESSION_PATH) / session_uuid / WECHAT_MEDIA_CACHE_DIR
+        self._media_cache_dir = AGENT_PATH / SESSION_PATH / session_uuid / WECHAT_MEDIA_CACHE_DIR
         self._media_cache_dir.mkdir(parents=True, exist_ok=True)
         self._media_threshold = config.get("WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB",
                                            WECHAT_MEDIA_DOWNLOAD_THRESHOLD_MB_DEFAULT) * 1024 * 1024
@@ -126,9 +126,9 @@ class WeChatBridge:
         self._bound_user_lock = threading.Lock()
         self._msg_queue: queue.Queue = queue.Queue()
         self._cdn_cache: dict[str, CachedMedia] = {}  # encrypt_query_param -> CachedMedia
-        self._cache_json = Path(SESSION_PATH) / session_uuid / WECHAT_MEDIA_CACHE_NAME
+        self._cache_json = AGENT_PATH / SESSION_PATH / session_uuid / WECHAT_MEDIA_CACHE_NAME
         self._msg_history: dict[str, dict] = {}  # msg_id -> {text, images, files, videos, voices, timestamp}
-        self._history_json = Path(SESSION_PATH) / session_uuid / WECHAT_HISTORY_NAME
+        self._history_json = AGENT_PATH / SESSION_PATH / session_uuid / WECHAT_HISTORY_NAME
 
     # [Callback functions for WeChat bot]
     def qr_callback(self, url: str):
@@ -520,12 +520,12 @@ class WeChatBridge:
                     file_downloaded_size += item.size
                     total_downloaded_size += item.size
         cdn_str = (f"WeChat CDN Status:\n"
-                   f" - Image: `{img_count}` received (`{img_downloaded}` downloaded, `{img_downloaded_size / (1024 * 1024)}` MB)\n"
-                   f" - Video: `{video_count}` received (`{video_downloaded}` downloaded, `{video_downloaded_size / (1024 * 1024)}` MB)\n"
-                   f" - Voice: `{voice_count}` received, total `{voice_ms / 1000}` s, "
-                   f"(`{voice_downloaded}` downloaded, `{voice_downloaded_size / (1024 * 1024)}` MB, `{voice_downloaded_ms / 1000}` s)\n"
-                   f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{file_downloaded_size / (1024 * 1024)}` MB)\n"
-                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024)}` MB\n")
+                   f" - Image: `{img_count}` received (`{img_downloaded}` downloaded, `{img_downloaded_size / (1024 * 1024):.3f}` MB)\n"
+                   f" - Video: `{video_count}` received (`{video_downloaded}` downloaded, `{video_downloaded_size / (1024 * 1024):.3f}` MB)\n"
+                   f" - Voice: `{voice_count}` received, total `{voice_ms / 1000:.2f}` s, "
+                   f"(`{voice_downloaded}` downloaded, `{voice_downloaded_size / (1024 * 1024):.3f}` MB, `{voice_downloaded_ms / 1000:.2f}` s)\n"
+                   f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{file_downloaded_size / (1024 * 1024):.3f}` MB)\n"
+                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024):.3f}` MB\n")
         return cdn_str
 
 
@@ -533,7 +533,7 @@ class WeChatBridge:
         """get the status of WeChat bot"""
         status_str = (f"Session UUID: `{self.session_uuid if self.session_uuid else "None"}`\n"
                       f"Login Status: {"`ONLINE`" if self.if_login else "`OFFLINE`"}\n"
-                      f"Login Error: `{self._login_error if self._login_error else "None"}`\n`"
+                      f"Login Error: `{self._login_error if self._login_error else "None"}`\n"
                       f"Bounded User: `{self._bound_user_id if self.if_bound else "None"}`\n\n"
                       f"Queued Messages: `{self._msg_queue.qsize()}`\n"
                       f"Logged User Messages: `{len(self._msg_history)}`\n"
@@ -548,7 +548,7 @@ class WeChatBridge:
         loop = self._loop
         try:
             self._bot = WeChatBot(
-                cred_path=WECHAT_CRED_PATH,
+                cred_path=str(AGENT_PATH / WECHAT_CRED_PATH),
                 on_qr_url=self.qr_callback,
                 on_scanned=self.scanned_callback,
                 on_expired=self.qr_expired_callback,
@@ -901,13 +901,13 @@ def get_cached_media_str(cm: CachedMedia, threshold_mb: int, show_text: bool = F
     if show_text and cm.text:
         parts.append(f"text in voice: \"{cm.text}\"")
     if cm.duration_ms is not None:
-        parts.append(f"voice duration: `{cm.duration_ms / 1000}` s")
+        parts.append(f"voice duration: `{cm.duration_ms / 1000:.2f}` s")
     if cm.local_path:
         parts.append(f"local path: `{cm.local_path}`")
     elif cm.size is not None:
         size_mb = cm.size / (1024 * 1024)
         if size_mb >= threshold_mb:
-            parts.append(f"(exceeds `{threshold_mb}` MB threshold in `{AGENT_CONFIGS_PATH}`, not downloaded)")
+            parts.append(f"(exceeds `{threshold_mb:.3f}` MB threshold, not downloaded)")
         else:
             parts.append(f"(`{cm.size}` bytes, not downloaded)")
     else:
@@ -915,5 +915,5 @@ def get_cached_media_str(cm: CachedMedia, threshold_mb: int, show_text: bool = F
     if cm.file_name:
         parts.append(f"file name: `{cm.file_name}`")
     if cm.size is not None:
-        parts.append(f"file size: `{cm.size / (1024 * 1024)}` MB")
+        parts.append(f"file size: `{cm.size / (1024 * 1024):.3f}` MB")
     return " | ".join(parts)

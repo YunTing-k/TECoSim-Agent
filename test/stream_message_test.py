@@ -31,7 +31,7 @@ def make_agent_ctx(enable_deepseek: bool = True) -> AgentContext:
         "MAIN_MODEL_STREAM": True,
         "MAIN_MODEL_CONTEXT": 1000000,
         "MAIN_MODEL_MAX_TOKENS": 8192,
-        "TIMEOUT_MS": 1000000,
+        "LLM_TIMEOUT_MS": 1000000,
     }
     ctx.agent_configs = {
         "CONTEXT_THRESHOLD": 0.9,

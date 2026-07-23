@@ -28,6 +28,7 @@ Revision:
 2026.6.14      Yu Huang      2.6      Fix: file_read_log path key, bg timeout tracking, if_summarized, cron file guard
 2026.7.15-16   Yu Huang      2.7      Add WeChat bot interaction support
 2026.7.17      Yu Huang      2.8      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
+2026.7.23      Yu Huang      2.9      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -41,7 +42,6 @@ import uuid
 import json
 import logging
 import threading
-from pathlib import Path
 from croniter import croniter
 from openai import OpenAI
 from datetime import datetime
@@ -52,7 +52,7 @@ from rich.console import Console
 from src.tool.wechat_support import WeChatBridge, WeChatQueuedMsg
 from src.tool.mcps_support import MCPToolRouter
 from src.tool.simulator_support import DesignManager, RunManager
-from src.agent.progress import SubAgentProgress, AgentStatus
+from src.agent.agent_types import SubAgentProgress, AgentStatus
 if TYPE_CHECKING: from src.agent.subagent import SubAgent
 from src.constants import *
 
@@ -306,11 +306,11 @@ class AgentContext:
 
         uuid_obj = uuid.UUID(self.session_uuid)
         uuid_str = uuid_obj.__str__()
-        path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
+        path = str(AGENT_PATH / SESSION_PATH / uuid_str / CRON_NAME)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(session_crons, f, indent=2, ensure_ascii=False)
 
-        with open(CRON_CONFIGS_PATH, "w", encoding="utf-8") as f:
+        with open(str(AGENT_PATH / CRON_CONFIGS_PATH), "w", encoding="utf-8") as f:
             json.dump(durable_crons, f, indent=2, ensure_ascii=False)
 
 
@@ -395,7 +395,7 @@ class AgentContext:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
             """context save"""
-            path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
+            path = str(AGENT_PATH / SESSION_PATH / uuid_str / CONTEXT_NAME)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
             """durable and session cron tasks save"""
@@ -415,12 +415,12 @@ class AgentContext:
             uuid_obj = uuid.UUID(self.session_uuid)
             uuid_str = uuid_obj.__str__()
             """context load"""
-            path = os.path.join(SESSION_PATH, uuid_str, CONTEXT_NAME)
+            path = str(AGENT_PATH / SESSION_PATH / uuid_str / CONTEXT_NAME)
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
             """session cron tasks load"""
             if not self.args.nocrons:
-                path = os.path.join(SESSION_PATH, uuid_str, CRON_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / CRON_NAME)
                 if os.path.exists(path):
                     with open(path, "r", encoding="utf-8") as f:
                         self.session_crons = json.load(f)

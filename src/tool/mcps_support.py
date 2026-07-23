@@ -13,6 +13,7 @@ Revision:
 2026.5.31      Yu Huang      1.1      Add keyboard interrupt & Define used file/dir. paths in constants.py
 2026.6.1       Yu Huang      1.2      Define all used status labels in constants.py
 2026.6.12      Yu Huang      1.3      Add threading lock in MCP router for subagent coordination
+2026.7.23      Yu Huang      1.4      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -20,7 +21,6 @@ MCP (Model Context Protocol) integration. Configures MCP clients via stdio/http/
 registers all MCP tool schemas (OpenAI-compatible) into the agent's tool list, maintains a tool-to-client registry, and
 provides sync/async tool-call dispatch. Supports CLI operations for MCP server management (add/toggle/remove).
 """
-import sys
 import json
 import asyncio
 import logging
@@ -207,7 +207,7 @@ def mcp_entry_cli(args: Namespace, console: Console):
         return
 
     """read configs"""
-    mcps_configs = load_configs(configs_path=MCPS_CONFIGS_PATH, name="MCPs", console=console)
+    mcps_configs = load_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), name="MCPs", console=console)
     if not (isinstance(mcps_configs, list) and all(isinstance(item, dict) for item in mcps_configs)):
         sys_log.warning(f"MCPs configs should be list of dict")
         console.print(f"MCPs configs should be list of dict", style="bold yellow")
@@ -227,6 +227,7 @@ def mcp_entry_cli(args: Namespace, console: Console):
         sys.exit(-1)
 
     """MCP action doesn't entry main program"""
+    sys_log.info("Program end for MCP entry cli")
     sys.exit(0)
 
 
@@ -315,7 +316,7 @@ def mcp_add_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console: Co
         else:
             raise RuntimeError(f"Unknown MCP type: {mcp_type}")
         """update config file"""
-        write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+        write_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), configs=mcps_configs, name="MCPs", console=console)
         mcps_configs.append(params)
         sys_log.debug(f"MCP: {name} with type: {mcp_type} configuration added")
         console.print(
@@ -342,7 +343,7 @@ def mcp_toggle_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
         elif len(toggle_idx) == 1:
             token = mcps_configs[toggle_idx[0]]["if_disabled"]
             mcps_configs[toggle_idx[0]]["if_disabled"] = not token
-            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), configs=mcps_configs, name="MCPs", console=console)
             if token:
                 sys_log.debug(f"MCP: {name} is enabled")
                 console.print(f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] is [{MAJOR_COLOR1}]enabled[/{MAJOR_COLOR1}]")
@@ -352,7 +353,7 @@ def mcp_toggle_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
         else:
             token = mcps_configs[toggle_idx[0]]["if_disabled"]
             mcps_configs[toggle_idx[0]]["if_disabled"] = not token
-            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), configs=mcps_configs, name="MCPs", console=console)
             if token:
                 sys_log.warning(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is enabled")
                 console.print(f"There are {len(toggle_idx)} MCPs with the same name: {name}. The first one is enabled", style="bold yellow")
@@ -380,12 +381,12 @@ def mcp_remove_cli(mcps_configs: list[dict[str, Any]], args: Namespace, console:
             console.print(f"MCP with name: {name} doesn't exist", style="bold yellow")
         elif len(del_idx) == 1:
             del mcps_configs[del_idx[0]]
-            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), configs=mcps_configs, name="MCPs", console=console)
             sys_log.debug(f"MCP: {name} removed")
             console.print(f"MCP: [{MAJOR_COLOR2}]{name}[/{MAJOR_COLOR2}] removed")
         else:
             del mcps_configs[del_idx[0]]
-            write_configs(configs_path=MCPS_CONFIGS_PATH, configs=mcps_configs, name="MCPs", console=console)
+            write_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), configs=mcps_configs, name="MCPs", console=console)
             sys_log.warning(f"There are {len(del_idx)} MCPs with the same name: {name}. The first one is removed")
             console.print(f"There are {len(del_idx)} MCPs with the same name: {name}. The first one is removed", style="bold yellow")
     except Exception as e:

@@ -24,6 +24,7 @@ Revision:
 2026.6.10      Yu Huang      2.2      Main/Fast model can configure deepseek support dependently & Revise the live TUI with
                                       the same console instance
 2026.6.13      Yu Huang      2.3      Add request_branch_medium + select_branch_func for 3-tier model switching
+2026.7.23      Yu Huang      2.4      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -109,7 +110,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
         "stream": ctx.api_configs["MAIN_MODEL_STREAM"],
         "messages": ctx.messages,
         "tools": ctx.tools,
-        "timeout": ctx.api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
+        "timeout": ctx.api_configs.get("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS) / 1000,
     }
     """reasoning support"""
     if ctx.api_configs["MAIN_MODEL_ENABLE_REASONING"]:
@@ -136,7 +137,7 @@ def request_branch_main(client: OpenAI, messages: list[dict[str, Any]], tools: l
         "max_tokens": api_configs["MAIN_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
+        "timeout": api_configs.get("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:
@@ -167,7 +168,7 @@ def request_branch_medium(client: OpenAI, messages: list[dict[str, Any]], tools:
         "max_tokens": api_configs["MEDIUM_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
+        "timeout": api_configs.get("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:
@@ -211,7 +212,7 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
         "max_tokens": api_configs["FAST_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
-        "timeout": api_configs.get("TIMEOUT_MS", DEFAULT_TIMEOUT_MS) / 1000,
+        "timeout": api_configs.get("LLM_TIMEOUT_MS", DEFAULT_LLM_TIMEOUT_MS) / 1000,
     }
     """tools"""
     if tools is not None:

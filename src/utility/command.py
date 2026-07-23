@@ -27,6 +27,7 @@ Revision:
 2026.6.14      Yu Huang      2.5      Fix: readonly remove dedup + error log, session list N/A tokens, skill load guard
 2026.6.29      Yu Huang      2.6      Add session title info when removing sessions
 2026.6.30      Yu Huang      2.7      Add time info to agent list builtin command
+2026.7.23      Yu Huang      2.8      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -39,7 +40,6 @@ import json
 import shutil
 import logging
 
-from pathlib import Path
 from functools import partial
 from typing import Callable, Any
 from rich.console import Console
@@ -50,7 +50,7 @@ from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, TaskStatus
 from src.tool import summarize_support
 from src.tool.skills_support import load_skill_content, get_skill_description
-from src.agent.progress import AgentStatus
+from src.agent.agent_types import AgentStatus
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -571,7 +571,7 @@ def skill_bound_command(name: str, func: Callable, *args, **kwargs):
 def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """manually load the full prompts of skill to context immediately"""
     try:
-        content = load_skill_content(SKILLS_PATH, skill_name, console, True)
+        content = load_skill_content(str(AGENT_PATH / SKILLS_PATH), skill_name, console, True)
         if content is None:
             sys_log.warning(f"Load skill {skill_name} manually failed")
             console.print(f"Load skill {skill_name} manually failed", style=f"bold yellow")
@@ -668,10 +668,10 @@ def cmd_mcp_list(args: list[str], ctx: AgentContext, board: Scoreboard, console:
 
     hint = Text()
     hint.append(f"  Tips: You can manage the MCPs with following command in shell: ", style=f"bright_black")
-    hint.append(f"python -m src.main mcp ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"{AGENT_EXECUTE} mcp ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[list | add | toggle | remove]\n", style=f"bold {MAJOR_COLOR1}")
     hint.append(f"        You can also manage the MCPs by manually editing the config file: ", style=f"bright_black")
-    hint.append(f"{MCPS_CONFIGS_PATH}", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"{str(AGENT_PATH / MCPS_CONFIGS_PATH)}", style=f"bold {MAJOR_COLOR2}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
@@ -707,7 +707,7 @@ def cmd_set_title(args: list[str], ctx: AgentContext, board: Scoreboard, console
 
 def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all sessions"""
-    session_dir = SESSION_PATH
+    session_dir = str(AGENT_PATH / SESSION_PATH)
     if not os.path.exists(session_dir):
         sys_log.error(f"Session directory {session_dir} does not exist")
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
@@ -757,7 +757,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
 
     hint = Text()
     hint.append(f"  Tips: You can resume any session with following command in shell: ", style=f"bright_black")
-    hint.append(f"python -m src.main -r ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"{AGENT_EXECUTE} -r ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[Session UUID]", style=f"bold {MAJOR_COLOR1}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -768,7 +768,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
 
 def cmd_session_remove(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """remove a session with UUID"""
-    session_dir = SESSION_PATH
+    session_dir = str(AGENT_PATH / SESSION_PATH)
     if not os.path.exists(session_dir):
         sys_log.error(f"Session directory {session_dir} does not exist")
         console.print(f"Session directory {session_dir} does not exist", style="bold red")
@@ -803,7 +803,7 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, board: Scoreboard, co
             return
 
         """read session title"""
-        context_file = os.path.join(os.path.join(session_dir, uuid_str), CONTEXT_NAME)
+        context_file = os.path.join(session_dir, uuid_str, CONTEXT_NAME)
         session_title = UNKNOWN_SESSION_TITLE
         try:
             with open(context_file, 'r', encoding='utf-8') as f:

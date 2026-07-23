@@ -13,7 +13,7 @@ from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import call_tools
 from src.agent.subagent import SubAgent
-from src.agent.progress import AgentStatus
+from src.agent.agent_types import AgentStatus
 from src.tool.tool_execute import execute_background_agents, check_background_agents
 from src.utility.basic_utils import load_configs
 from src.utility.client import config_client
@@ -26,8 +26,8 @@ console = Console()
 def setup_ctx():
     ctx = AgentContext()
     ctx.session_uuid = "test-session-001"
-    ctx.api_configs = load_configs(API_CONFIGS_PATH, "API", console)
-    ctx.agent_configs = load_configs(AGENT_CONFIGS_PATH, "Agent", console)
+    ctx.api_configs = load_configs(str(AGENT_PATH / API_CONFIGS_PATH), "API", console)
+    ctx.agent_configs = load_configs(str(AGENT_PATH / AGENT_CONFIGS_PATH), "Agent", console)
     ctx.llm_client = config_client(ctx, console)
     ctx.args.dangerously_allow_all = True
     return ctx
@@ -103,11 +103,11 @@ def test_subagent_dump():
     agent.run()
 
     import json
-    agent_dir = os.path.join(SESSION_PATH, ctx.session_uuid, SUBAGENT_DUMP_DIR, "test_dump_001")
+    agent_dir = str(AGENT_PATH / SESSION_PATH / ctx.session_uuid / SUBAGENT_DUMP_DIR / "test_dump_001")
     assert os.path.exists(os.path.join(agent_dir, CONTEXT_NAME)), "context.json missing"
     assert os.path.exists(os.path.join(agent_dir, MESSAGES_NAME)), "messages.json missing"
     assert os.path.exists(os.path.join(agent_dir, TASKS_NAME)), "tasks.json missing"
-    with open(os.path.join(agent_dir, "stats.json"), encoding="utf-8") as f:
+    with open(os.path.join(agent_dir, SUBAGENT_STATS_NAME), encoding="utf-8") as f:
         data = json.load(f)
     assert data["agent_id"] == "test_dump_001"
     assert data["status"] == "done"

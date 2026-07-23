@@ -31,7 +31,7 @@ Revision:
                                       Add reminder for LLM to manage workflow proactively & Define all inserted message labels in constans.py &
                                       Fix the bug of stream messages handling under direct connection API
 2026.6.11      Yu Huang      2.9      Add resume-display preview switches for write_file/bash command/bash result in print_messages &
-                                      integrate get_write_render/get_bash_render/get_bash_result_render into history replay
+                                      integrate get_syntax_render/get_bash_render/get_bash_result_render into history replay
 2026.6.11      Yu Huang      3.0      Add tools name display with color gradient in stream mode & Add switch if displaying the reasoning content
 2026.6.12      Yu Huang      3.1      Upgrade workflow guidelines to CONSTRAINT-level mandate (3+ steps MUST create_task) with Good/Bad examples
 2026.6.13      Yu Huang      3.2      Add subagent display in print_messages + migrate save/read_messages to file_io_support
@@ -44,6 +44,7 @@ Revision:
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 2026.7.17      Yu Huang      4.0      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 2026.7.18      Yu Huang      4.1      Revise WeChat Bot typing status & Support of fixing orphan and missing tool results in context
+2026.7.23      Yu Huang      4.2      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 
 Details:
 ---------
@@ -69,12 +70,13 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.live import Live
 from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
-from src.tool.file_io_support import read_messages, get_write_render
+from src.tool.file_io_support import read_messages, get_syntax_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.tool.ask_question import get_answers_render
+from src.tool.web_support import get_webfetch_str
 from src.tool.file_filter_support import get_grep_cmd
 from src.tool.cron_support import get_cron_create_str
-from src.agent.progress import SubAgentProgress, AgentStatus
+from src.agent.agent_types import SubAgentProgress, AgentStatus
 from src.utility.ui_info import render_subagent_line
 from src.context.agent_context import AgentContext
 from src.utility.basic_utils import (
@@ -466,6 +468,9 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
         display_glob_result = ctx.agent_configs["RESUME_DISPLAY_GLOB_RESULT"]
         display_grep = ctx.agent_configs["RESUME_DISPLAY_GREP_PREVIEW"]
         display_grep_result = ctx.agent_configs["RESUME_DISPLAY_GREP_RESULT"]
+        display_web_fetch_result = ctx.agent_configs["RESUME_DISPLAY_WEB_FETCH_RESULT"]
+        display_web_search_result = ctx.agent_configs["RESUME_DISPLAY_WEB_SEARCH_RESULT"]
+        display_wechat_status_result = ctx.agent_configs["RESUME_DISPLAY_WECHAT_STATUS_RESULT"]
         tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
@@ -582,13 +587,27 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             console.print(get_bash_render(get_grep_cmd(args, "rg")))
                             continue
                         if display_write and tool_name == TOOL_NAME_WRITE_FILE:
-                            console.print(get_write_render(args.get("path", ""), args.get("content", "(Failed to get write content)")))
+                            console.print(get_syntax_render(args.get("path", ""), args.get("content", "(Failed to get write content)")))
+                            continue
+                        if tool_name == TOOL_NAME_WEB_FETCH:
+                            console.print(get_bash_render(get_webfetch_str(args)))
+                            continue
+                        if tool_name == TOOL_NAME_WEB_SEARCH:
+                            console.print(get_bash_render(f"{TOOL_NAME_WEB_SEARCH}: {args.get("query", "(Failed to get query)")}"))
+                            continue
+                        if tool_name == TOOL_NAME_WECHAT_SEND_FILE:
+                            file_path = args.get("path")
+                            if file_path is not None:
+                                path_str = str(Path(file_path).resolve())
+                            else:
+                                path_str = "(Failed to get file path)"
+                            console.print(get_bash_render(f"{TOOL_NAME_WECHAT_SEND_FILE}: \"{path_str}\""))
                             continue
             elif msg["role"] == "tool":
                 if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_SPAWN_AGENT:
                     stats: None | dict[str, Any] = None
                     try:
-                        path = os.path.join(SESSION_PATH, ctx.session_uuid, SUBAGENT_DUMP_DIR, SUBAGENT_SUMMARIES_NAME)
+                        path = str(AGENT_PATH / SESSION_PATH / ctx.session_uuid / SUBAGENT_DUMP_DIR / SUBAGENT_SUMMARIES_NAME)
                         if os.path.exists(path):
                             with open(path, "r", encoding="utf-8") as f:
                                 summaries = json.load(f)
@@ -600,8 +619,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             agent_id=stats.get("agent_id", "(Unknown ID)"),
                             subagent_type=stats.get("subagent_type", "(Unknown Type)"),
                             subject=stats.get("subject", "(Unknown Subject)"),
-                            status=AgentStatus(stats.get("status",
-                                AGENT_UNKNOWN_LABEL)),  # defensive: never set at runtime
+                            status=AgentStatus(stats.get("status", AGENT_UNKNOWN_LABEL)),
                             tool_calls_done=stats.get("tool_calls_done", 0),
                             elapsed_s=stats.get("elapsed_s", 0.0),
                             input_tokens=stats.get("input_tokens", 0),
@@ -619,7 +637,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         result = {}
                     answers = result.get("answers", [])
                     if answers:
-                        get_answers_render(answers, console)
+                        console.print(get_answers_render(answers))
                     continue
                 if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_CREATE_CRON:
                     if display_cron:
@@ -640,17 +658,15 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                         try:
                             result = json.loads(msg["content"])
                             cron_task_amount: int = result.get("total_tasks", -1)
+                            cron_task_list = result.get("task_list", "(Failed to get cron tasks details)")
                             if cron_task_amount == -1:
-                                console.print(get_bash_result_render(f"(Failed to get total cron tasks)"))
+                                console.print(get_syntax_render("cron.md", f"Total cron tasks: (Failed to cron tasks amount)"
+                                                                           f"\n\n{cron_task_list}", "$cron"))
                             else:
-                                console.print(get_bash_result_render(f"Total cron tasks: {cron_task_amount}"))
-                            cron_task_str: str = result.get("task_list")
-                            if cron_task_str:
-                                console.print(get_msg_render(cron_task_str, CRON_ICON, "", as_md))
-                            else:
-                                pass
+                                console.print(get_syntax_render("cron.md", f"Total cron tasks: {cron_task_amount}\n\n"
+                                                                           f"{cron_task_list}", "$cron"))
                         except (json.JSONDecodeError, TypeError):
-                            console.print(get_bash_result_render("(Failed to get cron task)"))
+                            console.print(get_syntax_render("cron.md", "(Failed to get cron tasks)", "$cron"))
                     else:
                         pass
                     continue
@@ -702,6 +718,47 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             console.print(get_bash_result_render("(Failed to get grep result)"))
                     else:
                         pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_WEB_FETCH:
+                    if display_web_fetch_result:
+                        try:
+                            result = json.loads(msg["content"])
+                            web_fetch: str = result.get("content", "(Failed to get web fetch result)")
+                            console.print(get_syntax_render("web_fetch.md", web_fetch, "$web"))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_syntax_render("web_fetch.md", "(Failed to get web fetch result)", "$web"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_WEB_SEARCH:
+                    if display_web_search_result:
+                        try:
+                            result = json.loads(msg["content"])
+                            web_search: str = result.get("content", "(Failed to get web search result)")
+                            console.print(get_syntax_render("web_search.md", web_search, "$web"))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_syntax_render("web_search.md", "(Failed to get web search result)", "$web"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_WECHAT_STATUS:
+                    if display_wechat_status_result:
+                        try:
+                            result = json.loads(msg["content"])
+                            wechat_status: str = result.get("content", "(Failed to get WeChat status result)")
+                            console.print(get_syntax_render("wechat.md", wechat_status, "$stats"))
+                        except (json.JSONDecodeError, TypeError):
+                            console.print(get_syntax_render("wechat.md", "(Failed to get WeChat status result)", "$stats"))
+                    else:
+                        pass
+                    continue
+                if msg.get("tool_call_id") and tool_id_map.get(msg["tool_call_id"]) == TOOL_NAME_WECHAT_SEND_FILE:
+                    try:
+                        result = json.loads(msg["content"])
+                        send_info: str = result.get("info", "(Failed to get WeChat send info)")
+                        console.print(get_bash_result_render(send_info))
+                    except (json.JSONDecodeError, TypeError):
+                        console.print(get_bash_result_render("(Failed to get WeChat send info)"))
                     continue
             else:
                 sys_log.debug(f"Unknown role: {msg["role"]} in history massages")

@@ -19,6 +19,7 @@ Revision:
                                       labels in constans.py & Revise the live TUI with the same console instance
 2026.6.13      Yu Huang      1.7      Switch to configurable model tier (WEB_FETCH_MODEL/WEB_SEARCH_MODEL) via select_branch_func
 2026.6.29      Yu Huang      1.8      Fallback to DDGS when Exa/Tavily/Linkup backend fails
+2026.7.23      Yu Huang      1.9      Revise visibility of cron/web/WeChat tool calls
 
 Details:
 ---------
@@ -30,12 +31,11 @@ source hyperlinks.
 import httpx
 import socket
 import ipaddress
-from urllib.parse import urlparse
 import logging
 
+from urllib.parse import urlparse
 from typing import Any, TypedDict
 from datetime import datetime, timedelta
-
 from openai.types.chat import ChatCompletion
 from trafilatura import extract
 from exa_py import Exa
@@ -519,3 +519,12 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
         sys_log.error(f"Web search LLM process failed with error: {e}")
         console.print(f"Web search LLM process failed with error: {e}", style="bold red")
         return f"(Web search LLM process failed with error: {e})", False
+
+
+def get_webfetch_str(arguments: dict[str, Any]) -> str:
+    """get webfetch string from arguments only for display"""
+    url = arguments.get("url", "(Failed to get URL)")
+    fetch_prompt = arguments.get("prompt", "(Failed to get prompt)")
+    return (f"{TOOL_NAME_WEB_FETCH}:\n"
+            f"├─URL: \"{url}\"\n"
+            f"└─prompt: \"{fetch_prompt}\"")

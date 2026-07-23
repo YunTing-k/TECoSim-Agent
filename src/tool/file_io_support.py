@@ -32,7 +32,7 @@ Revision:
                                       enhance match chain with dash/space normalization, EOF-first rfind, pattern guards, hunk separator
 2026.6.11      Yu Huang      2.7      Apply highlight-then-split to edit preview: _highlight_and_wrap_edit preserves token styles
                                       across wrap boundaries (replaces per-chunk _highlight_fragment in render_normal/diff_block)
-2026.6.11      Yu Huang      2.8      Add get_write_render for write_file permission preview with syntax highlighting,
+2026.6.11      Yu Huang      2.8      Add get_syntax_render for write_file permission preview with syntax highlighting,
                                       line-number gutter, configurable truncation, and highlight-then-split wrapping
 2026.6.11      Yu Huang      2.9      Move format_file_for_llm to basic_utils.py (circular import) & integrate pipe-format
                                       into read_file/read_log_impl XML-wrapped LLM output with truncation footer
@@ -42,6 +42,7 @@ Revision:
 2026.7.3       Yu Huang      3.3      Fix of special Unicode render for bash, bash out, edit, write tool
 2026.7.3       Yu Huang      3.4      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      3.5      Add WeChat bot interaction support
+2026.7.23      Yu Huang      3.6      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -49,7 +50,7 @@ File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOO
 fallback matching with per-mode track & enhanced Unicode normalization (quotes/dashes/spaces) and EOF-first rfind;
 (3) preview renderers with pygments syntax highlighting, diff-style add/remove with soft-wrap, 3-part gutter bg,
 CJK display-width continuity, inter-hunk separator, and highlight-then-split token-style preservation;
-(4) write_file content preview (get_write_render) with lexer-based highlighting, line-number gutter, configurable
+(4) write_file content preview (get_syntax_render) with lexer-based highlighting, line-number gutter, configurable
 truncation, and highlight-then-split wrapping; (5) edit permission TUI with preview and match mode visibility;
 (6) read-only path checking; (7) session saving utility.
 """
@@ -61,7 +62,6 @@ import logging
 import unicodedata
 
 from typing import Any
-from pathlib import Path
 from rich.console import Group, Console
 from rich.panel import Panel
 from rich.style import Style
@@ -160,7 +160,7 @@ def _resolve_token_style(style_map: dict, token_type) -> Style | None:
 
 def read_messages(session_uuid: str, console: Console) -> list[dict[str, Any]]:
     """read messages (exclude system) from persistence file with given uuid"""
-    path = os.path.join(SESSION_PATH, session_uuid, MESSAGES_NAME)
+    path = str(AGENT_PATH / SESSION_PATH / session_uuid / MESSAGES_NAME)
     try:
         with open(path, "r", encoding="utf-8") as f:
             messages = json.load(f)
@@ -190,7 +190,7 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
         if not mute:
             console.print(f"[{MAJOR_COLOR2}]Messages[/{MAJOR_COLOR2}] of session [bright_black]{ctx.session_uuid}[/bright_black] converted")
 
-        path = os.path.join(SESSION_PATH, ctx.session_uuid, MESSAGES_NAME)
+        path = str(AGENT_PATH / SESSION_PATH / ctx.session_uuid / MESSAGES_NAME)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(serializable_messages, f, indent=2, ensure_ascii=False)
         sys_log.debug(f"Messages of session {ctx.session_uuid} saved")
@@ -887,12 +887,9 @@ def _render_diff_block(body: Text, lines: list[str], start_idx: int, budget: int
                 body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {content_bg}")
 
 
-def get_write_render(path: str, content: str) -> Text:
-    """render file content preview for write_file permission.
-
-    Syntax-highlighted (based on file extension), with line-number gutter,
-    configurable truncation, highlight-then-split long-line wrapping,
-    and visual padding above/below.
+def get_syntax_render(path: str, content: str, label: str = "$write") -> Text:
+    """render file content preview with syntax-highlighted (based on file extension), with line-number gutter,
+    configurable truncation, highlight-then-split long-line wrapping, and visual padding above/below.
     """
     lexer = _get_lexer(path) if path else TextLexer()
     content_style = Style(bgcolor=WRITE_VIEW_CONTENT_BG)
@@ -921,7 +918,7 @@ def get_write_render(path: str, content: str) -> Text:
     body = Text()
     for i in range(WRITE_VIEW_PADDING_LINES):
         if i == 0:
-            lbl = _pad_label("$write")
+            lbl = _pad_label(label)
             body.append(lbl, style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
             first, _ = fill_str_line("", offset=len(lbl))
             body.append(first, style=content_style)

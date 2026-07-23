@@ -14,6 +14,7 @@ Revision:
 2026.6.9       Yu Huang      1.2      Add design and run support for simulator & Revise the highlight of the IO console print
 2026.6.11      Yu Huang      1.3      Adopt XML-wrapped pipe-format in read_log_impl via format_file_for_llm
 2026.6.14      Yu Huang      1.4      Fix: decode with errors=replace, timeout default guard
+2026.7.23      Yu Huang      1.5      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -249,7 +250,7 @@ class DesignManager:
                     "designs": designs_data,
                     "revisions": revisions_data,
                 }
-                path = os.path.join(SESSION_PATH, uuid_str, DESIGNS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / DESIGNS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 sys_log.debug(f"Designs information of session {self.session_uuid} saved")
@@ -269,7 +270,7 @@ class DesignManager:
             try:
                 uuid_obj = uuid.UUID(self.session_uuid)
                 uuid_str = uuid_obj.__str__()
-                path = os.path.join(SESSION_PATH, uuid_str, DESIGNS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / DESIGNS_NAME)
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._designs.clear()
@@ -424,7 +425,7 @@ class RunManager:
                     "next_id": self._next_id,
                     "runs": runs_data,
                 }
-                path = os.path.join(SESSION_PATH, uuid_str, RUNS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / RUNS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 sys_log.debug(f"Runs information of session {self.session_uuid} saved")
@@ -444,7 +445,7 @@ class RunManager:
             try:
                 uuid_obj = uuid.UUID(self.session_uuid)
                 uuid_str = uuid_obj.__str__()
-                path = os.path.join(SESSION_PATH, uuid_str, RUNS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / RUNS_NAME)
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._runs.clear()
@@ -502,7 +503,7 @@ def init_design_impl(arguments: dict[str, Any], design_man: DesignManager, conso
             sys_log.error(f"{func_name} {FAIL_LABEL}: Initialize design failed with error: {init_info}")
             console.print(f"{func_name} {FAIL_LABEL}: Initialize design failed with error: {init_info}", style="bold red")
             return False, FAIL_LABEL, f"Initialize design failed with error: {init_info}"
-        path = os.path.join(SESSION_PATH, design_man.session_uuid, f"{SIM_DESIGN_NAME}{design_id}", f"{1}")
+        path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{1}")
         os.makedirs(path, exist_ok=True)
         source_path = design_man.simulator_path + "/config"
         shutil.copytree(src=source_path, dst=path, dirs_exist_ok=True)
@@ -537,7 +538,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
     try:
         design_id = arguments["design_id"]
         design_rev = arguments["design_rev"]
-        design_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_DESIGN_NAME}{design_id}", f"{design_rev}")
+        design_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
         """check the design"""
         if not os.path.exists(design_path):
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
@@ -600,7 +601,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                               f"by user. Simulator interrupted. Manage run failed with error: {insert_info}", style="bold red")
                 return False, CANCELLED_LABEL, (f"Simulation run (id: {run_id}) with design (id: {design_id}, rev: {design_rev}) "
                                                 f"is cancelled by user. Simulator interrupted. Manage run failed with error: {insert_info}")
-            run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+            run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
             os.makedirs(run_path, exist_ok=True)
             save_simulator_logs(run_path, stdout, stderr)
             sys_log.error(f"{func_name} {CANCELLED_LABEL}: "
@@ -632,7 +633,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                               f"Simulator interrupted. Manage run failed with error: {insert_info}", style="bold red")
                 return False, TIMEOUT_LABEL, (f"Simulation run with design (id: {design_id}, rev: {design_rev}) is timeout > "
                                               f"{run_man.time_out} s. Simulator interrupted. Manage run failed with error: {insert_info}")
-            run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+            run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
             os.makedirs(run_path, exist_ok=True)
             save_simulator_logs(run_path, stdout, stderr)
             sys_log.error(f"{func_name} {TIMEOUT_LABEL}: "
@@ -665,7 +666,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                 return False, FAIL_LABEL, (f"Simulation run with design (id: {design_id}, rev: {design_rev}) failed with "
                                            f"python wrapper runtime error {e}. Simulator interrupted. Manage run failed "
                                            f"with error: {insert_info}")
-            run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+            run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
             os.makedirs(run_path, exist_ok=True)
             save_simulator_logs(run_path, stdout, stderr)
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
@@ -694,7 +695,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                               f"runtime error. Simulator interrupted. Manage run failed with error: {insert_info}", style="bold red")
                 return False, FAIL_LABEL, (f"Simulation run with design (id: {design_id}, rev: {design_rev}) failed with "
                                            f"simulator runtime error. Simulator interrupted. Manage run failed with error: {insert_info}")
-            run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+            run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
             os.makedirs(run_path, exist_ok=True)
             save_simulator_logs(run_path, stdout, stderr)
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
@@ -719,7 +720,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                           f"run failed with error: {insert_info}", style="bold red")
             return False, FAIL_LABEL, (f"Simulation run with design (id: {design_id}, rev: {design_rev}) exits without error. "
                                        f"Manage run failed with error: {insert_info}")
-        run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+        run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
         os.makedirs(run_path, exist_ok=True)
         save_simulator_logs(run_path, stdout, stderr)
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: "
@@ -745,7 +746,7 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} doesn't exist")
             console.print(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} doesn't exist", style="bold red")
             return False, FAIL_LABEL, f"Run with id: {run_id} doesn't exist", -1, "(None)"
-        run_path = os.path.join(SESSION_PATH, run_man.session_uuid, f"{SIM_RUN_NAME}{run_id}")
+        run_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_RUN_NAME}{run_id}")
         if not os.path.exists(run_path):
             sys_log.error(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} exists, but its path doesn't exist")
             console.print(f"{func_name} {FAIL_LABEL}: Run with id: {run_id} exists, but its path doesn't exist", style="bold red")
@@ -757,12 +758,12 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
         if file_size > file_mb_limit * 1024 * 1024:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"Log with type: {log_type} is larger than {file_mb_limit} MB, please modify the `READ_FILE_MB_LIMIT` "
-                          f"in {AGENT_CONFIGS_PATH}")
+                          f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             console.print(f"{func_name} {FAIL_LABEL}:"
                           f"Log with type: {log_type} is larger than {file_mb_limit} MB, please modify the `READ_FILE_MB_LIMIT` "
-                          f"in {AGENT_CONFIGS_PATH}", style="bold red")
+                          f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold red")
             return False, FAIL_LABEL, (f"Log with type: {log_type} is larger than {file_mb_limit} MB, user should modify the "
-                                       f"`READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}"), -1, "(None)"
+                                       f"`READ_FILE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"), -1, "(None)"
         """read the log"""
         with open(log_path, 'r', encoding=READ_LOG_ENCODING_DEFAULT) as f:
             log_content = f.read()
@@ -862,14 +863,14 @@ def read_log_impl(arguments: dict[str, Any], run_man: RunManager, file_mb_limit:
                             f"type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                             f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is larger than "
                             f"{llm_kb_limit} KB and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` "
-                            f"in {AGENT_CONFIGS_PATH}")
+                            f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             console.print(f"{func_name} {TRUNCATED_LABEL}: Run id: {run_id} "
                           f"Type: {log_type}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}, actual read-in line: {read_lines}. Target read-in part is "
                           f"larger than {llm_kb_limit} KB and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` "
-                          f"in {AGENT_CONFIGS_PATH}", style="bold yellow")
+                          f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold yellow")
             return True, TRUNCATED_LABEL, (f"Target read-in part is larger than {llm_kb_limit} KB and truncated, user should "
-                                           f"modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}"), read_lines, formatted
+                                           f"modify the `READ_FILE_LLM_KB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"), read_lines, formatted
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}")
         console.print(f"{func_name} {FAIL_LABEL}: Read log failed with error: {e}", style="bold red")

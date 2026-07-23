@@ -9,13 +9,14 @@ Description: Task scoreboard for multi-agent coordination
 
 Revision:
 ---------
-2026.6.5-7       Yu Huang       1.0      First implementation
-2026.6.9         Yu Huang       1.1      Revise the highlight of the IO console print
-2026.6.10        Yu Huang       1.2      Add reminder for LLM to manage workflow proactively
-2026.6.12        Yu Huang       1.3      Add count_by_status() & fix Status display using .value
-2026.6.12        Yu Huang       1.4      Add to_dict() snapshot & upgrade Lock to RLock for reentrant safety
-2026.6.14        Yu Huang       1.5      Fix: nonexistent task existence check in deps, has_change gated on validated only
-2026.6.15        Yu Huang       1.6      Revise the task updating order with status-oriented
+2026.6.5-7     Yu Huang      1.0      First implementation
+2026.6.9       Yu Huang      1.1      Revise the highlight of the IO console print
+2026.6.10      Yu Huang      1.2      Add reminder for LLM to manage workflow proactively
+2026.6.12      Yu Huang      1.3      Add count_by_status() & fix Status display using .value
+2026.6.12      Yu Huang      1.4      Add to_dict() snapshot & upgrade Lock to RLock for reentrant safety
+2026.6.14      Yu Huang      1.5      Fix: nonexistent task existence check in deps, has_change gated on validated only
+2026.6.15      Yu Huang      1.6      Revise the task updating order with status-oriented
+2026.7.23      Yu Huang      1.7      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -39,7 +40,6 @@ Dependency management:
   - Resolved tasks (completed/deleted) are skipped during cycle traversal.
   - Self-blocking and blocking resolved tasks are filtered out.
 """
-import os
 import json
 import uuid
 import logging
@@ -585,7 +585,7 @@ class Scoreboard:
                 data = self.to_dict()
                 uuid_obj = uuid.UUID(self.session_uuid)
                 uuid_str = uuid_obj.__str__()
-                path = os.path.join(SESSION_PATH, uuid_str, TASKS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / TASKS_NAME)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 sys_log.debug(f"Scoreboard of session {self.session_uuid} saved")
@@ -603,7 +603,7 @@ class Scoreboard:
             try:
                 uuid_obj = uuid.UUID(self.session_uuid)
                 uuid_str = uuid_obj.__str__()
-                path = os.path.join(SESSION_PATH, uuid_str, TASKS_NAME)
+                path = str(AGENT_PATH / SESSION_PATH / uuid_str / TASKS_NAME)
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._tasks.clear()

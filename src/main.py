@@ -43,6 +43,7 @@ Revision:
 2026.7.15-16   Yu Huang      3.9      Add WeChat bot interaction support
 2026.7.17      Yu Huang      4.0      Support of WeChat bot msg insert even if the tool call round is not end
 2026.7.18      Yu Huang      4.1      Support of fixing orphan and missing tool results in context & Add session summary in WeChat Bot
+2026.7.23      Yu Huang      4.2      Add launch support in arbitrary path
 
 Details:
 ---------
@@ -54,7 +55,6 @@ user input (with task reminder injection) → LLM request → tool execution (wi
 import os
 import openai
 
-from pathlib import Path
 from src.utility import sys_logger, cli_args, ui_info, client, command, agent_listen
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
@@ -90,6 +90,7 @@ if __name__ == '__main__':
     """start banner and TECoSim agent dev info"""
     ui_info.log_tecosim_agent_info()
     ui_info.console_tecosim_agent_info(console)
+    sys_log.debug(f"Current Agent path: {str(AGENT_PATH)}")
 
     """create agent context"""
     ctx = AgentContext()
@@ -99,16 +100,16 @@ if __name__ == '__main__':
     console.print(f"TECoSim Agent [{MAJOR_COLOR2}]context[/{MAJOR_COLOR2}] created")
 
     """load API configs and config LLM client"""
-    ctx.api_configs = load_configs(configs_path=API_CONFIGS_PATH, name="API", console=console)
+    ctx.api_configs = load_configs(configs_path=str(AGENT_PATH / API_CONFIGS_PATH), name="API", console=console)
     ctx.llm_client = client.config_client(ctx=ctx, console=console)
 
     """load agent configs"""
-    ctx.agent_configs = load_configs(configs_path=AGENT_CONFIGS_PATH, name="Agent", console=console)
+    ctx.agent_configs = load_configs(configs_path=str(AGENT_PATH / AGENT_CONFIGS_PATH), name="Agent", console=console)
 
     """load skills and query prompts"""
     if not ctx.args.noskills:
         # skills are readonly in runtime
-        ctx.skills = skills_support.load_all_skill_metas(skills_root=SKILLS_PATH, console=console)
+        ctx.skills = skills_support.load_all_skill_metas(skills_root=str(AGENT_PATH / SKILLS_PATH), console=console)
     else:
         sys_log.debug("All skills are disabled in main agent and subagent")
         console.print("All skills are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
@@ -116,7 +117,7 @@ if __name__ == '__main__':
     """load MCPs configs and configure MCPs"""
     if not ctx.args.nomcps:
         # MCPs are readonly in runtime
-        ctx.mcps_configs = load_configs(configs_path=MCPS_CONFIGS_PATH, name="MCPs", console=console)
+        ctx.mcps_configs = load_configs(configs_path=str(AGENT_PATH / MCPS_CONFIGS_PATH), name="MCPs", console=console)
     else:
         sys_log.debug("All MCPs are disabled in main agent and subagent")
         console.print("All MCPs are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
@@ -171,7 +172,7 @@ if __name__ == '__main__':
     """load durable cron tasks"""
     if not ctx.args.nocrons:
         # cron tasks can be modified in runtime, first read durable tasks
-        ctx.durable_crons = load_configs(configs_path=CRON_CONFIGS_PATH, name="Durable Crons", console=console)
+        ctx.durable_crons = load_configs(configs_path=str(AGENT_PATH / CRON_CONFIGS_PATH), name="Durable Crons", console=console)
     else:
         sys_log.debug("All cron tasks are disabled in main agent and subagent")
         console.print("All cron tasks are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
@@ -336,8 +337,8 @@ if __name__ == '__main__':
                     ctx.user_prompts -= 1
             else:  # if send tool calls' results, retry
                 pass
-            sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, retry")
-            console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["TIMEOUT_MS"] / 1000} s, retry", style="bold yellow")
+            sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["LLM_TIMEOUT_MS"] / 1000} s, retry")
+            console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["LLM_TIMEOUT_MS"] / 1000} s, retry", style="bold yellow")
             continue
         except RequestLLMCancelled:
             """LLM API request cancelled"""

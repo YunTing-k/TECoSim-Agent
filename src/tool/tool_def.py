@@ -45,7 +45,7 @@ Revision:
 2026.6.11      Yu Huang      4.0      Unify bash command render as edit-view style (line-number gutter + pygments highlight-
                                       then-wrap); add result preview with line numbers, configurable truncation and padding
 2026.6.11      Yu Huang      4.1      Adopt XML-wrapped pipe-separated line-number format for read_file/read_log LLM output &
-                                      integrate get_write_render into write_file permission preview & add resume-display switches
+                                      integrate get_syntax_render into write_file permission preview & add resume-display switches
                                       for write/bash preview in print_messages
 2026.6.12      Yu Huang      4.2      Add task tool result feedback (guidance on create/update) & query_task ownership-grouped summary
 2026.6.12      Yu Huang      4.3      Basic suabgent support realization & Add bash temp script file on quoting retry
@@ -62,6 +62,7 @@ Revision:
 2026.7.17      Yu Huang      5.2      Fix: last response of LLM won't be missed if bot keep sending WeChat msg & WeChat tool
                                       is correctly inserted to tool prompts
 2026.7.18      Yu Huang      5.3      Add tool of checking WeChat status & Disable ask user question in WeChat Bot
+2026.7.23      Yu Huang      5.4      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 
 Details:
 ---------
@@ -76,7 +77,6 @@ import subprocess
 import logging
 import tempfile
 
-from pathlib import Path
 from typing import Any
 from datetime import datetime
 from rich.progress import Progress
@@ -90,16 +90,16 @@ from src.tool.file_filter_support import glob_impl, get_grep_cmd, grep_impl
 from src.tool.file_io_support import (
     match_line_ranges, find_actual_string, ask_edit_tui, check_read_only, match_line_trimmed, match_flexible_indent,
     get_enhanced_debug_info, match_escape_literal, match_trimmed_boundary, match_unicode_escape, _unescape_literals,
-    _unescape_unicode, get_write_render)
+    _unescape_unicode, get_syntax_render)
 from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
-from src.tool.web_support import check_url, web_single_fetch, web_fetch_process
-from src.tool.web_support import web_search_top, web_search_process
+from src.tool.web_support import (
+    check_url, web_single_fetch, web_fetch_process, get_webfetch_str, web_search_top, web_search_process)
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk, get_bash_render, get_bash_result_render
 from src.tool.ask_question import ask_user_question_tui, get_answers_render, AskUserCancelled
-from src.agent.progress import SUPPORTED_TYPES_DESC
+from src.agent.agent_types import SUPPORTED_TYPES_DESC
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -230,7 +230,7 @@ def tool_spawn_agent_def() -> dict[str, Any]:
                         "type": "string",
                         "enum": ["main", "medium", "fast"],
                         "description": "Model tier: main (powerful, slower), medium (balanced), or fast (cheaper, quicker). "
-                                       f"Default in {AGENT_CONFIGS_PATH}",
+                                       f"Default in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}",
                     },
                     "if_background": {
                         "type": "boolean",
@@ -364,7 +364,7 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
         finally:
             resume_from_permission(progress)
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected")
-        get_answers_render(answers, progress.console)
+        progress.console.print(get_answers_render(answers))
         return {
             "status": SUCCESS_LABEL,
             "answers": answers,
@@ -734,7 +734,7 @@ def tool_create_cron_def() -> dict[str, Any]:
                            "## Durability\n"
                            "- By default (`durable`: false) the task lives only in this session, it will be written to the "
                            "session folder\n"
-                           f"- Pass `durable`: true to write to {CRON_CONFIGS_PATH} so the task survives across sessions\n"
+                           f"- Pass `durable`: true to write to {str(AGENT_PATH / CRON_CONFIGS_PATH)} so the task survives across sessions\n"
                            f"- Only use `durable`: true when the user explicitly asks for the task to persist (\"keep doing "
                            f"this every day\", \"set this up permanently\")."
                            f"- Most \"remind me in 5 minutes\" / \"check back in an hour\" requests should stay session-only\n"
@@ -762,8 +762,8 @@ def tool_create_cron_def() -> dict[str, Any]:
                     },
                     "durable": {
                         "type": "boolean",
-                        "description": f"False (default) = session only, true = persist to {CRON_CONFIGS_PATH} and survive "
-                                       f"restarts. Use true only when the user asks the task to survive across sessions.",
+                        "description": f"False (default) = session only, true = persist to {str(AGENT_PATH / CRON_CONFIGS_PATH)} "
+                                       f"and survive restarts. Use true only when the user asks the task to survive across sessions.",
                         "default": False,
                     },
                 },
@@ -844,7 +844,7 @@ def query_cron(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
     func_name = TOOL_NAME_QUERY_CRON
     cron_str = get_cron_list(ctx.cron_tasks)
     sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Total cron tasks {len(ctx.cron_tasks)}")
-    progress.console.print(get_bash_result_render(f"Total cron tasks: {len(ctx.cron_tasks)}"))
+    progress.console.print(get_syntax_render("cron.md", f"Total cron tasks: {len(ctx.cron_tasks)}\n\n{cron_str}"), "$cron")
     return {"status": SUCCESS_LABEL,
             "total_tasks": len(ctx.cron_tasks),
             "task_list": cron_str}
@@ -856,8 +856,8 @@ def tool_remove_cron_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_REMOVE_CRON,
-            "description": f"Remove a cron task previously scheduled with `{TOOL_NAME_CREATE_CRON}` with given id. Remove it from {CRON_CONFIGS_PATH} "
-                           f"(durable tasks) or session-only files (session-only tasks)",
+            "description": f"Remove a cron task previously scheduled with `{TOOL_NAME_CREATE_CRON}` with given id. Remove "
+                           f"it from {str(AGENT_PATH / CRON_CONFIGS_PATH)} (durable tasks) or session-only files (session-only tasks)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1470,13 +1470,13 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}")
+                          f"the `READ_FILE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             progress.console.print(f"{func_name} {FAIL_LABEL}: "
                                    f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}", style="bold red")
+                                   f"modify the `READ_FILE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold red")
             return {"status": FAIL_LABEL,
                     "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the `READ_FILE_MB_LIMIT` "
-                            f"in {AGENT_CONFIGS_PATH}"}
+                            f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"}
         """read the file"""
         encoding = arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)
         with open(file_path, 'r', encoding=encoding) as f:
@@ -1569,15 +1569,15 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                           f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                           f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
                           f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                          f"please modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}")
+                          f"please modify the `READ_FILE_LLM_KB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             progress.console.print(f"{func_name} {TRUNCATED_LABEL}: "
                                    f"Path: {file_path}, method: {method}, total line: {total_line_num}, read-in line: {read_line_num}, "
                                    f"offset: {offset_line_num}, encoding: {encoding}, actual read-in line: {read_lines}. "
                                    f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB "
-                                   f"and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}", style="bold yellow")
+                                   f"and truncated, please modify the `READ_FILE_LLM_KB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold yellow")
             return {"status": TRUNCATED_LABEL,
                     "info": f"Target read-in part is larger than {ctx.agent_configs["READ_FILE_LLM_KB_LIMIT"]} KB and truncated, "
-                            f"user should modify the `READ_FILE_LLM_KB_LIMIT` in {AGENT_CONFIGS_PATH}",
+                            f"user should modify the `READ_FILE_LLM_KB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}",
                     "total_line": read_lines,
                     "file_content": formatted}
     except UnicodeDecodeError as e:
@@ -1651,7 +1651,7 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         pause_for_permission(progress)
         file_path = arguments["path"]
         content: str = arguments["content"]
-        progress.console.print(get_write_render(file_path, content))
+        progress.console.print(get_syntax_render(file_path, content))
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, "
                                          f"mode: {arguments.get("mode", WRITE_FILE_MODE_DEFAULT)}, "
@@ -1814,14 +1814,14 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if file_size > ctx.agent_configs["READ_FILE_MB_LIMIT"] * 1024 * 1024:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"File: {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please modify "
-                          f"the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}")
+                          f"the `READ_FILE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             progress.console.print(f"{func_name} {FAIL_LABEL}: "
                                    f"File {file_path} is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, please "
-                                   f"modify the `READ_FILE_MB_LIMIT` in {AGENT_CONFIGS_PATH}",
+                                   f"modify the `READ_FILE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}",
                                    style="bold red")
             return {"status": FAIL_LABEL,
                     "info": f"File is larger than {ctx.agent_configs["READ_FILE_MB_LIMIT"]} MB, user should modify the `READ_FILE_MB_LIMIT` "
-                            f"in {AGENT_CONFIGS_PATH}"}
+                            f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"}
         """read the file"""
         encoding = arguments.get("encoding", EDIT_FILE_ENCODING_DEFAULT)
         with open(file_path, 'r', encoding=encoding) as f:
@@ -2075,7 +2075,7 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
             return {"status": FAIL_LABEL, "info": f"Skill {name} is not available"}, None
         else:
             # load the content
-            content = load_skill_content(SKILLS_PATH, name, progress.console)
+            content = load_skill_content(str(AGENT_PATH / SKILLS_PATH), name, progress.console)
             if content is None:
                 sys_log.error(f"{func_name} {FAIL_LABEL}: Read content of skill {name} failed")
                 progress.console.print(f"{func_name} {FAIL_LABEL}: Read content of skill {name} failed", style="bold red")
@@ -2155,6 +2155,7 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """check URL"""
+        progress.console.print(get_bash_render(get_webfetch_str(arguments)))
         check_info, check_success = check_url(url, progress.console)
         if not check_success:
             sys_log.error(f"{func_name} {FAIL_LABEL}: URL {url} is not valid. Detail: {check_info}")
@@ -2181,12 +2182,12 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         if if_success:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: URL {url} fetched and processed successfully. If redirect: {if_redirect}, "
                           f"final URL: {final_url}")
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: URL {url} fetched and processed successfully. If redirect: "
-                                   f"{if_redirect}, final URL: {final_url}", style="bright_black")
             if if_redirect:
-                return {"status": SUCCESS_LABEL, "content": f"URL: {url} is redirected to {final_url}.\n\n" + f"{process_content}"}
+                content = f"URL: {url} is redirected to {final_url}.\n\n" + f"{process_content}"
             else:
-                return {"status": SUCCESS_LABEL, "content": f"{process_content}"}
+                content = process_content
+            progress.console.print(get_syntax_render("web_fetch.md", content, "$web"))
+            return {"status": SUCCESS_LABEL, "content": content}
         else:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Failed to process content from URL: {url} with LLM. If redirect: {if_redirect}, "
                           f"final URL: {final_url}. Error detail: {process_content}")
@@ -2272,6 +2273,7 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
 
         """web search"""
+        progress.console.print(get_bash_render(f"{TOOL_NAME_WEB_SEARCH}: {query}"))
         content, content_info = ui_info.loading_spinner(
             web_search_top, query, ctx, progress.console,
             waiting_desc="Web searching ...", done_desc="Web search time cost",
@@ -2288,7 +2290,7 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
         process_content, if_success = web_search_process(query, content, ctx, progress.console)
         if if_success:
             sys_log.debug(f"{func_name} {SUCCESS_LABEL}: {query} searched and processed successfully")
-            progress.console.print(f"{func_name} {SUCCESS_LABEL}: {query} searched and processed successfully", style="bright_black")
+            progress.console.print(get_syntax_render("web_search.md",  process_content,"$web"))
             return {"status": SUCCESS_LABEL, "content": f"{process_content}"}
         else:
             sys_log.error(f"{func_name} {FAIL_LABEL}: Failed to search query with: {query} with LLM. Error detail: {process_content}")
@@ -2336,9 +2338,10 @@ def wechat_status(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
             return {"status": FAIL_LABEL, "info": "WeChat bot is not running"}
         """get status"""
         status = ctx.wechat_bot.get_status()
+        progress.console.print(get_syntax_render("wechat.md", status, "$stats"))
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done")
         progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done", style="bright_black")
-        return {"status": SUCCESS_LABEL, "info": status}
+        return {"status": SUCCESS_LABEL, "content": status}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Get WeChat bot status failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Get WeChat bot status failed with error: {e}", style="bold red")
@@ -2407,13 +2410,13 @@ def wechat_send_file(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         if file_size > ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"] * 1024 * 1024:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"File {file_path} is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, "
-                          f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}")
+                          f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
             progress.console.print(f"{func_name} {FAIL_LABEL}: "
                                    f"File {file_path} is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, "
-                                   f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}", style="bold red")
+                                   f"please modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold red")
             return {"status": FAIL_LABEL,
                     "info": f"File is larger than {ctx.agent_configs["WECHAT_MEDIA_UPLOAD_THRESHOLD_MB"]} MB, user should "
-                            f"modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {AGENT_CONFIGS_PATH}"}
+                            f"modify the `WECHAT_MEDIA_UPLOAD_THRESHOLD_MB` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"}
         """check the budget"""
         if ctx.wechat_reply_count + 1 >= WECHAT_REPLY_BUDGET_MAX:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
@@ -2428,6 +2431,7 @@ def wechat_send_file(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         """send the media"""
         path_str = str(file_path.resolve())
         ext = file_path.suffix.lower()
+        progress.console.print(get_bash_render(f"{TOOL_NAME_WECHAT_SEND_FILE}: \"{path_str}\""))
         if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
             content = {"image": path_str}
         elif ext in (".mp4", ".mov", ".webm", ".mkv", ".avi"):
@@ -2441,8 +2445,7 @@ def wechat_send_file(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
         ctx.wechat_reply_count += 1
         ctx.wechat_reply_total_count += 1
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) sent via WeChat")
-        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Media with path: {path_str} ({file_size} bytes) "
-                               f"sent via WeChat", style="bright_black")
+        progress.console.print(get_bash_result_render(f"Media with path: {path_str} ({file_size} bytes) sent via WeChat successfully"))
         return {"status": SUCCESS_LABEL, "info": f"Media with path: {path_str} ({file_size} bytes) sent via WeChat"}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Send media failed with error: {e}")

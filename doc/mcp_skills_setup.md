@@ -33,6 +33,10 @@ MCP config file is located at `./mcps/mcps_configs.json`, supporting three trans
 优先使用命令行管理 MCP，命令行无法满足需求时再手动编辑配置文件。
 Prefer using the CLI to manage MCPs. Only manually edit the config file when the CLI cannot meet your needs.
 
+> **Windows 用户**：使用预构建 exe 时，将下方命令中的 `python -m src.main` 替换为 `TECoSimAgent.exe` 即可（如 `TECoSimAgent.exe mcp list`）。
+> 
+> **Windows Users**: When using the pre-built exe, replace `python -m src.main` with `TECoSimAgent.exe` in the commands below (e.g., `TECoSimAgent.exe mcp list`).
+
 ```bash
 # 查看所有 MCP 服务器 | List all MCP servers
 python -m src.main mcp list
