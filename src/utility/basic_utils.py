@@ -25,6 +25,7 @@ Revision:
 2026.7.1       Yu Huang      2.1      Support of plain text of HTML tag rendering in LLM's response
 2026.7.3       Yu Huang      2.2      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.17      Yu Huang      2.3      Fix: block quoted won't be suppressed by _escape_html_outside_code
+2026.7.25      Yu Huang      2.4      Fix: prevent truncation in Markdown table with overflow="fold"
 
 Details:
 ---------
@@ -104,7 +105,7 @@ class _RoundedTableElement(TableElement):
             for column in self.header.row.cells:
                 heading = column.content.copy()
                 heading.stylize("markdown.table.header")
-                table.add_column(heading)
+                table.add_column(heading, overflow="fold")
 
         if self.body is not None:
             for row in self.body.rows:
@@ -136,7 +137,7 @@ class _StyledImageItem(ImageItem):
         title = self.text or Text(self.destination.strip("/").rsplit("/", 1)[-1])
         if self.hyperlinks:
             title.stylize(link_style)
-        text = Text.assemble("🌆 ", title, " ")
+        text = Text.assemble("🖼️ ", title, " ")
         style = console.get_style("markdown.image", default="none")
         text.stylize(style)
         yield text

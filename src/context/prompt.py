@@ -45,6 +45,7 @@ Revision:
 2026.7.17      Yu Huang      4.0      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 2026.7.18      Yu Huang      4.1      Revise WeChat Bot typing status & Support of fixing orphan and missing tool results in context
 2026.7.23      Yu Huang      4.2      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
+2026.7.26      Yu Huang      4.3      Fix: prevent orphan lines in stream messages display with final live.update
 
 Details:
 ---------
@@ -1123,7 +1124,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
 
     """process each chunk"""
     with Live(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names, base_time, msg_color_list),
-              refresh_per_second=STREAM_DISPLAY_REFRESH_RATE, console=console, transient=True) as live:
+              refresh_per_second=STREAM_DISPLAY_REFRESH_RATE, console=console, transient=False) as live:
         for chunk in response:
             if not chunk.choices:
                 continue
@@ -1184,9 +1185,8 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
             tool_names = [tc["function"]["name"] for tc in collected_tool_calls.values() if tc["function"]["name"].strip()]
             live.update(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names if tool_names else None,
                                           base_time, msg_color_list))
-
-    """print the final content"""
-    console.print(get_block_render(collected_reasoning, collected_content, as_md, show_reason))
+        # print the final content without orphan lines
+        live.update(get_block_render(collected_reasoning, collected_content, as_md, show_reason))
 
     """check finish reason"""
     sys_log.debug(f"Finish reason: {final_finish_reason}")

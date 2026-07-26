@@ -219,8 +219,8 @@ def resume_session(session_uuid: str, console: Console, cmd_object: BuiltinComma
             raise RuntimeError(f"Resuming session of {uuid_str}'s path not exists")
         try:
             session = get_prompt_session(path, cmd_object)
-            sys_log.debug(f"Session of {uuid_str} resumed")
-            console.print(f"Session of [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] resumed")
+            sys_log.debug(f"Session of {uuid_str} is resuming")
+            console.print(f"Session of [{MAJOR_COLOR2}]{uuid_str}[/{MAJOR_COLOR2}] is resuming")
             return uuid_str, session
         except Exception as e:
             sys_log.error(f"Failed to resume session of {uuid_str} with error: {e}")

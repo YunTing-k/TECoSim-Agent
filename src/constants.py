@@ -29,7 +29,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 3
+TECOSIM_AGENT_UPDATE_VERSION: int = 4
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -55,6 +55,7 @@ MESSAGES_NAME: str = "messages.json"
 CONTEXT_NAME: str = "context.json"
 CRON_NAME: str = "cron_configs.json"
 TASKS_NAME: str = "tasks.json"
+WEBFETCH_CACHE_NAME: str = "webfetch_cache.json"
 RUNS_NAME: str = "runs.json"
 DESIGNS_NAME: str = "designs.json"
 WECHAT_MEDIA_CACHE_DIR: str = "wechat_cache"
@@ -481,6 +482,8 @@ SKILL_END_LABEL: str = "</skill_content>"
 SKILL_ICON: str = "❖"
 
 """Web Fetch"""
+# Web fetch params
+WEB_FETCH_CACHE_DEFAULT_TIME_S: int = 1000
 # Web fetch TUI view
 URL_CACHE_VIEW_MAX: int = 8
 URL_CACHE_CONTENT_CHAR_MAX: int = 100

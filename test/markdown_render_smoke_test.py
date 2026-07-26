@@ -14,31 +14,28 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.getcwd())
 sys.path.insert(0, os.path.join(os.getcwd(), "src"))
 
-import logging
+import time
+import argparse
 
-logging.basicConfig(level=logging.CRITICAL)
-
-import rich.box
-from rich.console import Console, ConsoleOptions, RenderResult
-from rich.style import Style
+from rich.console import Console
 from rich.table import Table as RichTable
-from rich.rule import Rule
 from rich.text import Text
 from rich.theme import Theme
-from rich.markdown import TableElement, HorizontalRule, ImageItem
+from rich.live import Live
+from rich.layout import Layout
 from src.utility.basic_utils import ReasonMD, ContentMD
 from src.constants import (
     REASON_ICON, REASON_ICON_SYLTE,
     CONTENT_ICON, CONTENT_ICON_SYLTE,
-    MESSAGE_PRINT_MARGIN, REASON_STYLE,
-    AGENT_CONSOLE_ICON,
-    MARKDOWN_TABLE_COLOR, MARKDOWN_TABLE_HEADER_STYLE,
+    MESSAGE_PRINT_MARGIN, MARKDOWN_TABLE_HEADER_STYLE,
     MARKDOWN_LIST_BULLET_COLOR, MARKDOWN_LIST_NUMBER_COLOR,
     MARKDOWN_INLINE_CODE_COLOR, MARKDOWN_BLOCKQUOTE_STYLE,
     MARKDOWN_LINK_COLOR, MARKDOWN_HR_COLOR,
     MARKDOWN_IMAGE_STYLE,
     MARKDOWN_H1_STYLE, MARKDOWN_H2_STYLE,
     MARKDOWN_H3_STYLE, MARKDOWN_H4_STYLE, MARKDOWN_H5_STYLE, MARKDOWN_H6_STYLE,
+    AGENT_CONSOLE_ICON, STREAM_DISPLAY_MAX_REASON_LINE,
+    STREAM_DISPLAY_MAX_CONTENT_LINE,
 )
 
 console = Console(theme=Theme({
@@ -48,10 +45,10 @@ console = Console(theme=Theme({
     "markdown.h4": MARKDOWN_H4_STYLE,
     "markdown.h5": MARKDOWN_H5_STYLE,
     "markdown.h6": MARKDOWN_H6_STYLE,
-    "markdown.table.header": MARKDOWN_TABLE_HEADER_STYLE,
+    "markdown.code": MARKDOWN_INLINE_CODE_COLOR,
     "markdown.item.bullet": MARKDOWN_LIST_BULLET_COLOR,
     "markdown.item.number": MARKDOWN_LIST_NUMBER_COLOR,
-    "markdown.code": MARKDOWN_INLINE_CODE_COLOR,
+    "markdown.table.header": MARKDOWN_TABLE_HEADER_STYLE,
     "markdown.block_quote": MARKDOWN_BLOCKQUOTE_STYLE,
     "markdown.link_url": MARKDOWN_LINK_COLOR,
     "markdown.hr": MARKDOWN_HR_COLOR,
@@ -59,96 +56,7 @@ console = Console(theme=Theme({
 }))
 
 
-# --- custom table element with rounded borders ---
-
-class _RoundedTableElement(TableElement):
-    """Same as Rich's TableElement but with box.ROUNDED borders."""
-
-    def __rich_console__(
-        self, _console: Console, options: ConsoleOptions
-    ) -> RenderResult:
-        table = RichTable(
-            box=rich.box.ROUNDED,
-            pad_edge=False,
-            padding=(0, 2),
-            border_style=MARKDOWN_TABLE_COLOR,
-            style="markdown.table.border",
-            show_edge=True,
-            show_lines=True,
-            collapse_padding=True,
-        )
-
-        if self.header is not None and self.header.row is not None:
-            for column in self.header.row.cells:
-                heading = column.content.copy()
-                heading.stylize("markdown.table.header")
-                table.add_column(heading)
-
-        if self.body is not None:
-            for row in self.body.rows:
-                row_content = [element.content for element in row.cells]
-                table.add_row(*row_content)
-
-        yield table
-
-
-# --- custom horizontal rule: continuous line with center dot ---
-
-class _StyledHorizontalRule(HorizontalRule):
-    """Horizontal rule with ─ continuous line and · center decoration."""
-
-    def __rich_console__(
-        self, _console: Console, options: ConsoleOptions
-    ) -> RenderResult:
-        style = _console.get_style("markdown.hr", default="none")
-        yield Rule(title=Text(f" {AGENT_CONSOLE_ICON} ", style="#696969"), characters="─", style=style, align="center")
-        yield Text()
-
-
-# --- custom image placeholder with themed color ---
-
-class _StyledImageItem(ImageItem):
-    """ImageItem that uses markdown.image theme style for placeholder color."""
-
-    def __rich_console__(
-        self, _console: Console, options: ConsoleOptions
-    ) -> RenderResult:
-        link_style = Style(link=self.link or self.destination or None)
-        title = self.text or Text(self.destination.strip("/").rsplit("/", 1)[-1])
-        if self.hyperlinks:
-            title.stylize(link_style)
-        text = Text.assemble("🌆 ", title, " ")
-        style = _console.get_style("markdown.image", default="none")
-        text.stylize(style)
-        yield text
-
-
-# --- local Markdown subclasses with rounded tables ---
-
-class LocalReasonMD(ReasonMD):
-    elements = dict(ReasonMD.elements)
-    elements["table_open"] = _RoundedTableElement
-    elements["hr"] = _StyledHorizontalRule
-    elements["image"] = _StyledImageItem
-
-    def __init__(self, markup: str):
-        super().__init__(markup)  # code_theme/hyperlinks/h1=left inherited
-        self.style = REASON_STYLE
-
-
-class LocalContentMD(ContentMD):
-    elements = dict(ContentMD.elements)
-    elements["table_open"] = _RoundedTableElement
-    elements["hr"] = _StyledHorizontalRule
-    elements["image"] = _StyledImageItem
-
-    def __init__(self, markup: str):
-        super().__init__(markup)  # code_theme/hyperlinks/h1=left inherited
-        self.style = "none"
-
-
-# --- sample markdown content (realistic docs with h1-h4 + all elements) ---
-
+# sample Markdown content (realistic docs with h1-h4 + all elements)
 REASONING = (
     "# Task Analysis\n\n"
     "The user asked to inspect the `project` directory and report its structure.\n"
@@ -287,31 +195,143 @@ CONTENT = (
 )
 
 
-def render_block(reasoning: str | None, content: str | None, label: str):
+def render_block(reasoning: str | None, content: str | None):
     """Render reasoning + content with the same Table layout as get_block_render()."""
-    console.print(Text(f"\n{'=' * 60}\n  {label}\n{'=' * 60}\n", style="bright_black"))
-
     if reasoning not in (None, ""):
         t_reason = RichTable(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
         t_reason.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t_reason.add_column(vertical="top")
+        t_reason.add_column(vertical="top", overflow="fold")
         t_reason.add_row(
             Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-            LocalReasonMD("{Think}: " + reasoning),
-        )
+            ReasonMD("{Think}: " + reasoning))
         console.print(t_reason)
         console.print()
 
     if content not in (None, ""):
         t_content = RichTable(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
         t_content.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
-        t_content.add_column(vertical="top")
-        t_content.add_row(
-            Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE),
-            LocalContentMD(content),
-        )
+        t_content.add_column(vertical="top", overflow="fold")
+        t_content.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(content))
         console.print(t_content)
 
 
+def test_transient_residual(console: Console, content: str, max_lines: int):
+    """
+    Reproduce transient=True cleanup residuals.
+    
+    Simulates llm_stream_manage's pattern:
+    1. Live(transient=True) shows truncated output (indicator + last N lines)
+    2. After Live exits, console.print() shows the full un-truncated block
+    
+    If transient cleanup leaves residuals, you will see the indicator
+    and truncated lines ABOVE the full block render.
+    """
+    content_lines = content.split('\n')
+
+    # Phase 1: simulate stream — show truncated via Live(transient=True)
+    truncated_display = '\n'.join(content_lines[-max_lines:])
+    truncated_display = truncated_display.lstrip().rstrip()
+
+    # Build the same render as get_stream_render's reason display
+    def make_stream_render():
+        t = RichTable(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top", overflow="fold")
+
+        if len(content_lines) > max_lines:
+            indicator = Text("[", style="bright_black")
+            indicator.append(f"{AGENT_CONSOLE_ICON}", style="bold #54A0FF")
+            indicator.append(" generating content..., ", style="bright_black")
+            indicator.append(f"{len(content_lines)}", style="bold #54A0FF")
+            indicator.append(" lines total, showing latest ", style="bright_black")
+            indicator.append(f"{max_lines}", style="bold #54A0FF")
+            indicator.append(" lines]\n", style="bright_black")
+
+            t.add_row(
+                Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE),
+                ContentMD(indicator.plain + truncated_display))
+        return t
+
+    console.print()
+    console.print("[bold red]Phase 1: Live(transient=True) — truncated display[/]")
+    console.print()
+    time.sleep(1)
+
+    # Phase 1: Live(transient=False) — no auto-cleanup needed
+    # After "streaming" finishes, update Live with the full block render
+    with Live(make_stream_render(), refresh_per_second=30, console=console, transient=False) as live:
+        time.sleep(2)  # Simulate "streaming"
+
+        # Update with the FULL block render (same as get_block_render)
+        t = RichTable(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
+        t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+        t.add_column(vertical="top", overflow="fold")
+        t.add_row(Text(f" {CONTENT_ICON} ", style=CONTENT_ICON_SYLTE), ContentMD(content))
+        live.update(t)
+        time.sleep(2)
+
+    console.print()
+    console.print("[bold green]Live exited — final output was updated in-place, no residuals[/]")
+
+
 if __name__ == "__main__":
-    render_block(REASONING, CONTENT, "LocalReasonMD + LocalContentMD All MD element types")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test-transient", action="store_true",
+                        help="Reproduce transient=True cleanup residuals")
+    parser.add_argument("--trunc-lines", type=int, default=10,
+                        help="Max lines in truncated display (default: 10)")
+    args = parser.parse_args()
+
+    if args.test_transient:
+        rich_text = ("# A Very Long Markdown Document\n\n"
+                     "This document is intentionally long to trigger truncation\n"
+                     "in the stream display path. " * 5 + "\n\n"
+                     "## Section Alpha\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Beta\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Gamma\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Delta\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Epsilon\n\n"
+                     "With a markdown table:\n\n"
+                     "| Column A | Column B | Column C |\n"
+                     "|---|---|---|\n"
+                     "| alpha | beta | gamma |\n"
+                     "| delta | epsilon | zeta |\n"
+                     "| eta | theta | iota |\n\n"
+                     "## Section Zeta\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Eta\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Theta\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Iota\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Kappa\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Lambda\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Mu\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Nu\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Xi\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Omicron\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Section Pi\n\n"
+                     "The quick brown fox jumps over the lazy dog.\n" * 5 + "\n"
+                     "## Final Section\n\n"
+                     "This is the final section with a fenced code block:\n\n"
+                     "```python\n"
+                     "def hello():\n"
+                     "    print('Hello, World!')\n"
+                     "    return 42\n"
+                     "```\n\n"
+                     "End of document.")
+
+        test_transient_residual(console, rich_text, args.trunc_lines)
+    else:
+        render_block(REASONING, CONTENT)

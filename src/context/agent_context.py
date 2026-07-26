@@ -29,6 +29,7 @@ Revision:
 2026.7.15-16   Yu Huang      2.7      Add WeChat bot interaction support
 2026.7.17      Yu Huang      2.8      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 2026.7.23      Yu Huang      2.9      Add launch support in arbitrary path
+2026.7.26      Yu Huang      3.0      Support of dumping webfetch caches to file & Revise TUI info for session file I/O
 
 Details:
 ---------
@@ -44,7 +45,7 @@ import logging
 import threading
 from croniter import croniter
 from openai import OpenAI
-from datetime import datetime
+from datetime import datetime, timedelta
 from argparse import Namespace
 from prompt_toolkit import PromptSession
 from typing import Any, TypedDict, TYPE_CHECKING
@@ -67,6 +68,12 @@ class WebFetchCancelled(Exception):
 
 class WebSearchCancelled(Exception):
     """Raised when user cancels web search"""
+
+class URLCacheDump(TypedDict):
+    """URL cache information to dump"""
+    url: str
+    time: float
+    content: str
 
 class URLCache(TypedDict):
     """URL cache with time and content"""
@@ -147,7 +154,7 @@ class AgentContext:
         # objects
         self.agent_session: PromptSession | None = None  # (don't dump)
         self.llm_client: OpenAI | None = None  # (don't dump, shared)
-        self.url_caches: list[URLCache] = []  # (don't dump)
+        self.webfetch_caches: list[URLCache] = []
         self.wechat_bot: WeChatBridge | None = None  # (don't dump)
         self.last_wechat_msg: WeChatQueuedMsg | None = None  # (don't dump)
         self.mcp_router: MCPToolRouter = MCPToolRouter([])  # (don't dump, shared)
@@ -246,6 +253,52 @@ class AgentContext:
             self.files_read[file_path] += 1
 
 
+    def config_webfetch_cache(self, url_dumps: list[URLCacheDump]):
+        """config webfetch cache from list of URLCacheDump"""
+        for dump in url_dumps:
+            cache = URLCache(url=dump["url"],
+                             time=datetime.fromtimestamp(dump["time"]),
+                             content=dump["content"])
+            self.webfetch_caches.append(cache)
+
+
+    def get_webfetch_cache_dump(self) -> list[URLCacheDump]:
+        """get Web fetch caches' dump checking expiration"""
+        url_dumps: list[URLCacheDump] = []
+        now = datetime.now()
+        for cache in self.webfetch_caches:
+            # check if URL is expired
+            previous = cache["time"]
+            if now - previous < timedelta(seconds=self.agent_configs.get("WEB_FETCH_CACHE_TIME_S", WEB_FETCH_CACHE_DEFAULT_TIME_S)):
+                cache_dump = URLCacheDump(
+                    url=cache["url"],
+                    time=cache["time"].timestamp(),
+                    content=cache["content"],
+                )
+                url_dumps.append(cache_dump)
+            else:
+                continue
+        return url_dumps
+
+
+    def save_webfetch_cache(self, console: Console, mute: bool = False):
+        """save webfetch cache to file
+        (prefer not to use this method when URL cache is large in save_context, which will be frequently called)"""
+        uuid_obj = uuid.UUID(self.session_uuid)
+        uuid_str = uuid_obj.__str__()
+        path = str(AGENT_PATH / SESSION_PATH / uuid_str / WEBFETCH_CACHE_NAME)
+
+        url_dumps = self.get_webfetch_cache_dump()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(url_dumps, f, indent=2, ensure_ascii=False)
+
+        sys_log.debug(f"Webfetch caches with {len(url_dumps)} entries of session {self.session_uuid} saved")
+        if not mute:
+            console.print(
+                f"[{MAJOR_COLOR2}]Webfetch caches[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(url_dumps)}[/{MAJOR_COLOR2}] "
+                f"entries of session [bright_black]{self.session_uuid}[/bright_black] saved")
+
+
     def add_cron_task(self, cron_task: CronTask):
         """add cron task to context"""
         self.cron_tasks.append(cron_task)  # add task in runtime
@@ -278,7 +331,7 @@ class AgentContext:
             return False, f"Remove cron task with id: {task_id} failed with error: {e}"
 
 
-    def save_cron_task(self):
+    def save_cron_task(self, console: Console, mute: bool = False):
         """save cron tasks to files (overwrite files, duplicate task will be dropped, so make sure the id is unique)"""
         if self.args.nocrons:  # no cron tasks, no need to save anything
             return
@@ -309,9 +362,17 @@ class AgentContext:
         path = str(AGENT_PATH / SESSION_PATH / uuid_str / CRON_NAME)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(session_crons, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"{len(session_crons)} cron tasks of session {self.session_uuid} saved")
+        if not mute:
+            console.print(
+                f"[{MAJOR_COLOR2}]{len(session_crons)} cron tasks[/{MAJOR_COLOR2}] of session "
+                f"[bright_black]{self.session_uuid}[/bright_black] saved")
 
         with open(str(AGENT_PATH / CRON_CONFIGS_PATH), "w", encoding="utf-8") as f:
             json.dump(durable_crons, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"{len(durable_crons)} cron tasks across sessions saved")
+        if not mute:
+            console.print(f"[{MAJOR_COLOR2}]{len(durable_crons)} cron tasks[/{MAJOR_COLOR2}] across sessions saved")
 
 
     def to_dict(self, console: Console, mute: bool = False) -> dict:
@@ -398,11 +459,10 @@ class AgentContext:
             path = str(AGENT_PATH / SESSION_PATH / uuid_str / CONTEXT_NAME)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(console, mute), f, indent=2, ensure_ascii=False)
+            """webfetch cache save"""
+            self.save_webfetch_cache(console, mute)
             """durable and session cron tasks save"""
-            self.save_cron_task()
-            sys_log.debug(f"Context of session {self.session_uuid} saved")
-            if not mute:
-                console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] saved")
+            self.save_cron_task(console, mute)
         except Exception as e:
             sys_log.error(f"Failed to save session {self.session_uuid}'s context with error: {e}")
             console.print(f"Failed to save session {self.session_uuid}'s context with error: {e}", style="bold red")
@@ -418,6 +478,17 @@ class AgentContext:
             path = str(AGENT_PATH / SESSION_PATH / uuid_str / CONTEXT_NAME)
             with open(path, 'r', encoding="utf-8") as f:
                 in_dict = json.load(f)
+            self.from_dict(in_dict, console, mute)
+            """webfetch cache load"""
+            path = str(AGENT_PATH / SESSION_PATH / uuid_str / WEBFETCH_CACHE_NAME)
+            with open(path, 'r', encoding="utf-8") as f:
+                url_dumps = json.load(f)
+            self.config_webfetch_cache(url_dumps)
+            sys_log.debug(f"Webfetch caches with {len(url_dumps)} entries of session {self.session_uuid} loaded")
+            if not mute:
+                console.print(
+                    f"[{MAJOR_COLOR2}]Webfetch caches[/{MAJOR_COLOR2}] with [{MAJOR_COLOR2}]{len(url_dumps)}[/{MAJOR_COLOR2}] "
+                    f"entries of session [bright_black]{self.session_uuid}[/bright_black] loaded")
             """session cron tasks load"""
             if not self.args.nocrons:
                 path = str(AGENT_PATH / SESSION_PATH / uuid_str / CRON_NAME)
@@ -426,10 +497,6 @@ class AgentContext:
                         self.session_crons = json.load(f)
                 else:
                     self.session_crons = []
-            sys_log.debug(f"Context of session {self.session_uuid} loaded")
-            if not mute:
-                console.print(f"[{MAJOR_COLOR2}]Context[/{MAJOR_COLOR2}] of session [bright_black]{self.session_uuid}[/bright_black] loaded")
-            self.from_dict(in_dict, console, mute)
         except Exception as e:
             sys_log.error(f"Failed to load session {self.session_uuid}'s context with error: {e}")
             console.print(f"Failed to load session {self.session_uuid}'s context with error: {e}", style="bold red")

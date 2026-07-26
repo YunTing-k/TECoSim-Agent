@@ -20,6 +20,7 @@ Revision:
 2026.6.13      Yu Huang      1.7      Switch to configurable model tier (WEB_FETCH_MODEL/WEB_SEARCH_MODEL) via select_branch_func
 2026.6.29      Yu Huang      1.8      Fallback to DDGS when Exa/Tavily/Linkup backend fails
 2026.7.23      Yu Huang      1.9      Revise visibility of cron/web/WeChat tool calls
+2026.7.26      Yu Huang      2.0      Support of dumping webfetch caches to file
 
 Details:
 ---------
@@ -113,14 +114,14 @@ def check_url(url: str, console: Console) -> tuple[str, bool]:
 def query_url_cache(url: str, ctx: AgentContext) -> str | None:
     """query the cache with URL"""
     now = datetime.now()
-    for idx, url_cache in enumerate(ctx.url_caches):
+    for idx, url_cache in enumerate(ctx.webfetch_caches):
         if url == url_cache["url"]:
             previous = url_cache["time"]
-            if now - previous < timedelta(seconds=ctx.agent_configs["URL_CACHE_TIME_S"]):
+            if now - previous < timedelta(seconds=ctx.agent_configs["WEB_FETCH_CACHE_TIME_S"]):
                 cache = url_cache["content"]
                 return cache
             else:
-                del ctx.url_caches[idx]
+                del ctx.webfetch_caches[idx]
             break
     return None
 
@@ -139,9 +140,9 @@ def web_single_fetch(url_in: str, ctx: AgentContext, console: Console) -> tuple[
     """fetch content from URL"""
     try:
         with httpx.Client(
-                timeout=httpx.Timeout(timeout=ctx.agent_configs["URL_TIMEOUT_S"]),
+                timeout=httpx.Timeout(timeout=ctx.agent_configs["WEB_FETCH_TIMEOUT_S"]),
                 follow_redirects=True,
-                headers={"User-Agent": "TECoSimAgent-WebFetch"}
+                headers={"User-Agent": "TECoSim-Agent-WebFetch"}
         ) as httpx_client:
             resp = httpx_client.get(url)
             final_url = str(resp.url)
@@ -161,7 +162,7 @@ def web_single_fetch(url_in: str, ctx: AgentContext, console: Console) -> tuple[
         return None, f"Convert content from URL: {url} to markdown failed", if_redirect, final_url
 
     """write to cache"""
-    ctx.url_caches.append({"url": url, "time": datetime.now(), "content": markdown})
+    ctx.webfetch_caches.append({"url": url, "time": datetime.now(), "content": markdown})
     return markdown, SUCCESS_LABEL, if_redirect, final_url
 
 

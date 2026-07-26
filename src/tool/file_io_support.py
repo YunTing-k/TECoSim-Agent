@@ -205,11 +205,11 @@ def save_messages(ctx: AgentContext, console: Console, mute: bool = False):
 def save_sessions(ctx: AgentContext, board: Scoreboard, console: Console, mute: bool = False):
     """save all session's files"""
     try:
-        save_messages(ctx, console, mute)
-        ctx.save_context(console, mute)
         if ctx.enable_wechat and ctx.wechat_bot is not None:
             ctx.wechat_bot.save_cdn_cache(mute)
             ctx.wechat_bot.save_msg_history(mute)
+        save_messages(ctx, console, mute)
+        ctx.save_context(console, mute)
         ctx.design_man.save_to_file(console, mute)
         ctx.run_man.save_to_file(console, mute)
         board.save_to_file(console, mute)

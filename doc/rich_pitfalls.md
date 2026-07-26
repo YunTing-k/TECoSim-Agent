@@ -229,3 +229,88 @@ When using `Live(transient=True, auto_refresh=False)` + `live.refresh()` in a re
 - `prompt.py` LLM stream display: `Live(transient=True, refresh_per_second=...)` continuously updates streaming output
 - Any scenario with `transient=True` + refresh loop running for more than a few seconds
 - Reproducible on Windows Command Prompt (CMD) and PowerShell
+
+---
+
+## 14. Live transient 清理残留 + vertical_overflow `...` 截断 | Live Transient Cleanup Residue & vertical_overflow Ellipsis Truncation
+
+在 LLM 流式输出场景中，`Live` 用于实时显示递增内容。当内容（reasoning/content）行数超过终端可视高度时，会触发两个连锁问题：
+1. 流式阶段：Rich `Live` 默认 `vertical_overflow="ellipsis"` 导致超出行被 `...` 截断
+2. 退出阶段：`transient=True` 的 `restore_cursor()` 只能回溯光标行数，已滚出可视区的行无法清除，残留为"幽灵行"
+
+In LLM streaming output scenarios, `Live` displays incrementally growing content. When the content (reasoning/content) line count exceeds the terminal's visible height, two cascading issues occur:
+1. Streaming phase: Rich `Live` defaults to `vertical_overflow="ellipsis"`, causing excess lines to be truncated with `...`
+2. Exit phase: `transient=True`'s `restore_cursor()` can only backtrack cursor lines — lines already scrolled out of the visible viewport cannot be cleared, leaving "ghost" residual lines
+
+### 残留复现 / Reproduction
+
+```python
+with Live(renderable, refresh_per_second=20, console=console, transient=True) as live:
+    for chunk in stream:
+        live.update(get_stream_render(content))  # 截断版（indicator + 最后 N 行）/ truncated (indicator + last N lines)
+
+# Live 退出 → restore_cursor() 试图向上回溯清理
+# 但当 stream render 行数 > 终端高度时，部分行已滚动溢出
+# restore_cursor() 无法回溯到溢出区域的行 → 残留！
+# Live exits → restore_cursor() attempts to backtrack and clean up
+# But when stream render lines > terminal height, some lines have scrolled out
+# restore_cursor() cannot reach overflow lines → residual!
+console.print(get_block_render(full_content))  # 完整输出被残留污染 / full output mixed with residue
+```
+
+### 根因 / Root Cause
+
+Rich `Live.stop()`：
+
+```python
+def stop(self):
+    # ...
+    self.vertical_overflow = "visible"               # 最后一次刷新允许完整渲染 / allow full render on last refresh
+    with self.console:
+        try:
+            if not self._alt_screen and not self.console.is_jupyter:
+                self.refresh()                        # 最后一次刷新 / final refresh
+        finally:
+            # ...
+            if self.transient and not self._alt_screen:
+                self.console.control(self._live_render.restore_cursor())  # 光标回溯清理 / cursor backtrack cleanup
+```
+
+关键矛盾：`stop()` 先设置 `vertical_overflow = "visible"` 完整渲染最终内容，然后如果 `transient=True` 立即执行 `restore_cursor()` 尝试擦除。`restore_cursor()` 通过 ANSI 逃逸序列回溯光标行数，但**只能定位到终端可视高度内的行**——内容行数超过终端高度时，溢出行已滚出可视区，光标无法回溯到这些行，导致残留。
+
+The critical contradiction: `stop()` first sets `vertical_overflow = "visible"` to fully render the final output, then immediately executes `restore_cursor()` to attempt cleanup if `transient=True`. `restore_cursor()` backtracks the cursor via ANSI escape sequences, but **can only target lines within the terminal's visible height** — when rendered content exceeds the terminal height, overflow lines have scrolled out of the viewport, making them unreachable by cursor backtracking, thus leaving residual lines.
+
+### 解决方案 / Solution
+
+1. **`transient=False`** — 禁用 `restore_cursor()`，避免不完整清理
+   Disable `restore_cursor()` to avoid incomplete cleanup.
+
+2. **流式更新保持 `vertical_overflow="ellipsis"`** — 这是 Live 的默认值，流式阶段自动截断超长内容防止屏幕不受控滚动
+   Streaming updates keep the default `vertical_overflow="ellipsis"`, auto-truncating overflow content to prevent screen thrashing.
+
+3. **最终完整渲染放到 `with` 块内最后一行** — `with` 退出时 `stop()` 将 `vertical_overflow` 覆盖为 `"visible"` 后才执行最后一次 `refresh()`，此时你的最终 render（完整 `get_block_render()`）被完整渲染，不截断，且无清理残留
+   Place the final full render as the last `live.update()` inside the `with` block — on exit, `stop()` overrides `vertical_overflow` to `"visible"` before the final `refresh()`, rendering your full `get_block_render()` completely, without truncation, and without cleanup residue.
+
+```python
+with Live(get_stream_render(...), refresh_per_second=20, console=console, transient=False) as live:
+    for chunk in response:
+        # ... accumulate content ...
+        live.update(get_stream_render(...))        # 截断显示 / truncated display
+
+    live.update(get_block_render(...))             # 完整渲染 / full block render
+# 退出 → stop(): vertical_overflow="visible" → final refresh → 完整输出保留
+# Exit → stop(): vertical_overflow="visible" → final refresh → full output preserved
+```
+
+对比原有错误模式 / Contrast with the original wrong pattern:
+```python
+# 错误 / Wrong
+with Live(..., transient=True) as live:
+    for chunk in response:
+        live.update(get_stream_render(...))
+
+# 退出 → restore_cursor 清理 → 残留 + 丢失最终内容
+# Exit → restore_cursor cleanup → residual lines + lost final content
+console.print(get_block_render(...))  # 此行的渲染在 cleanup 之后执行，无法清除残留
+                                      # This render runs after cleanup — cannot clear residuals
+```

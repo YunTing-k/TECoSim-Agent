@@ -93,9 +93,9 @@ def config_mcps(configs: list[dict[str, Any]], init_timeout: int, timeout: int, 
             sys_log.warning(f"Configure MCP with config: {config} failed with error: {e}")
             console.print(f"Configure MCP with config: {config} failed with error: {e}", style="bold yellow")
             continue
-    sys_log.debug(f"Configured {len(client_lists)} MCPs from config file. {disabled_num} out of {len(configs)} available MCPs disabled")
-    console.print(f"Configured [{MAJOR_COLOR2}]{len(client_lists)}[/{MAJOR_COLOR2}] MCPs from config file. "
-                  f"[{MAJOR_COLOR2}]{disabled_num}[/{MAJOR_COLOR2}] out of [{MAJOR_COLOR2}]{len(configs)}[/{MAJOR_COLOR2}] available MCPs disabled")
+    sys_log.debug(f"Configured {len(client_lists)} MCPs from config file ({disabled_num} out of {len(configs)} available MCPs disabled)")
+    console.print(f"Configured [{MAJOR_COLOR2}]{len(client_lists)}[/{MAJOR_COLOR2}] MCPs from config file "
+                  f"([{MAJOR_COLOR2}]{disabled_num}[/{MAJOR_COLOR2}] out of [{MAJOR_COLOR2}]{len(configs)}[/{MAJOR_COLOR2}] available MCPs disabled)")
     return client_lists
 
 

@@ -350,6 +350,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
+| `WEB_FETCH_CACHE_DEFAULT_TIME_S` | `1000` | Web Fetch URL 缓存默认有效期（秒）/ Default web fetch URL cache TTL (seconds) |
 | `URL_CACHE_VIEW_MAX` | `8` | URL 缓存列表最大显示数 / Max displayed entries in URL cache view |
 | `URL_CACHE_CONTENT_CHAR_MAX` | `100` | URL 缓存内容预览最大字符数 / Max chars for URL cached content preview |
 
@@ -429,7 +430,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `3` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `4` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
@@ -444,6 +445,7 @@ These constants control the agent's core identity and basic behavior:
 | `MESSAGES_NAME` | `"messages.json"` | 消息记录文件名（会话目录下）/ Messages file name (under session dir) |
 | `CONTEXT_NAME` | `"context.json"` | 上下文文件名（会话目录下）/ Context file name (under session dir) |
 | `CRON_NAME` | `"cron_configs.json"` | 会话级定时任务文件名（会话目录下）/ Session cron configs file name (under session dir) |
+| `WEBFETCH_CACHE_NAME` | `"webfetch_cache.json"` | Web Fetch URL 缓存持久化文件名（会话目录下）/ Web fetch URL cache persistence file name (under session dir) |
 | `TASKS_NAME` | `"tasks.json"` | Scoreboard 任务持久化文件名（存于 session 目录）/ Scoreboard task persistence file name (under session dir) |
 | `RUNS_NAME` | `"runs.json"` | 仿真运行记录持久化文件名 / Simulation run records persistence file name |
 | `DESIGNS_NAME` | `"designs.json"` | 面板设计持久化文件名 / Panel design persistence file name |

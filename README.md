@@ -71,7 +71,7 @@ Traditional design requires experts to **manually translate** design intent into
 
 #### 方式一：预构建 exe（Windows系统） | Option 1: Pre-Built exe (Windows OS)
 
-1. 从 [Releases](https://github.com/YunTing-k/TECoSimAgent/releases) 下载最新的 `TECoSim-Agent_win64.zip` / Download the latest `TECoSim-Agent_win64.zip` from [Releases](https://github.com/YunTing-k/TECoSimAgent/releases)
+1. 从 [Releases](https://github.com/YunTing-k/TECoSim-Agent/releases) 下载最新的 `TECoSim-Agent_win64.zip` / Download the latest `TECoSim-Agent_win64.zip` from [Releases](https://github.com/YunTing-k/TECoSim-Agent/releases)
 2. 解压压缩包 / Unzip the archive
 3. 直接跳到下方**配置**步骤 / Skip to the **Configuration** steps below
 
@@ -326,7 +326,7 @@ TECoSimAgent/
 │   ├── constants.py             # 全局常量与默认参数 / All global constants & defaults
 │   ├── agent/
 │   │   ├── subagent.py          # 子Agent核心（初始化/运行/输出）/ Subagent core (init, run, results)
-│   │   └── progress.py          # 子Agent状态枚举与进度数据类 / Agent status enum & progress dataclass
+│   │   └── agent_types.py       # 子Agent状态枚举与进度数据类 / Agent status enum & progress dataclass
 │   ├── context/
 │   │   ├── agent_context.py     # 集中式Agent状态管理 / Central agent state management
 │   │   ├── prompt.py            # 提示词组装与LLM响应处理 / Prompt assembly & LLM response handling

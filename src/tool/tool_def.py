@@ -1158,6 +1158,7 @@ def tool_glob_file_def() -> dict[str, Any]:
                            f"- ALWAYS use `{TOOL_NAME_GLOB_FILE}` for file search tasks. NEVER invoke `find` or `ls` as a "
                            f"Bash command. The `{TOOL_NAME_GLOB_FILE}` tool has been optimized for correct permissions and access\n"
                            "- Supports glob patterns like \"**/*.js\" or \"src/**/*.py\"\n"
+                           "- Backed by Python's standard `glob` library — brace expansion `{ }` is NOT supported\n"
                            "- Returns matching file paths sorted by modification time\n",
             "parameters": {
                 "type": "object",

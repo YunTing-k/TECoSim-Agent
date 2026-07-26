@@ -595,27 +595,28 @@ def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: 
                                         f"{SKILL_END_LABEL}"})
 
 
-def cmd_url_caches(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
-    """query all cached URLs"""
-    title = f"Cached URLs ({len(ctx.url_caches)})"
+def cmd_webfetch_caches(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query all cached URLs in webfetch tools"""
+    title = f"Cached URLs ({len(ctx.webfetch_caches)})"
     cmd_str = Text()
     view_limit = URL_CACHE_VIEW_MAX
     char_limit = URL_CACHE_CONTENT_CHAR_MAX
-    view_left = len(ctx.url_caches) - view_limit if len(ctx.url_caches) >= view_limit else  0
-    for idx, url_cache in enumerate(ctx.url_caches):
+    view_left = len(ctx.webfetch_caches) - view_limit if len(ctx.webfetch_caches) >= view_limit else  0
+    for idx, url_cache in enumerate(ctx.webfetch_caches):
         cmd_str.append(f"URL: ", style=f"white")
         cmd_str.append(f"{url_cache["url"]}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f", timestamp: ", style=f"white")
         cmd_str.append(f"{url_cache["time"].strftime("%Y-%m-%d %H:%M:%S")}\n", style=f"bold {MAJOR_COLOR2}")
         content = url_cache["content"]
         if len(content) > char_limit:
-            content = content[:char_limit] + "..."
-        cmd_str.append(f"Cached content: ", style=f"white")
+            content = content[:char_limit] + f"... ({len(content) - char_limit} chars truncated)"
+        cmd_str.append(f"Cached content: \n", style=f"white")
         cmd_str.append(f"{content}\n\n", style=f"bright_black")
         if idx + 1 >= view_limit:
             break
-    cmd_str.append(f"Remaining cached URLs not-displayed: ", style=f"white")
-    cmd_str.append(f"{view_left}", style=f"bold {MAJOR_COLOR2}")
+    if view_left > 0:
+        cmd_str.append(f"Remaining cached URLs not-displayed: ", style=f"white")
+        cmd_str.append(f"{view_left}", style=f"bold {MAJOR_COLOR2}")
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
     console.print("\n")
@@ -1036,8 +1037,8 @@ class BuiltinCommands:
                                                "query all the available skills with name and truncated description"),
             "skills_loaded": (cmd_skills_loaded, "query all loaded skills",
                                                "query all the loaded skills with name and full description"),
-            "url_caches": (cmd_url_caches, "query all cached URLs",
-                                               "query all the cached URLs with timestamp and truncated content"),
+            "webfetch_caches": (cmd_webfetch_caches, "query all web fetch caches",
+                                               "query all the cached URLs with timestamp and truncated content in web fetch tool"),
             "mcp_list": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
             "update_title": (cmd_update_title, "update session title with LLM", "update title of this session with history immediately by LLM"),
             "set_title": (cmd_set_title, "set session title manually", "manually set title of this session by user"),

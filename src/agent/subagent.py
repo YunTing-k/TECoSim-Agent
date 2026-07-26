@@ -23,6 +23,7 @@ Revision:
 2026.7.3       Yu Huang      2.0      Add more current tools info when subagent is running
 2026.7.15      Yu Huang      2.1      Add merge subagent statistic method
 2026.7.23      Yu Huang      2.2      Add launch support in arbitrary path
+2026.7.26      Yu Huang      2.3      Support of dumping webfetch caches to file
 
 Details:
 ---------
@@ -110,7 +111,7 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     # objects
     ctx.agent_session = None
     ctx.llm_client = parent_ctx.llm_client
-    ctx.url_caches = []
+    ctx.webfetch_caches = []
     ctx.wechat_bot = None
     ctx.last_wechat_msg = None
     ctx.mcp_router = parent_ctx.mcp_router
@@ -588,6 +589,9 @@ class SubAgent:
                     "max_steps": self.max_steps,
                     "stats": self.stats,
                 }, f, indent=2, ensure_ascii=False)
+
+            with open(os.path.join(agent_dir, WEBFETCH_CACHE_NAME), "w", encoding="utf-8") as f:
+                json.dump(self.ctx.get_webfetch_cache_dump(), f, indent=2, ensure_ascii=False)
 
             if self._own_board:
                 with open(os.path.join(agent_dir, TASKS_NAME), "w", encoding="utf-8") as f:
