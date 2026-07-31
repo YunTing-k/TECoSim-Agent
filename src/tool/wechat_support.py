@@ -14,6 +14,7 @@ Revision:
                                       WeChat bot exit
 2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status & SILK voice is processed as other media types
 2026.7.23      Yu Huang      1.3      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
+2026.7.28      Yu Huang      1.4      Simplify the preview of WeChat message when there is only one message
 
 Details:
 ---------
@@ -816,7 +817,7 @@ def get_wechat_list(msgs: list[WeChatQueuedMsg], media_threshold_mb: int) -> str
     elif total_msgs > 1:
         lines.append(f"`{total_msgs}` new WeChat messages from user:\n\n")
     else:
-        lines.append(f"New WeChat message from user:\n\n")
+        pass
 
     for i, (user_id, user_msgs) in enumerate(grouped.items()):
         if num_users > 1:
@@ -846,11 +847,11 @@ def get_msg_preview(msg: WeChatQueuedMsg) -> str:
     preview_str = ""
     if raw.text:
         if msg.voices:
-            preview_str += f" - User Text (from voice): {raw.text}\n"
+            preview_str += f" - User Text (trans from voice): {raw.text}\n"
         else:
             preview_str += f" - User Text: {raw.text}\n"
     if msg.quoted_text:
-        quote_prefix = " - Quoted Text (from voice): " if msg.quoted_text_is_voice else " - Quoted Text: "
+        quote_prefix = " - Quoted Text (trans from voice): " if msg.quoted_text_is_voice else " - Quoted Text: "
         if len(msg.quoted_text) > WECHAT_BOT_QUOTED_CHAR_MAX:
             preview_str += f"{quote_prefix}{msg.quoted_text[:WECHAT_BOT_QUOTED_CHAR_MAX] } ... (quotation truncated)\n"
         else:

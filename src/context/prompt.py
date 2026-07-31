@@ -46,6 +46,8 @@ Revision:
 2026.7.18      Yu Huang      4.1      Revise WeChat Bot typing status & Support of fixing orphan and missing tool results in context
 2026.7.23      Yu Huang      4.2      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 2026.7.26      Yu Huang      4.3      Fix: prevent orphan lines in stream messages display with final live.update
+2026.7.28      Yu Huang      4.4      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
+                                      & render user history messages as Markdown
 
 Details:
 ---------
@@ -327,12 +329,25 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
 
 def query_prompts(ctx: AgentContext, session_uuid: str | None, console: Console) -> list[dict[str, Any]]:
     """create new prompts or resume prompts from persistence file with AgentContext and given uuid"""
-    if not ctx.args.nosystem:
+    if not ctx.args.override_prompts:
         messages = create_system_prompts(ctx)
     else:
-        messages = []
-        sys_log.debug("System prompts in main agent are disabled")
-        console.print("System prompts in main agent are disabled", style=f"bold {MAJOR_COLOR1}")
+        path = str(AGENT_PATH / OVERRIDE_PROMPTS_PATH)
+        try:
+            with open(path, "r", encoding='utf-8') as f:
+                prompts = json.load(f)
+            prompt = prompts["MAIN_AGENT_PROMPT"]
+            if not isinstance(prompt, str):
+                raise RuntimeError(f"Value of key: MAIN_AGENT_PROMPT in {path} is not a string")
+            messages = [{"role": "system", "content": prompt}]
+            sys_log.info("System prompts of main agent are overridden")
+            console.print(f"[{MAJOR_COLOR2}]System prompts[/{MAJOR_COLOR2}] of main agent are overridden")
+        except Exception as e:
+            sys_log.warning(f"Override system prompts of main agent failed with error: {e}. Fallback to default system prompts")
+            console.print(f"Override system prompts of main agent failed with error: {e}. Fallback to default system "
+                          f"prompts", style=f"bold yellow")
+            messages = create_system_prompts(ctx)
+
     if session_uuid is None:
         pass
     else:
@@ -355,6 +370,24 @@ _CRON_STR = _CRON_STR.append(" are invoked, content is not displayed", style=f"b
 _SUBAGENT_STR = Text(f"{SUBAGENT_ICON}", style=f"{MAJOR_COLOR1}")
 _SUBAGENT_STR = _SUBAGENT_STR.append(" Background subagent", style=f"{MAJOR_COLOR1}")
 _SUBAGENT_STR = _SUBAGENT_STR.append(" is retrieved, content is not displayed", style=f"bright_black")
+
+
+def get_user_history_render(msg: str, as_md: bool) -> Panel:
+    """get user's history message render"""
+    user_prefix = Text("History user input:\n", style=f"bright_black")
+    t = Table(show_header=False, show_edge=False, padding=0, box=None, collapse_padding=True)
+    t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
+    t.add_column(vertical="top", overflow="fold")
+    if as_md:
+        render_str = Text(f" {AGENT_CONSOLE_ICON} ", style=f"white")
+        t.add_row(render_str, user_prefix)
+        t.add_row(Text(), ContentMD(msg))
+    else:
+        render_str = Text(f" {AGENT_CONSOLE_ICON} ", style=f"white")
+        t.add_row(render_str, user_prefix)
+        t.add_row(Text(), Text(msg, style="white"))
+    render = Panel(t, box=rich.box.SQUARE)
+    return render
 
 
 def get_msg_render(msg: str, icon: str, info: str, as_md: bool) -> Panel:
@@ -458,20 +491,21 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
     """print the given messages (exclude system) with AgentContext"""
     try:
         as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
-        display_subagent = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
-        display_sys_reminder = ctx.agent_configs["RESUME_DISPLAY_SYS_REMINDER"]
-        display_skill = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
-        display_cron = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
-        display_write = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
-        display_bash = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
-        display_bash_result = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
-        display_glob = ctx.agent_configs["RESUME_DISPLAY_GLOB_PREVIEW"]
-        display_glob_result = ctx.agent_configs["RESUME_DISPLAY_GLOB_RESULT"]
-        display_grep = ctx.agent_configs["RESUME_DISPLAY_GREP_PREVIEW"]
-        display_grep_result = ctx.agent_configs["RESUME_DISPLAY_GREP_RESULT"]
-        display_web_fetch_result = ctx.agent_configs["RESUME_DISPLAY_WEB_FETCH_RESULT"]
-        display_web_search_result = ctx.agent_configs["RESUME_DISPLAY_WEB_SEARCH_RESULT"]
-        display_wechat_status_result = ctx.agent_configs["RESUME_DISPLAY_WECHAT_STATUS_RESULT"]
+        user_history_as_md: bool = ctx.agent_configs["RESUME_RENDER_USER_HISTORY_AS_MD"]
+        display_subagent: bool = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
+        display_sys_reminder: bool = ctx.agent_configs["RESUME_DISPLAY_SYS_REMINDER"]
+        display_skill: bool = ctx.agent_configs["RESUME_DISPLAY_SKILLS"]
+        display_cron: bool = ctx.agent_configs["RESUME_DISPLAY_CRONS"]
+        display_write: bool = ctx.agent_configs["RESUME_DISPLAY_WRITE_PREVIEW"]
+        display_bash: bool = ctx.agent_configs["RESUME_DISPLAY_BASH_PREVIEW"]
+        display_bash_result: bool = ctx.agent_configs["RESUME_DISPLAY_BASH_RESULT"]
+        display_glob: bool = ctx.agent_configs["RESUME_DISPLAY_GLOB_PREVIEW"]
+        display_glob_result: bool = ctx.agent_configs["RESUME_DISPLAY_GLOB_RESULT"]
+        display_grep: bool = ctx.agent_configs["RESUME_DISPLAY_GREP_PREVIEW"]
+        display_grep_result: bool = ctx.agent_configs["RESUME_DISPLAY_GREP_RESULT"]
+        display_web_fetch_result: bool = ctx.agent_configs["RESUME_DISPLAY_WEB_FETCH_RESULT"]
+        display_web_search_result: bool = ctx.agent_configs["RESUME_DISPLAY_WEB_SEARCH_RESULT"]
+        display_wechat_status_result: bool = ctx.agent_configs["RESUME_DISPLAY_WECHAT_STATUS_RESULT"]
         tool_id_map: dict[str, str] = {}
         for msg in messages:
             if msg["role"] == "system":
@@ -526,9 +560,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             "**(This is the response of a retrieved background subagent)** \n\n", as_md))
                     continue
                 """user input"""
-                user_prefix_str = Text("History user input:\n", style=f"bright_black")
-                user_prefix_str.append(f"{AGENT_CONSOLE_ICON} " + msg["content"], style="white")
-                console.print(Panel(user_prefix_str, box=rich.box.SQUARE))
+                console.print(get_user_history_render(msg["content"], user_history_as_md))
             elif msg["role"] == "assistant":
                 """display reasoning"""
                 assistant_reasoning = get_reasoning(msg)

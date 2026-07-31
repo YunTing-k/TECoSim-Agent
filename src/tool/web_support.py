@@ -21,6 +21,7 @@ Revision:
 2026.6.29      Yu Huang      1.8      Fallback to DDGS when Exa/Tavily/Linkup backend fails
 2026.7.23      Yu Huang      1.9      Revise visibility of cron/web/WeChat tool calls
 2026.7.26      Yu Huang      2.0      Support of dumping webfetch caches to file
+2026.7.28      Yu Huang      2.1      Support of customizable user agent and http2 of webfetch
 
 Details:
 ---------
@@ -142,7 +143,8 @@ def web_single_fetch(url_in: str, ctx: AgentContext, console: Console) -> tuple[
         with httpx.Client(
                 timeout=httpx.Timeout(timeout=ctx.agent_configs["WEB_FETCH_TIMEOUT_S"]),
                 follow_redirects=True,
-                headers={"User-Agent": "TECoSim-Agent-WebFetch"}
+                headers={"User-Agent": ctx.agent_configs["WEB_FETCH_USER_AGENT"]},
+                http2=ctx.agent_configs["WEB_FETCH_ENABLE_HTTP2"]
         ) as httpx_client:
             resp = httpx_client.get(url)
             final_url = str(resp.url)

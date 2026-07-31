@@ -29,7 +29,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 4
+TECOSIM_AGENT_UPDATE_VERSION: int = 5
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -41,6 +41,7 @@ else:
 LOG_PATH: str = "./log"
 API_CONFIGS_PATH: str = "./config/api_configs.json"
 AGENT_CONFIGS_PATH: str = "./config/agent_configs.json"
+OVERRIDE_PROMPTS_PATH: str = "./config/override_prompts.json"
 MCPS_PATH: str = "./mcps"
 SKILLS_PATH: str = "./skills"
 MCPS_CONFIGS_PATH: str = MCPS_PATH + "/mcps_configs.json"

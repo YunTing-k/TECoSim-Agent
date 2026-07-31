@@ -27,6 +27,8 @@
     "SKILL_DESC_CHAR_LIMIT": 250,
 
     "WEB_FETCH_TIMEOUT_S": 20,
+    "WEB_FETCH_USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "WEB_FETCH_ENABLE_HTTP2": true,
     "WEB_FETCH_CACHE_TIME_S": 1000,
     "WEB_FETCH_MODEL": "fast",
     "WEB_FETCH_LLM_CHAR_LIMIT": 12000,
@@ -90,6 +92,7 @@
 
     "DISPLAY_RESPONSE_REASON": true,
     "RENDER_RESPONSE_AS_MD": true,
+    "RESUME_RENDER_USER_HISTORY_AS_MD": false,
     "RESUME_DISPLAY_SUBAGENT": false,
     "RESUME_DISPLAY_SYS_REMINDER": true,
     "RESUME_DISPLAY_SKILLS": true,

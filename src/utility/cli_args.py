@@ -18,11 +18,12 @@ Revision:
 2026.6.3       Yu Huang      1.6      Add cron tasks support
 2026.6.5       Yu Huang      1.7      Add --nosystem, --notools, --nocrons support
 2026.7.15-16   Yu Huang      1.8      Add WeChat bot interaction support
+2026.7.28      Yu Huang      1.9      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
 
 Details:
 ---------
-CLI argument parser for the agent. Main arguments: `-l` (dev log), `-r <UUID>` (resume session), `--nosystem`, `--notools`,
-`--nocrons`, `--noskills`, `--nomcps`, `--dangerously_allow_all`. Sub-commands: `session` (list/remove sessions),
+CLI argument parser for the agent. Main arguments: `-l` (dev log), `-r <UUID>` (resume session), `--override_prompts`,
+`--notools`, `--nocrons`, `--noskills`, `--nomcps`, `--dangerously_allow_all`. Sub-commands: `session` (list/remove sessions),
 `cron` (list/remove durable cron tasks), `skill` (list skills), `mcp` (list/add/toggle/remove MCP servers).
 """
 import argparse
@@ -37,7 +38,7 @@ def tecosim_agent_args() -> Namespace:
     parser.add_argument('-l', '--log', help='To enable dev logger', action='store_true')
     parser.add_argument('-r', '--resume', type=str, help='Resume with session UUID', metavar='<UUID>')
     parser.add_argument('-wc', '--wechat', help='Interact agent with WeChat', action='store_true')
-    parser.add_argument('--nosystem', help='To disable main agent\'s system prompts', action='store_true')
+    parser.add_argument('--override_prompts', help='Override the default system prompts of main agent', action='store_true')
     parser.add_argument('--notools', help='To disable main agent\'s tools', action='store_true')
     parser.add_argument('--nocrons', help='To disable all cron tasks in main agent and subagent', action='store_true')
     parser.add_argument('--noskills', help='To disable all skills in main agent and subagent', action='store_true')

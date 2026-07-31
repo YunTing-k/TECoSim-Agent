@@ -162,7 +162,7 @@ TECoSimAgent.exe                           # 启动Agent / Launch agent
 TECoSimAgent.exe -l                        # 启用开发者日志 / Launch with developer logs
 TECoSimAgent.exe -r <UUID>                 # 恢复指定会话 / Resume a session
 TECoSimAgent.exe -wc                       # 启用微信机器人模式 / Enable WeChat Bot mode
-TECoSimAgent.exe --nosystem                # 禁用系统提示词 / Disable system prompts
+TECoSimAgent.exe --override_prompts        # 覆盖默认系统提示词 / Override default system prompts
 TECoSimAgent.exe --notools                 # 禁用工具 / Disable agent tools
 TECoSimAgent.exe --nocrons                 # 禁用定时任务 / Disable cron tasks
 TECoSimAgent.exe --noskills                # 禁用技能 / Disable skills
@@ -174,13 +174,17 @@ python -m src.main                         # 启动Agent / Launch agent
 python -m src.main -l                      # 启用开发者日志 / Launch with developer logs
 python -m src.main -r <UUID>               # 恢复指定会话 / Resume a session
 python -m src.main -wc                     # 启用微信机器人模式 / Enable WeChat Bot mode
-python -m src.main --nosystem              # 禁用系统提示词 / Disable system prompts
+python -m src.main --override_prompts      # 覆盖默认系统提示词 / Override default system prompts
 python -m src.main --notools               # 禁用工具 / Disable agent tools
 python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
 python -m src.main --noskills              # 禁用技能 / Disable skills
 python -m src.main --nomcps                # 禁用MCP / Disable MCPs
 python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险！） / Allow all permissions (dangerous!)
 ```
+
+> **自定义系统提示词**： 启用 `--override_prompts` 参数时，agent的系统提示词将会被 `./config/override_prompts.json` 中的相关定义覆盖，可编辑该文件以自定义系统提示词
+> 
+> **Custom System Prompts**: When `--override_prompts` is enabled, the agent's system prompts will be overridden by definitions in `./config/override_prompts.json` — edit that file to customize system prompts.
 
 ### 子命令 | Sub-commands
 

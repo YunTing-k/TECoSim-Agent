@@ -8,7 +8,7 @@ Covers: create_task guidance, update_task guidance (in_progress/completed),
 Run:  python test/task_tool_test.py
 """
 import sys, os, unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.getcwd())
@@ -18,11 +18,11 @@ import logging
 logging.basicConfig(level=logging.CRITICAL)
 
 from context.agent_context import AgentContext
-from src.tool.scoreboard import Scoreboard, TaskStatus
+from src.tool.scoreboard import Scoreboard
 from src.tool.tool_def import create_task, update_task, query_task
 
 
-def make_agent_ctx(agent_id: str = "agent-1", nosystem: bool = False) -> AgentContext:
+def make_agent_ctx(agent_id: str = "agent-1") -> AgentContext:
     ctx = AgentContext()
     ctx.agent_id = agent_id
     ctx.agent_configs = {
@@ -31,7 +31,6 @@ def make_agent_ctx(agent_id: str = "agent-1", nosystem: bool = False) -> AgentCo
         "RENDER_RESPONSE_AS_MD": False,
         "DISPLAY_RESPONSE_REASON": True,
     }
-    ctx.nosystem = nosystem
     return ctx
 
 

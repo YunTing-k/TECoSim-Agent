@@ -160,7 +160,6 @@ def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
     cmd_completer = CmdCompleter(commands=[cmd for cmd, (_, _, _) in cmd_object],
                                  meta_dict={cmd: label for cmd, (_, label, _) in cmd_object})
     session = PromptSession(
-        # history=FileHistory(path + "/user_history"),
         history=FileHistory(os.path.join(path, USER_HISTORY_NAME)),
         auto_suggest=AutoSuggestFromHistory(),
         mouse_support=False,

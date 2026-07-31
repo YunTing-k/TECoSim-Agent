@@ -430,10 +430,11 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `4` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `5` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
+| `OVERRIDE_PROMPTS_PATH` | `"./config/override_prompts.json"` | 覆盖式提示词配置文件路径 / Override prompts config file path |
 | `MCPS_PATH` | `"./mcps"` | MCP 根目录 / MCP root directory |
 | `SKILLS_PATH` | `"./skills"` | Skills 根目录 / Skills root directory |
 | `MCPS_CONFIGS_PATH` | `"./mcps/mcps_configs.json"` | MCP 配置文件路径 / MCP config file path |
