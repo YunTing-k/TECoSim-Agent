@@ -44,18 +44,21 @@ Revision:
 2026.7.17      Yu Huang      4.0      Support of WeChat bot msg insert even if the tool call round is not end
 2026.7.18      Yu Huang      4.1      Support of fixing orphan and missing tool results in context & Add session summary in WeChat Bot
 2026.7.23      Yu Huang      4.2      Add launch support in arbitrary path
+2026.8.1-2     Yu Huang      4.3      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 Main entry point and core agent loop. Initializes all subsystems (logger, CLI args, LLM client, agent context, skills,
 MCPs, cron, sessions, builtin commands, scoreboard, design/run managers), then runs the interactive loop:
 user input (with task reminder injection) → LLM request → tool execution (with task usage tracking and reminder injection)
-→ response. Handles API timeout, cancellation, keyboard interrupt, and unexpected errors.
+→ response. Busy-phase terminal/WeChat messages are injected at the top of the loop (check_insert / check_wechat) and
+auto-send at the next request boundary via the pending_request flag; API timeouts retry with the same messages without
+dropping them. Handles API timeout, cancellation, keyboard interrupt, and unexpected errors.
 """
 import os
 import openai
 
-from src.utility import sys_logger, cli_args, ui_info, client, command, agent_listen
+from src.utility import sys_logger, cli_args, ui_info, client, command, agent_listen, input_thread
 from src.context import session, prompt
 from src.context.agent_context import AgentContext, RequestLLMCancelled
 from src.tool.scoreboard import Scoreboard
@@ -177,7 +180,7 @@ if __name__ == '__main__':
         sys_log.debug("All cron tasks are disabled in main agent and subagent")
         console.print("All cron tasks are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
 
-    """config wechat bot"""
+    """config wechat bot & Input thread"""
     if ctx.args.wechat:
         wechat_bot = wechat_support.WeChatBridge(console=console, prompt_session=ctx.agent_session,
                                                  session_uuid=ctx.session_uuid, config=ctx.agent_configs)
@@ -193,9 +196,15 @@ if __name__ == '__main__':
             ctx.wechat_bot.run()
         else:
             ctx.enable_wechat = False
-            sys_log.info("WeChat Bot failed to launch and is disabled, fallback to CLI")
+            sys_log.info("WeChat Bot failed to launch and is disabled, fallback to TUI mode")
             console.print(f"[{MAJOR_COLOR2}]WeChat Bot[/{MAJOR_COLOR2}] failed to launch and is [bold red]disabled[/bold red]"
-                          f", fallback to CLI")
+                          f", fallback to TUI mode")
+            if not ctx.args.noinsert:
+                ctx.in_thread = input_thread.InputThread()
+                sys_log.info("TUI input thread created")
+    elif not ctx.args.noinsert:
+        ctx.in_thread = input_thread.InputThread()
+        sys_log.info("TUI input thread created")
 
     """config agent context"""
     # resume context
@@ -227,6 +236,7 @@ if __name__ == '__main__':
         sys_log.debug("All tools in main agent are disabled")
         console.print("All tools in main agent are disabled", style=f"bold {MAJOR_COLOR1}")
     ctx.task_end = True  # previous task is always ended
+    ctx.pending_request = False  # no message is queued
     as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
 
     """set the terminal title"""
@@ -238,8 +248,24 @@ if __name__ == '__main__':
             """save messages, context and scoreboard"""
             file_io_support.save_sessions(ctx, board, console, True)
 
+            """user message inserted from WeChat"""
+            _, content = agent_listen.check_wechat(ctx)  # listen WeChat messages and attach context
+            if content:
+                ctx.pending_request = True
+                console.print(prompt.get_msg_render_strip(
+                    {"content": content}, WECHAT_PROMPT_START_LABEL, WECHAT_PROMPT_END_LABEL,
+                    WECHAT_PROMPT_ICON, "", as_md))
+
+            """user message inserted from CLI"""
+            _, content = agent_listen.check_insert(ctx)
+            if content:
+                ctx.pending_request = True
+                console.print(prompt.get_msg_render_strip(
+                    {"content": content}, INSERT_PROMPT_START_LABEL, INSERT_PROMPT_END_LABEL,
+                    INSERT_PROMPT_ICON, "", as_md))
+
             """user input or tool results"""
-            if ctx.task_end:
+            if ctx.task_end and not ctx.pending_request:
                 ui_info.usage_bar(ctx=ctx, console=console)
                 """
                 Listen agent when there are active cron tasks, pending tasks, foreground subagents, WeChat Bot is enabled
@@ -285,58 +311,54 @@ if __name__ == '__main__':
                         ui_info.set_terminal_title(ctx.session_title)
                     """pass prompts to LLM"""
             else:
-                """second response with previous loop's tool results or reminder or inserted WeChat messages"""
+                """second response with previous loop's tool results or reminder or inserted messages"""
+                # reset signal
+                if ctx.pending_request:
+                    ctx.pending_request = False
                 pass
 
-            """send LLM request"""
-            sys_log.debug("LLM request start")
-            response = client.llm_request_spinner(client.request_loop_main, ctx.llm_client, ctx,
-                                                  console=console, if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
-            sys_log.debug("LLM request end")
+            """start the input thread"""
+            if ctx.in_thread is not None: ctx.in_thread.start()
+            try:
+                """send LLM request"""
+                sys_log.debug("LLM request start")
+                response = client.llm_request_spinner(client.request_loop_main, ctx.llm_client, ctx,
+                                                      console=console, input_thread=ctx.in_thread, if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"])
+                sys_log.debug("LLM request end")
 
-            """manage the LLM response"""
-            assistant_tool_calls = prompt.llm_response_manage(response=response, ctx=ctx, console=console)
+                """manage the LLM response"""
+                assistant_tool_calls = prompt.llm_response_manage(response=response, ctx=ctx, console=console)
 
-            """call tools"""
-            if assistant_tool_calls is not None:
-                ctx.task_end = False
-                sys_log.debug("Tools call start")
-                ctx.tool_calls_prompts += len(assistant_tool_calls)
-                tools_response = tool_execute.tool_calls_spinner_board(
-                    tool_execute.execute_tools,
-                    assistant_tool_calls, ctx, board,
-                    board=board, console=console,
-                    if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"],
-                    agent_list=ctx.agent_list)
-                ctx.messages.extend(tools_response)
-                ctx.tool_results_prompts += len(tools_response)
-                """check task"""
-                prompt.update_task_usage(ctx, assistant_tool_calls, "tool_call")
-                task_reminder = prompt.get_task_reminder(ctx, board, "tool_call")
-                if task_reminder is not None:
-                    ctx.messages.append({"role": "user", "content": f"{SYS_REMINDER_START_LABEL}\n"
-                                                                    f"{task_reminder}\n"
-                                                                    f"{SYS_REMINDER_END_LABEL}"})
-            else:
-                ctx.task_end = True
-                """check task"""
-                # remind from chat is equivalent to remind from user input, so only update usage
-                prompt.update_task_usage(ctx, None, "chat")
-
-            """user message inserted from WeChat"""
-            _, content = agent_listen.check_wechat(ctx)  # listen WeChat messages and attach context
-            if content:
-                console.print(prompt.get_msg_render_strip(
-                    {"content": content}, WECHAT_PROMPT_START_LABEL, WECHAT_PROMPT_END_LABEL, WECHAT_PROMPT_ICON, "", as_md))
-
+                """call tools"""
+                if assistant_tool_calls is not None:
+                    ctx.task_end = False
+                    sys_log.debug("Tools call start")
+                    ctx.tool_calls_prompts += len(assistant_tool_calls)
+                    tools_response = tool_execute.tool_calls_spinner(
+                        tool_execute.execute_tools,
+                        assistant_tool_calls, ctx, board,
+                        board=board, console=console, input_thread=ctx.in_thread,
+                        if_random=ctx.agent_configs["RANDOM_PROGRESS_TITLE"],
+                        agent_list=ctx.agent_list)
+                    ctx.messages.extend(tools_response)
+                    ctx.tool_results_prompts += len(tools_response)
+                    """check task"""
+                    prompt.update_task_usage(ctx, assistant_tool_calls, "tool_call")
+                    task_reminder = prompt.get_task_reminder(ctx, board, "tool_call")
+                    if task_reminder is not None:
+                        ctx.messages.append({"role": "user", "content": f"{SYS_REMINDER_START_LABEL}\n"
+                                                                        f"{task_reminder}\n"
+                                                                        f"{SYS_REMINDER_END_LABEL}"})
+                else:
+                    ctx.task_end = True
+                    """check task"""
+                    # remind from chat is equivalent to remind from user input, so only update usage
+                    prompt.update_task_usage(ctx, None, "chat")
+            finally:
+                if ctx.in_thread is not None: ctx.in_thread.stop()
         except openai.APITimeoutError:
-            """API timeout"""
-            if ctx.task_end:  # no tool calls, only user prompt, so pop it
-                ctx.messages.pop()
-                if ctx.user_prompts >= 1:
-                    ctx.user_prompts -= 1
-            else:  # if send tool calls' results, retry
-                pass
+            """API timeout: retry with the same messages without asking the user again"""
+            ctx.pending_request = True  # messages not consumed, skip the user input block on retry
             sys_log.warning(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["LLM_TIMEOUT_MS"] / 1000} s, retry")
             console.print(f"LLM request {TIMEOUT_LABEL}: {ctx.api_configs["LLM_TIMEOUT_MS"] / 1000} s, retry", style="bold yellow")
             continue

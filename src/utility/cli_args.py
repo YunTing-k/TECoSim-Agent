@@ -19,6 +19,7 @@ Revision:
 2026.6.5       Yu Huang      1.7      Add --nosystem, --notools, --nocrons support
 2026.7.15-16   Yu Huang      1.8      Add WeChat bot interaction support
 2026.7.28      Yu Huang      1.9      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
+2026.8.1-2     Yu Huang      2.0      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
@@ -43,6 +44,7 @@ def tecosim_agent_args() -> Namespace:
     parser.add_argument('--nocrons', help='To disable all cron tasks in main agent and subagent', action='store_true')
     parser.add_argument('--noskills', help='To disable all skills in main agent and subagent', action='store_true')
     parser.add_argument('--nomcps', help='To disable all MCPs in main agent and subagent', action='store_true')
+    parser.add_argument('--noinsert', help='To disable message insert under TUI mode', action='store_true')
     parser.add_argument('--dangerously_allow_all', help='Dangerously allow all permissions, this may damage '
                         'your workspace or computer. Think twice before toggle this flag!', action='store_true')
 

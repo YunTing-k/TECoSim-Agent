@@ -48,21 +48,26 @@ Revision:
 2026.7.26      Yu Huang      4.3      Fix: prevent orphan lines in stream messages display with final live.update
 2026.7.28      Yu Huang      4.4      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
                                       & render user history messages as Markdown
+2026.8.1-2     Yu Huang      4.5      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 Prompt assembly and LLM response management. Assembles system prompts (agent role, guidelines, environment, skills). Manages
 message history (save/load JSON to session files with serialization). Handles both streaming and non-streaming LLM responses:
-token usage tracking, reasoning/content extraction, tool call collection, context limit checking. Provides DeepSeek reasoning
-format conversion. Also provides task usage tracking (`update_task_usage`) and task reminder generation (`get_task_reminder`)
+token usage tracking, reasoning/content extraction, tool call collection, context limit checking. The streaming display
+(get_stream_render / llm_stream_manage) includes the busy-phase insert bar and forwards Ctrl+C to the main thread.
+Provides DeepSeek reasoning format conversion. Also provides task usage tracking (`update_task_usage`) and task reminder
+generation (`get_task_reminder`).
 for workflow management, with system reminder label display support.
 """
 import os
 import json
 import logging
+import threading
 import rich.box
 
 from typing import Any, Literal
+from contextlib import ExitStack
 from datetime import datetime
 from openai import Stream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
@@ -76,15 +81,15 @@ from src.tool.scoreboard import Scoreboard, Task, tasks_to_info
 from src.tool.file_io_support import read_messages, get_syntax_render
 from src.tool.bash_support import get_bash_render, get_bash_result_render
 from src.tool.ask_question import get_answers_render
-from src.tool.web_support import get_webfetch_str
 from src.tool.file_filter_support import get_grep_cmd
 from src.tool.cron_support import get_cron_create_str
 from src.agent.agent_types import SubAgentProgress, AgentStatus
 from src.utility.ui_info import render_subagent_line
 from src.context.agent_context import AgentContext
+from src.utility.input_thread import InputThread
 from src.utility.basic_utils import (
     get_platform_info, is_git_available, is_git_repo, is_bash_available, is_ripgrep_available, ReasonMD, ContentMD,
-    grad_color_hex_list)
+    grad_color_hex_list, get_webfetch_str)
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -315,7 +320,7 @@ def get_task_reminder(ctx: AgentContext, board: Scoreboard, remind_from: Literal
         if len(tasks) > 0:
             if_remind = True
             tasks_info = tasks_to_info(tasks, ctx.agent_id)
-            info += (f"There are still `{len(tasks)}` tasks needs your consideration:\n"
+            info += (f"There are still `{len(tasks)}` tasks needs your consideration:\n\n"
                      f"{tasks_info}\n"
                      f"Use task tools to manage your workflow\n")
         elif ctx.task_tool_unuse > ctx.agent_configs["REMIND_TASK_CHAT_GAP"]:
@@ -1043,13 +1048,14 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
 
 
 def get_stream_render(collected_reasoning: str | None, collected_content: str | None, as_md: bool, show_reason: bool,
-                      collected_tool_names: list[str] | None, base_time: datetime, color_list: list[str]) -> Group:
+                      collected_tool_names: list[str] | None, input_thread: InputThread | None,
+                      base_time: datetime, stream_color_list: list[str], insert_color_list: list[str]) -> Group:
     """get the render of the stream messages with smart truncation for long content"""
     now_time = datetime.now()
     time_diff = (now_time - base_time).total_seconds()
     position_in_period = time_diff % MESSAGE_COLOR_PERIOD
-    index = int((position_in_period / MESSAGE_COLOR_PERIOD) * len(color_list)) % len(color_list)
-    color = color_list[index]
+    index = int((position_in_period / MESSAGE_COLOR_PERIOD) * len(stream_color_list)) % len(stream_color_list)
+    color = stream_color_list[index]
     max_reasoning_lines = STREAM_DISPLAY_MAX_REASON_LINE
     max_content_lines = STREAM_DISPLAY_MAX_CONTENT_LINE
     parts = []
@@ -1132,7 +1138,13 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
                     line.append(", ", style="bright_black")
                 line.append(name, style=f"{color}")
             parts.append(line)
-            parts.append(Text("\n"))
+            if input_thread is None:
+                parts.append(Text("\n"))
+
+    """display insert box"""
+    if input_thread is not None:
+        insert_render = input_thread.get_render(now_time, base_time, insert_color_list)
+        parts.append(insert_render)
 
     return Group(*parts)
 
@@ -1151,12 +1163,21 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     show_reason = ctx.agent_configs["DISPLAY_RESPONSE_REASON"]
     tool_names: list[str] = []
     base_time = datetime.now()
-    msg_color_list = grad_color_hex_list(MAJOR_COLOR1, MAJOR_COLOR2, MESSAGE_COLOR_GRADIENT)
-    msg_color_list = msg_color_list + msg_color_list[::-1]
+    stream_color_list = grad_color_hex_list(MAJOR_COLOR1, MAJOR_COLOR2, MESSAGE_COLOR_GRADIENT)
+    stream_color_list = stream_color_list + stream_color_list[::-1]
+    insert_color_list = grad_color_hex_list(INSERT_TUI_COLOR_START, INSERT_TUI_COLOR_END, INSERT_TUI_COLOR_GRADIENT)
+    insert_color_list = insert_color_list + insert_color_list[::-1]
+
+    refresh_rate = STREAM_DISPLAY_REFRESH_RATE if ctx.in_thread is not None else (1000.0 / INSERT_LIVE_CHECK_GAP_MS)
 
     """process each chunk"""
-    with Live(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names, base_time, msg_color_list),
-              refresh_per_second=STREAM_DISPLAY_REFRESH_RATE, console=console, transient=False) as live:
+    with ExitStack() as stack, Live(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names, ctx.in_thread,
+                                                      base_time, stream_color_list, insert_color_list),
+                                    refresh_per_second=refresh_rate, console=console, transient=False) as live:
+        if ctx.in_thread is not None:
+            # streaming is consumed by the main thread, so Ctrl+C forwarding targets it
+            ctx.in_thread.busy_thread_ident = threading.current_thread().ident
+            stack.callback(lambda: setattr(ctx.in_thread, "busy_thread_ident", None))
         for chunk in response:
             if not chunk.choices:
                 continue
@@ -1216,7 +1237,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
             """update display"""
             tool_names = [tc["function"]["name"] for tc in collected_tool_calls.values() if tc["function"]["name"].strip()]
             live.update(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names if tool_names else None,
-                                          base_time, msg_color_list))
+                                          ctx.in_thread, base_time, stream_color_list, insert_color_list))
         # print the final content without orphan lines
         live.update(get_block_render(collected_reasoning, collected_content, as_md, show_reason))
 

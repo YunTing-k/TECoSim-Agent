@@ -22,6 +22,7 @@ Revision:
 2026.7.23      Yu Huang      1.9      Revise visibility of cron/web/WeChat tool calls
 2026.7.26      Yu Huang      2.0      Support of dumping webfetch caches to file
 2026.7.28      Yu Huang      2.1      Support of customizable user agent and http2 of webfetch
+2026.8.2       Yu Huang      2.2      Remove get_webfetch_str from web_support.py to basic_utils.py
 
 Details:
 ---------
@@ -522,12 +523,3 @@ def web_search_process(query: str, content: list[WebSearchContent], ctx: AgentCo
         sys_log.error(f"Web search LLM process failed with error: {e}")
         console.print(f"Web search LLM process failed with error: {e}", style="bold red")
         return f"(Web search LLM process failed with error: {e})", False
-
-
-def get_webfetch_str(arguments: dict[str, Any]) -> str:
-    """get webfetch string from arguments only for display"""
-    url = arguments.get("url", "(Failed to get URL)")
-    fetch_prompt = arguments.get("prompt", "(Failed to get prompt)")
-    return (f"{TOOL_NAME_WEB_FETCH}:\n"
-            f"├─URL: \"{url}\"\n"
-            f"└─prompt: \"{fetch_prompt}\"")

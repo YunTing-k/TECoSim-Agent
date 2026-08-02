@@ -711,6 +711,7 @@ def tasks_to_info(tasks: list[Task], agent_id: str) -> str:
             info += f" - Blocked by: (None)\n"
         else:
             info += f" - Blocked by: {task["blocked_by"]}\n"
+        info += "\n"
     if len(tasks) == 0:
         info = f"(Task list is empty)"
     return info

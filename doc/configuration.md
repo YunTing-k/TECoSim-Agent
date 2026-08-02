@@ -25,6 +25,7 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 | `API_KEY` | API 密钥 / API authentication key |
 | `MAIN_MODEL_NAME` | 主模型名称 / Primary model name |
 | `MAIN_MODEL_TEMPERATURE` | 主模型温度参数 / Primary model temperature |
+| `MAIN_MODEL_TOP_P` | 主模型 top_p 采样参数（核采样阈值）/ Primary model top_p sampling parameter (nucleus sampling threshold) |
 | `MAIN_MODEL_MAX_TOKENS` | 主模型最大输出 Token 数 / Primary model max output tokens |
 | `MAIN_MODEL_STREAM` | 主模型是否启用流式输出（推荐开启以提升交互体验）/ Enable streaming for primary model (recommended) |
 | `MAIN_MODEL_CONTEXT` | 主模型上下文窗口大小，用于上下文阈值告警判断 / Primary model context window size, used for context threshold warnings |
@@ -33,6 +34,7 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 | `MAIN_MODEL_DEEPSEEK_SUPPORT` | 主模型是否启用 DeepSeek 格式支持（处理 thinking/reasoning 特殊格式）/ Enable DeepSeek format support for primary model |
 | `MEDIUM_MODEL_NAME` | 中阶模型名称，用于子 Agent 等中等复杂度任务 / Medium model name, used for subagents and moderate-complexity tasks |
 | `MEDIUM_MODEL_TEMPERATURE` | 中阶模型温度参数 / Medium model temperature |
+| `MEDIUM_MODEL_TOP_P` | 中阶模型 top_p 采样参数（核采样阈值）/ Medium model top_p sampling parameter (nucleus sampling threshold) |
 | `MEDIUM_MODEL_MAX_TOKENS` | 中阶模型最大输出 Token 数 / Medium model max output tokens |
 | `MEDIUM_MODEL_CONTEXT` | 中阶模型上下文窗口大小 / Medium model context window size |
 | `MEDIUM_MODEL_ENABLE_REASONING` | 中阶模型是否启用推理 / Enable reasoning for medium model |
@@ -40,6 +42,7 @@ The `api_configs.json` file defines LLM connection parameters, including the thr
 | `MEDIUM_MODEL_DEEPSEEK_SUPPORT` | 中阶模型是否启用 DeepSeek 格式支持 / Enable DeepSeek format support for medium model |
 | `FAST_MODEL_NAME` | 快速模型名称，用于处理简单/确定性任务 / Fast model name, used for simple/deterministic tasks |
 | `FAST_MODEL_TEMPERATURE` | 快速模型温度参数 / Fast model temperature |
+| `FAST_MODEL_TOP_P` | 快速模型 top_p 采样参数（核采样阈值）/ Fast model top_p sampling parameter (nucleus sampling threshold) |
 | `FAST_MODEL_MAX_TOKENS` | 快速模型最大输出 Token 数 / Fast model max output tokens |
 | `FAST_MODEL_ENABLE_REASONING` | 快速模型是否启用推理 / Enable reasoning for fast model |
 | `FAST_MODEL_REASONING_EFFORT` | 快速模型推理强度（`low`/`medium`/`high`）/ Fast model reasoning effort |

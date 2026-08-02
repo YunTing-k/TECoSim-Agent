@@ -25,13 +25,16 @@ Revision:
                                       the same console instance
 2026.6.13      Yu Huang      2.3      Add request_branch_medium + select_branch_func for 3-tier model switching
 2026.7.23      Yu Huang      2.4      Add launch support in arbitrary path
+2026.7.31      Yu Huang      2.5      Support of configuring LLM's top_p
+2026.8.1-2     Yu Huang      2.6      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 LLM client management: configures OpenAI client from API configs, provides `request_loop_main` (main model with streaming,
-reasoning, DeepSeek support, tool calls) and `request_branch_*` (main/medium/fast models for non-loop tasks with configurable
-DeepSeek support). Three-tier model switching via `select_branch_func(model_tier)`.
-Wraps requests with a spinner UI via `llm_request_with_spinner`.
+reasoning, DeepSeek support, tool calls, configurable top_p) and `request_branch_*` (main/medium/fast models for non-loop
+tasks with configurable DeepSeek support). Three-tier model switching via `select_branch_func(model_tier)`.
+Wraps requests with a spinner UI via `llm_request_spinner`, passing the busy-phase input thread through to the spinner
+surfaces (insert bar rendering + Ctrl+C forwarding).
 """
 import random
 import logging
@@ -40,6 +43,7 @@ from openai import OpenAI
 from rich.console import Console
 from typing import Callable, Any
 from src.utility.ui_info import loading_spinner
+from src.utility.input_thread import InputThread
 from src.context.agent_context import RequestLLMCancelled
 from src.context.agent_context import AgentContext
 from src.constants import *
@@ -64,7 +68,7 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
         raise RuntimeError(e)
 
 
-def llm_request_spinner(func: Callable, *args, console: Console,
+def llm_request_spinner(func: Callable, *args, console: Console, input_thread: InputThread | None = None,
                         waiting_desc: str | None = None, done_desc: str | None = None,
                         intrp_desc: str | None = None, fail_desc: str | None = None,
                         spinner: str | None = None, if_random: bool, **kwargs) -> Any:
@@ -97,6 +101,7 @@ def llm_request_spinner(func: Callable, *args, console: Console,
                              intrp_desc=intrp_title, fail_desc=fail_title,
                              spinner=spinner_choice,
                              out_except=RequestLLMCancelled("LLM request is cancelled by user"),
+                             input_thread=input_thread,
                              console=console, **kwargs)
     return result
 
@@ -106,6 +111,7 @@ def request_loop_main(client: OpenAI, ctx: AgentContext):
     params: dict[str, Any] = {
         "model": ctx.api_configs["MAIN_MODEL_NAME"],
         "temperature": ctx.api_configs["MAIN_MODEL_TEMPERATURE"],
+        "top_p": ctx.api_configs["MAIN_MODEL_TOP_P"],
         "max_tokens": ctx.api_configs["MAIN_MODEL_MAX_TOKENS"],
         "stream": ctx.api_configs["MAIN_MODEL_STREAM"],
         "messages": ctx.messages,
@@ -134,6 +140,7 @@ def request_branch_main(client: OpenAI, messages: list[dict[str, Any]], tools: l
     params: dict[str, Any] = {
         "model": api_configs["MAIN_MODEL_NAME"],
         "temperature": api_configs["MAIN_MODEL_TEMPERATURE"],
+        "top_p": api_configs["MAIN_MODEL_TOP_P"],
         "max_tokens": api_configs["MAIN_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
@@ -165,6 +172,7 @@ def request_branch_medium(client: OpenAI, messages: list[dict[str, Any]], tools:
     params: dict[str, Any] = {
         "model": api_configs["MEDIUM_MODEL_NAME"],
         "temperature": api_configs["MEDIUM_MODEL_TEMPERATURE"],
+        "top_p": api_configs["MEDIUM_MODEL_TOP_P"],
         "max_tokens": api_configs["MEDIUM_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
@@ -190,25 +198,13 @@ def request_branch_medium(client: OpenAI, messages: list[dict[str, Any]], tools:
     return response
 
 
-def select_branch_func(model_tier: str):
-    """return (request_function, deepseek_config_key) for a given model tier"""
-    if model_tier == "main":
-        return request_branch_main, "MAIN_MODEL_DEEPSEEK_SUPPORT"
-    elif model_tier == "medium":
-        return request_branch_medium, "MEDIUM_MODEL_DEEPSEEK_SUPPORT"
-    elif model_tier == "fast":
-        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"
-    else:  # "fast"
-        sys_log.warning(f"Unknown model tier {model_tier}")
-        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"
-
-
 def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
                         api_configs: dict[str, Any], tool_choice: str | dict[str, Any] | None = None):
     """Create fast LLM model request with LLM client, messages, tools, configs for non-loop of agent"""
     params: dict[str, Any] = {
         "model": api_configs["FAST_MODEL_NAME"],
         "temperature": api_configs["FAST_MODEL_TEMPERATURE"],
+        "top_p": api_configs["FAST_MODEL_TOP_P"],
         "max_tokens": api_configs["FAST_MODEL_MAX_TOKENS"],
         "stream": False,  # Fast model disable stream response
         "messages": messages,
@@ -232,3 +228,16 @@ def request_branch_fast(client: OpenAI, messages: list[dict[str, Any]], tools: l
             params["extra_body"] = {"thinking": {"type": "disabled"}}
     response = client.chat.completions.create(**params)
     return response
+
+
+def select_branch_func(model_tier: str):
+    """return (request_function, deepseek_config_key) for a given model tier"""
+    if model_tier == "main":
+        return request_branch_main, "MAIN_MODEL_DEEPSEEK_SUPPORT"
+    elif model_tier == "medium":
+        return request_branch_medium, "MEDIUM_MODEL_DEEPSEEK_SUPPORT"
+    elif model_tier == "fast":
+        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"
+    else:  # "fast"
+        sys_log.warning(f"Unknown model tier {model_tier}")
+        return request_branch_fast, "FAST_MODEL_DEEPSEEK_SUPPORT"

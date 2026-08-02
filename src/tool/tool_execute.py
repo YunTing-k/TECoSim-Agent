@@ -35,6 +35,7 @@ Revision:
 2026.6.30      Yu Huang      3.3      Add multi-round results truncate method with pydict keys preserved
 2026.7.15      Yu Huang      3.4      Add merge subagent statistic method
 2026.7.23      Yu Huang      3.5      Add launch support in arbitrary path
+2026.8.1-2     Yu Huang      3.6      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
@@ -54,11 +55,12 @@ from typing import Callable, Any
 from rich.console import Console
 from rich.progress import Progress
 from src.utility.ui_info import (
-    loading_spinner, loading_spinner_with_board, pause_for_permission, resume_from_permission, render_subagent_line)
+    loading_spinner_with_board, pause_for_permission, resume_from_permission, render_subagent_line)
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
 from src.tool.ask_permission import ask_permission_tui
+from src.utility.input_thread import InputThread
 from src.utility.basic_utils import truncate_tool_result
 from src.agent.subagent import SubAgent, merge_agent_stats
 from src.agent.agent_types import AgentStatus, SubAgentProgress
@@ -67,50 +69,13 @@ from src.constants import *
 sys_log = logging.getLogger('logger')
 
 
-def tool_calls_spinner(func: Callable, *args, console: Console,
+def tool_calls_spinner(func: Callable, *args,
+                       board: Scoreboard, console: Console,
+                       input_thread: InputThread | None = None,
                        waiting_desc: str | None = None, done_desc: str | None = None,
                        intrp_desc: str | None = None, fail_desc: str | None = None,
-                       spinner: str | None = None, if_random: bool, **kwargs) -> Any:
-    """Tool calls with spinner through loading_spinner (for main agent)"""
-    if waiting_desc is not None:
-        waiting_title = waiting_desc
-    else:
-        if if_random:
-            waiting_title = random.choice(TOOLS_EXECUTION_TITLE_LIST)
-        else:
-            waiting_title = TOOLS_EXECUTION_TITLE_LIST[0]
-    if done_desc is not None:
-        done_title = done_desc
-    else:
-        done_title = TOOLS_EXECUTION_DONE_TITLE
-    if intrp_desc is not None:
-        intrp_title = intrp_desc
-    else:
-        intrp_title = TOOLS_EXECUTION_INTRP_TITLE
-    if fail_desc is not None:
-        fail_title = fail_desc
-    else:
-        fail_title = TOOLS_EXECUTION_FAIL_TITLE
-    if spinner is not None:
-        spinner_choice = spinner
-    else:
-        spinner_choice = TOOLS_EXECUTION_SPINNER
-    result = loading_spinner(func, *args,
-                             waiting_desc=waiting_title, done_desc=done_title,
-                             intrp_desc=intrp_title, fail_desc=fail_title,
-                             spinner=spinner_choice,
-                             out_except=ToolCallsCancelled("Tool call is cancelled by user"),
-                             console=console, with_progress=True,  # add progress to target function
-                             **kwargs)
-    return result
-
-
-def tool_calls_spinner_board(func: Callable, *args,
-                             board: Scoreboard, console: Console,
-                             waiting_desc: str | None = None, done_desc: str | None = None,
-                             intrp_desc: str | None = None, fail_desc: str | None = None,
-                             spinner: str | None = None, if_random: bool,
-                             agent_list: dict[str, SubAgentProgress] | None = None, **kwargs) -> Any:
+                       spinner: str | None = None, if_random: bool,
+                       agent_list: dict[str, SubAgentProgress] | None = None, **kwargs) -> Any:
     """Tool calls with spinner and scoreboard through loading_spinner_with_board (for main agent)"""
     if waiting_desc is not None:
         waiting_title = waiting_desc
@@ -141,6 +106,7 @@ def tool_calls_spinner_board(func: Callable, *args,
                                         intrp_desc=intrp_title, fail_desc=fail_title,
                                         spinner=spinner_choice,
                                         out_except=ToolCallsCancelled("Tool call is cancelled by user"),
+                                        input_thread=input_thread,
                                         console=console, with_progress=True,
                                         **kwargs)
     return result
@@ -261,7 +227,6 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
                 "role": "user",
                 "content": json.dumps(addon, ensure_ascii=False),
             })
-
     return messages
 
 

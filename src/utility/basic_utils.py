@@ -26,6 +26,7 @@ Revision:
 2026.7.3       Yu Huang      2.2      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.17      Yu Huang      2.3      Fix: block quoted won't be suppressed by _escape_html_outside_code
 2026.7.25      Yu Huang      2.4      Fix: prevent truncation in Markdown table with overflow="fold"
+2026.8.2       Yu Huang      2.5      Remove get_webfetch_str from web_support.py to basic_utils.py
 
 Details:
 ---------
@@ -41,10 +42,11 @@ import logging
 import platform
 import subprocess
 import math
+import rich.box
 
+from typing import Any
 from prompt_toolkit import PromptSession
 from prompt_toolkit.input import create_input, Input
-import rich.box
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.markdown import Markdown, TableElement, HorizontalRule, ImageItem
 from rich.segment import Segment
@@ -636,3 +638,12 @@ def format_file_for_llm(lines: list[str], file_path: str, start_line: int,
         output += f"\n(End of file - total {total_lines} lines)\n"
     output += "</file>\n"
     return output
+
+
+def get_webfetch_str(arguments: dict[str, Any]) -> str:
+    """get webfetch string from arguments only for display"""
+    url = arguments.get("url", "(Failed to get URL)")
+    fetch_prompt = arguments.get("prompt", "(Failed to get prompt)")
+    return (f"{TOOL_NAME_WEB_FETCH}:\n"
+            f"├─URL: \"{url}\"\n"
+            f"└─prompt: \"{fetch_prompt}\"")

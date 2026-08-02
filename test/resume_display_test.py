@@ -41,6 +41,10 @@ def _make_ctx(with_write: bool = False, with_bash: bool = False,
         "RESUME_DISPLAY_GREP_PREVIEW": False,
         "RESUME_DISPLAY_GREP_RESULT": False,
         "RESUME_DISPLAY_SUBAGENT": False,
+        "RESUME_RENDER_USER_HISTORY_AS_MD": False,
+        "RESUME_DISPLAY_WEB_FETCH_RESULT": False,
+        "RESUME_DISPLAY_WEB_SEARCH_RESULT": False,
+        "RESUME_DISPLAY_WECHAT_STATUS_RESULT": False,
     }
     return ctx
 

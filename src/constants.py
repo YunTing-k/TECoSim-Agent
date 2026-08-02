@@ -15,6 +15,7 @@ Revision:
 2026.6.29      Yu Huang      1.3      Add: QUESTION_NO_CHOICE_LABEL, SUBAGENT_SUMMARIES_NAME
 2026.7.15-16   Yu Huang      1.4      Add WeChat bot interaction support
 2026.7.23      Yu Huang      1.5      Classify constants into groups & Add launch support in arbitrary path
+2026.8.1-2     Yu Huang      1.6      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
@@ -29,7 +30,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 5
+TECOSIM_AGENT_UPDATE_VERSION: int = 6
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -75,6 +76,10 @@ SYS_REMINDER_ICON: str = "⚑"
 DEFAULT_SESSION_TITLE: str = "(Empty session)"
 UNKNOWN_SESSION_TITLE: str = "(Unknown session)"
 ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
+INSERT_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Esc: Discard)"
+INSERT_PROMPT_START_LABEL: str = "<cli_insert>"
+INSERT_PROMPT_END_LABEL: str = "</cli_insert>"
+INSERT_PROMPT_ICON: str = "▶"
 USER_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Enter: Submit)"
 USER_PROMPT_PREFIX_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
     "Type, and behold the breath of silica",
@@ -118,6 +123,15 @@ LISTEN_TUI_COLOR_START: str = MAJOR_COLOR1
 LISTEN_TUI_COLOR_END: str = MAJOR_COLOR2
 LISTEN_TUI_COLOR_GRADIENT: int = 128
 LISTEN_TUI_COLOR_PERIOD: float = 1.75
+INSERT_TUI_CURSOR1: str = "▌"
+INSERT_TUI_CURSOR2: str = ""
+INSERT_TUI_COLOR_START: str = MAJOR_COLOR1
+INSERT_TUI_COLOR_END: str = MAJOR_COLOR2
+INSERT_TUI_COLOR_GRADIENT: int = 128
+INSERT_TUI_COLOR_PERIOD: float = 1.75
+INSERT_TUI_CURSOR_PERIOD: float = 1
+INSERT_LISTEN_SLEEP_TIME_MS: int = 20
+INSERT_LIVE_CHECK_GAP_MS: int = 20  # faster refresh gap when the input insert bar is active
 LLM_REQUEST_SPINNER: str = "dots2"
 
 """Message Display"""
@@ -140,8 +154,8 @@ MARKDOWN_H4_STYLE: str = f"italic #FFBCF7"
 MARKDOWN_H5_STYLE: str = f"italic #FFCAF8"
 MARKDOWN_H6_STYLE: str = f"italic #FFD9FA"
 STREAM_DISPLAY_REFRESH_RATE: int = 20
-STREAM_DISPLAY_MAX_REASON_LINE: int = 10
-STREAM_DISPLAY_MAX_CONTENT_LINE: int = 20
+STREAM_DISPLAY_MAX_REASON_LINE: int = 8
+STREAM_DISPLAY_MAX_CONTENT_LINE: int = 16
 REASON_ICON: str = "⟡"
 REASON_ICON_SYLTE: str = f"bold {MAJOR_COLOR2}"
 CONTENT_ICON: str = "●"

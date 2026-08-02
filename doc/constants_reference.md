@@ -60,6 +60,8 @@ The agent wraps special content inserted into LLM messages with standardized lab
 | `WECHAT_PROMPT_END_LABEL` | `</wechat_bot>` | 微信消息内容结束标记 / Marks the end of WeChat message content |
 | `SUBAGENT_START_LABEL` | `<subagent>` | 子 Agent 记录内容起始标记 / Marks the start of subagent record content |
 | `SUBAGENT_END_LABEL` | `</subagent>` | 子 Agent 记录内容结束标记 / Marks the end of subagent record content |
+| `INSERT_PROMPT_START_LABEL` | `<cli_insert>` | 忙碌期终端插入消息起始标记 / Marks the start of busy-phase terminal inserted messages |
+| `INSERT_PROMPT_END_LABEL` | `</cli_insert>` | 忙碌期终端插入消息结束标记 / Marks the end of busy-phase terminal inserted messages |
 
 > **显示控制**： 恢复会话时，可通过 `agent_configs.json` 中的 `RESUME_DISPLAY_SYS_REMINDER`、`RESUME_DISPLAY_SKILLS`、`RESUME_DISPLAY_CRONS`、`RESUME_DISPLAY_SUBAGENT` 分别控制是否显示这些标签包裹的内容；通过 `RESUME_DISPLAY_WRITE_PREVIEW`、`RESUME_DISPLAY_BASH_PREVIEW`、`RESUME_DISPLAY_BASH_RESULT` 控制是否预览 write/bash 工具调用的内容/命令/输出；
 >
@@ -243,6 +245,23 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `KEY_LISTEN_SLEEP_TIME_MS` | `30` | 按键监听轮询间隔（毫秒）/ Key listen polling interval (ms) |
 | `CRON_PROMPT_DISPLAY_CHAR_MAX` | `200` | Cron 任务提示显示最大字符数 / Max chars for cron task prompt display |
 
+### 插入输入条 | Insert Bar
+
+忙碌期（LLM 请求 / 工具执行 / 流式渲染）底部显示的可输入草稿条，用于中途插入消息：
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `INSERT_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Esc: Discard)` | 插入输入条提示文案 / Insert bar hint text |
+| `INSERT_PROMPT_ICON` | `▶` | 插入消息打印图标 / Icon for printed inserted messages |
+| `INSERT_TUI_CURSOR1` | `▌` | 插入输入条光标符号 1（闪烁周期前半）/ Insert bar cursor symbol 1 (first half of blink period) |
+| `INSERT_TUI_CURSOR2` | ``（空） | 插入输入条光标符号 2（闪烁周期后半，为空即隐藏）/ Insert bar cursor symbol 2 (second half of blink period; empty = hidden) |
+| `INSERT_TUI_CURSOR_PERIOD` | `1` | 光标闪烁周期（秒）/ Cursor blink period (seconds) |
+| `INSERT_TUI_COLOR_START` | `#FF9FF3`（亮粉） | 插入输入条渐变起始色 / Insert bar gradient start |
+| `INSERT_TUI_COLOR_END` | `#54A0FF`（蓝） | 插入输入条渐变终止色 / Insert bar gradient end |
+| `INSERT_TUI_COLOR_GRADIENT` | `128` | 插入输入条渐变色阶数 / Insert bar gradient steps |
+| `INSERT_TUI_COLOR_PERIOD` | `1.75` | 插入输入条颜色动画周期（秒）/ Insert bar color animation period (seconds) |
+| `INSERT_LISTEN_SLEEP_TIME_MS` | `20` | 插入输入线程按键轮询间隔（毫秒）/ Insert input thread key polling interval (ms) |
+
 ### 会话标题 | Session Titles
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
@@ -266,6 +285,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `SPINNER_LIVE_CHECK_GAP_MS` | `200` | Spinner 子线程轮询间隔（毫秒）/ Polling gap for spinner thread (ms) |
 | `SPINNER_TERMINATE_WAIT_S` | `10` | 中断后等待子线程退出的最长时间（秒）/ Max wait for sub-thread exit after interrupt (s) |
 | `PROGRESS_DISPLAY_REFRESH_RATE` | `30` | 进度条 TUI 刷新率（次/秒）/ Progress TUI refresh rate (fps) |
+| `INSERT_LIVE_CHECK_GAP_MS` | `20` | 插入输入条激活时的刷新轮询间隔（毫秒）/ Faster polling gap while the insert bar is active (ms) |
 
 > **随机标题机制 | Random Title Mechanism**
 > 

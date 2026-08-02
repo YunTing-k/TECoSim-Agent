@@ -38,12 +38,15 @@ Revision:
 2026.7.17      Yu Huang      3.2      Add quick WeChat bot exit
 2026.7.18      Yu Huang      3.3      Add text reply to WeChat user when agent stops or fails
 2026.7.23      Yu Huang      3.4      Add launch support in arbitrary path
+2026.8.1-2     Yu Huang      3.5      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 TUI components for the agent: gradient color utilities (RGB/hex conversion, vertical/horizontal text gradients), ASCII art
 startup banner, context usage bar, loading spinner with rapid interrupt via SIGINT-to-thread injection, yes/no request TUI,
-exit confirmation TUI, user prompt input, and normal/error exit handlers with session saving.
+exit confirmation TUI, user prompt input (with busy-phase draft prefill), and normal/error exit handlers with session saving.
+Spinner/tool-board surfaces render the busy-phase insert bar (with faster refresh while active) and expose the busy thread
+ident so the input thread can forward Ctrl+C cancellation.
 """
 import time
 import signal
@@ -64,6 +67,7 @@ from prompt_toolkit.formatted_text import ANSI
 from typing import Callable, Any
 from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
+from src.utility.input_thread import InputThread
 from src.tool.scoreboard import Scoreboard, get_tasks_render
 from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec, create_clean_input, flush_terminal_input
 from src.agent.agent_types import SubAgentProgress
@@ -281,7 +285,7 @@ def get_subagent_render(agent_list: dict[str, SubAgentProgress], now_time: datet
 
 def loading_spinner(func: Callable, *args,
                     waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str, spinner: str, out_except: Exception,
-                    console: Console, with_progress: bool = False,
+                    input_thread: InputThread | None = None, console: Console, with_progress: bool = False,
                     **kwargs) -> Any:
     """Spinner for any time-consuming operation with `KeyboardInterrupt` signal for rapid interrupt
 
@@ -341,13 +345,24 @@ def loading_spinner(func: Callable, *args,
     # set SIGINT (KeyboardInterrupt) handler with sigint_handler and restore the original handler
     original_handler = signal.signal(signal.SIGINT, sigint_handler)
     try:
-        with Progress(
+        progress = Progress(
             GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
             SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
             TimeElapsedColumn(),
             console=console,
             transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
-        ) as progress:
+        )
+        base_time = datetime.now()
+        insert_color_list = grad_color_hex_list(INSERT_TUI_COLOR_START, INSERT_TUI_COLOR_END, INSERT_TUI_COLOR_GRADIENT)
+        insert_color_list = insert_color_list + insert_color_list[::-1]
+
+        def make_group() -> Group:
+            parts = [progress]
+            if input_thread is not None:
+                parts.append(input_thread.get_render(datetime.now(), base_time, insert_color_list))
+            return Group(*parts)
+
+        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
             task = progress.add_task(waiting_desc, total=None)
             if not with_progress:
                 def target():
@@ -367,8 +382,16 @@ def loading_spinner(func: Callable, *args,
             t = threading.Thread(target=target, daemon=True)
             worker_thread[0] = t
             t.start()
+            # set the busy thread ident so the input thread can forward Ctrl+C to this worker
+            # (t.ident is None until the thread has started)
+            if input_thread is not None:
+                input_thread.busy_thread_ident = t.ident
             while t.is_alive() and not stop_event.is_set():
-                t.join(SPINNER_LIVE_CHECK_GAP_MS / 1000.0)
+                # faster refresh while the insert bar is active (draft/queue updates
+                # are only picked up by live.update, auto-refresh redraws stale frames)
+                check_gap = INSERT_LIVE_CHECK_GAP_MS if input_thread is not None else SPINNER_LIVE_CHECK_GAP_MS
+                t.join(check_gap / 1000.0)
+                live.update(make_group())
             if stop_event.is_set():
                 # Give sub-thread a chance to handle KeyboardInterrupt and
                 # do cleanup (e.g. proc.terminate()), then finish normally
@@ -376,31 +399,36 @@ def loading_spinner(func: Callable, *args,
                 if t.is_alive():
                     # Thread didn't handle the interrupt, force cancel
                     progress.update(task, description=intrp_desc)
+                    live.update(make_group())
                     raise out_except
                 # Thread handled the interrupt and finished.
                 # Regardless of whether target() caught the KeyboardInterrupt,
                 # the user pressed Ctrl+C so we must raise out_except.
                 progress.update(task, description=intrp_desc)
+                live.update(make_group())
                 raise out_except
             progress.update(task, description=done_desc if exception[0] is None else fail_desc)
+            live.update(make_group())
             if exception[0] is not None:
                 raise exception[0]
             return result[0]
     finally:
         # set SIGINT handler with original_handler
         signal.signal(signal.SIGINT, original_handler)
+        if input_thread is not None:
+            input_thread.busy_thread_ident = None  # busy phase over, clear Ctrl+C forwarding target
 
 
 def loading_spinner_with_board(func: Callable, *args,
                                board: Scoreboard, agent_list: dict[str, SubAgentProgress] | None = None,
                                waiting_desc: str, done_desc: str, intrp_desc: str, fail_desc: str,
-                               spinner: str, out_except: Exception,
+                               spinner: str, out_except: Exception, input_thread: InputThread | None = None,
                                console: Console, with_progress: bool = False,
                                **kwargs) -> Any:
-    """Spinner with a live scoreboard text below, for any time-consuming operation.
-
-    Progress bar (spinner + elapsed) on the first line, scoreboard tasks
-    rendered as text underneath — updated live on each refresh cycle.
+    """
+    Spinner with a live scoreboard text below, for any time-consuming operation. Progress bar (spinner + elapsed) on the
+    first line, scoreboard tasks rendered as text underneath — updated live on each refresh cycle. An input bar is displayed
+    if input thread is used to insert messages between tool calls
 
     NOTE: signal.signal() can only be called from the main thread.
     """
@@ -412,6 +440,8 @@ def loading_spinner_with_board(func: Callable, *args,
     task_color_list1 = task_color_list1 + task_color_list1[::-1]
     task_color_list2 = grad_color_hex_list(TASK_IN_PROGRESS_COLOR_START, TASK_IN_PROGRESS_COLOR_END, TASK_COLOR_GRADIENT)
     task_color_list2 = task_color_list2 + task_color_list2[::-1]
+    insert_color_list = grad_color_hex_list(INSERT_TUI_COLOR_START, INSERT_TUI_COLOR_END, INSERT_TUI_COLOR_GRADIENT)
+    insert_color_list = insert_color_list + insert_color_list[::-1]
     base_time = datetime.now()
 
     columns = [
@@ -428,24 +458,28 @@ def loading_spinner_with_board(func: Callable, *args,
 
     def make_group() -> Group:
         subagent_render = None
+        now_time = datetime.now()
         if agent_list is not None:
-            subagent_render = get_subagent_render(agent_list, datetime.now(), base_time, subagent_color_list)
-        task_str = get_tasks_render(board.list_tasks(), datetime.now(), base_time, task_color_list1, task_color_list2)
+            subagent_render = get_subagent_render(agent_list, now_time, base_time, subagent_color_list)
+        task_str = get_tasks_render(board.list_tasks(), now_time, base_time, task_color_list1, task_color_list2)
 
-        final_str = Text("")
+        render_str = Text("")
 
         parts = [progress]
         if subagent_render is not None:
-            final_str.append(subagent_render)
-            final_str.append(Text("\n"))
+            render_str.append(subagent_render)
+            render_str.append(Text("\n"))
         if task_str.plain.strip():
-            final_str.append(Text("\n"))
-            final_str.append(task_str)
-            final_str.append(Text("\n"))
+            render_str.append(Text("\n"))
+            render_str.append(task_str)
+            render_str.append(Text("\n"))
         else:
-            final_str.append(Text("\n"))
-            final_str.append(Text(TASK_EMPTY_TITLE, style="bright_black"))
-        parts.append(final_str)
+            render_str.append(Text("\n"))
+            render_str.append(Text(TASK_EMPTY_TITLE, style="bright_black"))
+        parts.append(render_str)
+        if input_thread is not None:
+            if input_thread.is_alive and not input_thread.is_paused:
+                parts.append(input_thread.get_render(now_time, base_time, insert_color_list))
         return Group(*parts)
 
     if not is_main_thread:
@@ -503,8 +537,15 @@ def loading_spinner_with_board(func: Callable, *args,
             progress._outer_live = live
             task_id = progress.add_task(waiting_desc, total=None)
             t.start()
+            # set the busy thread ident so the input thread can forward Ctrl+C to this worker
+            # (t.ident is None until the thread has started)
+            if input_thread is not None:
+                input_thread.busy_thread_ident = t.ident
             while t.is_alive() and not stop_event.is_set():
-                t.join(SPINNER_LIVE_CHECK_GAP_MS / 1000.0)
+                # faster refresh while the insert bar is active (draft/queue updates
+                # are only picked up by live.update, auto-refresh redraws stale frames)
+                check_gap = INSERT_LIVE_CHECK_GAP_MS if input_thread is not None else SPINNER_LIVE_CHECK_GAP_MS
+                t.join(check_gap / 1000.0)
                 live.update(make_group())
             if stop_event.is_set():
                 t.join(SPINNER_TERMINATE_WAIT_S)
@@ -523,6 +564,8 @@ def loading_spinner_with_board(func: Callable, *args,
             return result[0]
     finally:
         signal.signal(signal.SIGINT, original_handler)
+        if input_thread is not None:
+            input_thread.busy_thread_ident = None  # busy phase over, clear Ctrl+C forwarding target
         board.archive_tasks()
 
 
@@ -577,8 +620,13 @@ def get_user_prompt(ctx: AgentContext) -> str:
     else:
         prefix = USER_PROMPT_PREFIX_LIST[0]
     if ctx.agent_session is not None:
+        draft = "" if ctx.in_thread is None else ctx.in_thread.get_draft()
         user_input = ctx.agent_session.prompt(ANSI(f"\033[90m{prefix} {USER_PROMPT_FIXED_PREFIX}\033[0m\n"
-                                                   f"{AGENT_CONSOLE_ICON} "))
+                                                   f"{AGENT_CONSOLE_ICON} "), default=draft)
+        # the draft is consumed by this submission; clear it so the next idle prompt
+        # does not re-prefill the same text
+        if ctx.in_thread is not None:
+            ctx.in_thread.clear_draft()
     else:
         raise RuntimeError("Agent session is None")
     return user_input
@@ -772,8 +820,10 @@ def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Ex
     """error exit of agent"""
     try:
         if ctx.enable_wechat and ctx.wechat_bot is not None:
-            ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg,
-                                           random.choice(WECHAT_BOT_ERROR_EXIT_LIST) + f"\n\n**Error detail**: `{error}`")
+            err_msg = (random.choice(WECHAT_BOT_ERROR_EXIT_LIST) +
+                       f"\n\n"f"**Error type**: `{type(error).__name__}`"
+                       f"\n**Error detail**: `{error}`")
+            ctx.wechat_bot.reply_text_sync(ctx.last_wechat_msg, err_msg)
             ctx.wechat_bot.stop()
             ctx.wechat_bot.save_cdn_cache()
             ctx.wechat_bot.save_msg_history()
@@ -783,9 +833,11 @@ def error_exit(ctx: AgentContext, board: Scoreboard, console: Console, error: Ex
         ctx.run_man.save_to_file(console)
         board.save_to_file(console)
     except Exception as e:
-        sys_log.error(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally")
-        console.print(f"Save messages and context failed with error {e}, TECoSim Agent exits abnormally", style="bold red")
+        sys_log.error(f"Save messages and context failed with error type: {type(e).__name__}, and details: {e}, TECoSim "
+                      f"Agent exits abnormally")
+        console.print(f"Save messages and context failed with error type: {type(e).__name__}, and details: {e}, "
+                      f"TECoSim Agent exits abnormally", style="bold red")
         sys.exit(-1)
-    sys_log.error(f"TECoSim Agent exits with error: {error}")
-    console.print(f"TECoSim Agent exits with error: {error}", style="bold red")
+    sys_log.error(f"TECoSim Agent exits with error type: {type(error).__name__}, and details: {error}")
+    console.print(f"TECoSim Agent exits with error type: {type(error).__name__}, and details: {error}", style="bold red")
     sys.exit(-1)

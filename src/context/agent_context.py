@@ -30,13 +30,15 @@ Revision:
 2026.7.17      Yu Huang      2.8      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 2026.7.23      Yu Huang      2.9      Add launch support in arbitrary path
 2026.7.26      Yu Huang      3.0      Support of dumping webfetch caches to file & Revise TUI info for session file I/O
+2026.8.1-2     Yu Huang      3.1      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 Central `AgentContext` class holding all agent state: configs (API, agent, MCP), messages/tools/skills, runtime objects
-(LLM client, prompt session, MCP router, cron tasks), usage statistics (tokens, LLM requests), simulation tracking (designs,
-runs), permissions, read-only paths, and file-read log. Provides serialization (to_dict/from_dict), context save/load to
-session files, and cron task lifecycle (add/remove/save).
+(LLM client, prompt session, MCP router, cron tasks, busy-phase input thread `in_thread`), usage statistics (tokens, LLM
+requests), simulation tracking (designs, runs), permissions, read-only paths, and file-read log. The `pending_request` flag
+marks content awaiting the next LLM request (busy-phase inserts or timeout retries), skipping the user input block.
+Provides serialization (to_dict/from_dict), context save/load to session files, and cron task lifecycle (add/remove/save).
 """
 import os
 import uuid
@@ -50,6 +52,7 @@ from argparse import Namespace
 from prompt_toolkit import PromptSession
 from typing import Any, TypedDict, TYPE_CHECKING
 from rich.console import Console
+from src.utility.input_thread import InputThread
 from src.tool.wechat_support import WeChatBridge, WeChatQueuedMsg
 from src.tool.mcps_support import MCPToolRouter
 from src.tool.simulator_support import DesignManager, RunManager
@@ -154,6 +157,7 @@ class AgentContext:
         # objects
         self.agent_session: PromptSession | None = None  # (don't dump)
         self.llm_client: OpenAI | None = None  # (don't dump, shared)
+        self.in_thread: InputThread | None = None  # (don't dump)
         self.webfetch_caches: list[URLCache] = []
         self.wechat_bot: WeChatBridge | None = None  # (don't dump)
         self.last_wechat_msg: WeChatQueuedMsg | None = None  # (don't dump)
@@ -197,6 +201,7 @@ class AgentContext:
         self.loaded_skills: list[dict[str, str]] = []
         # signals
         self.task_end: bool = True  # (don't dump)
+        self.pending_request: bool = False  # (don't dump) True: content pending request, skip user input block
         self.tui_mute: bool = False  # (don't dump) suppress console output and permission TUIs for all agents
         self.permissions: dict[str, bool] = {  # can be override if WeChat is enabled
             # basic tools

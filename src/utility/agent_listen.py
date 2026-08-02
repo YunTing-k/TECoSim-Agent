@@ -16,15 +16,17 @@ Revision:
 2026.7.3       Yu Huang      1.4      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      1.5      Add WeChat bot interaction support
 2026.7.17      Yu Huang      1.6      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
+2026.8.1-2     Yu Huang      1.7      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
 Listening TUI displayed before user input when active cron tasks, unresolved Scoreboard tasks, running background agents,
 or WeChat Bot is enabled. Shows animated gradient-color indicators for listening status, active cron count, subagent progress,
 and task tracking. Periodically checks cron triggers, subagent completions, and WeChat message arrivals (check_wechat).
-When WeChat is enabled the TUI cannot be dismissed by keypress — only Ctrl+C exits, ensuring all incoming WeChat messages
-are captured before returning to terminal input mode. Exits to main loop when a cron/subagent trigger fires or a WeChat
-message is received.
+`check_insert` drains busy-phase terminal inserted messages (from the input thread's pending queue) for injection at the
+top of the main loop. When WeChat is enabled the TUI cannot be dismissed by keypress — only Ctrl+C exits, ensuring all
+incoming WeChat messages are captured before returning to terminal input mode. Exits to main loop when a cron/subagent
+trigger fires or a WeChat message is received.
 """
 import time
 import rich.box
@@ -44,6 +46,7 @@ from src.utility.ui_info import get_subagent_render
 from src.agent.agent_types import SubAgentProgress
 from src.tool.wechat_support import get_wechat_list
 from src.utility.basic_utils import create_clean_input, grad_color_hex_list, format_time_sec
+from src.utility.input_thread import get_insert_list
 from src.context.prompt import get_msg_render_strip
 from src.constants import *
 
@@ -155,7 +158,7 @@ def get_listen_tail(enable_wechat_bot: bool):
 
 
 def check_wechat(ctx: AgentContext) -> tuple[bool, str]:
-    """check if any WeChat messages is pending"""
+    """check if any WeChat messages is pending and append it"""
     if ctx.wechat_bot is None:
         return False, ""
     if not ctx.wechat_bot.has_pending():
@@ -181,6 +184,22 @@ def check_wechat(ctx: AgentContext) -> tuple[bool, str]:
             ctx.messages.append({"role": "user", "content": f"{content}"})
             ctx.user_prompts += 1
             return True, content
+
+
+def check_insert(ctx: AgentContext) -> tuple[bool, str]:
+    """check if any messages is inserted and append it"""
+    if ctx.in_thread is None:
+        return False, ""
+    if ctx.in_thread.queue_size() == 0:
+        return False, ""
+    msgs = ctx.in_thread.drain_msg_queue()
+    if len(msgs) == 0:
+        return False, ""
+    else:
+        content = get_insert_list(msgs)
+        ctx.messages.append({"role": "user", "content": f"{content}"})
+        ctx.user_prompts += 1
+        return True, content
 
 
 def listen_tui(ctx: AgentContext, board: Scoreboard, console: Console) -> bool:

@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.CRITICAL)
 from unittest.mock import patch, MagicMock
 from rich.console import Console
 from src.context.agent_context import AgentContext
+from src.context import prompt  # load prompt first to break the tool_def->web_support->prompt circular import
 from src.tool.tool_def import read_file
 
 

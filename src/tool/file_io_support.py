@@ -43,6 +43,7 @@ Revision:
 2026.7.3       Yu Huang      3.4      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.15-16   Yu Huang      3.5      Add WeChat bot interaction support
 2026.7.23      Yu Huang      3.6      Add launch support in arbitrary path
+2026.7.31      Yu Huang      3.7      Fix of invalid truncated line amount of get_syntax_render
 
 Details:
 ---------
@@ -898,12 +899,15 @@ def get_syntax_render(path: str, content: str, label: str = "$write") -> Text:
     truncated = False
     truncated_lines = 0
     if 0 < WRITE_VIEW_MAX_CHARS < len(content):
-        content = content[:WRITE_VIEW_MAX_CHARS]
+        old_lines = len(content.split('\n'))
+        content = content[:WRITE_VIEW_MAX_CHARS] + " ... (truncated)"
+        new_lines = len(content.split('\n'))
+        truncated_lines += old_lines - new_lines
         truncated = True
 
     lines = content.split('\n')
     if 0 < WRITE_VIEW_MAX_LINES < len(lines):
-        truncated_lines = len(lines) - WRITE_VIEW_MAX_LINES
+        truncated_lines += len(lines) - WRITE_VIEW_MAX_LINES
         lines = lines[:WRITE_VIEW_MAX_LINES]
         truncated = True
 

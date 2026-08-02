@@ -63,6 +63,7 @@ Revision:
                                       is correctly inserted to tool prompts
 2026.7.18      Yu Huang      5.3      Add tool of checking WeChat status & Disable ask user question in WeChat Bot
 2026.7.23      Yu Huang      5.4      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
+2026.8.1-2     Yu Huang      5.5      Support of inserting messages during LLM request, LLM response display and tool calls
 
 Details:
 ---------
@@ -82,7 +83,7 @@ from datetime import datetime
 from rich.progress import Progress
 from src.utility import ui_info
 from src.utility.ui_info import pause_for_permission, resume_from_permission
-from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
+from src.utility.basic_utils import read_line_with_limit, format_file_for_llm, get_webfetch_str
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, get_cron_create_str, create_cron_impl
 from src.tool.scoreboard import Scoreboard, TaskStatus, args_to_taskupdate, task_to_info, tasks_to_info
@@ -95,7 +96,7 @@ from src.tool.simulator_support import (
     init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import (
-    check_url, web_single_fetch, web_fetch_process, get_webfetch_str, web_search_top, web_search_process)
+    check_url, web_single_fetch, web_fetch_process, web_search_top, web_search_process)
 from src.tool.ask_permission import ask_permission_tui
 from src.tool.bash_support import evaluate_bash_risk, get_bash_render, get_bash_result_render
 from src.tool.ask_question import ask_user_question_tui, get_answers_render, AskUserCancelled
@@ -358,11 +359,13 @@ def ask_user_question(arguments: dict[str, Any], ctx: AgentContext, progress: Pr
                                        f"{QUESTION_OTHER_LABEL} are needed)", style="bold red")
                 return {"status": FAIL_LABEL, "info": f"question {idx} has no options"}
         sys_log.debug(f"{func_name}: waiting for user selection")
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         try:
             answers = ask_user_question_tui(questions, progress.console, ctx.agent_session)
         finally:
             resume_from_permission(progress)
+            if ctx.in_thread is not None: ctx.in_thread.resume()
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: {len(answers)} answers collected")
         progress.console.print(get_answers_render(answers))
         return {
@@ -784,6 +787,7 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
             return {"status": DISABLED_LABEL, "info": f"All cron tasks are disabled by user in this launch of agent with "
                                                       f"`--nocrons` argument"}
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"cron pattern: {arguments.get("cron")}, "
@@ -792,6 +796,7 @@ def create_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
                                          f"durable: {arguments.get("durable", False)},",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute: # (subagent should not use it)
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -879,11 +884,13 @@ def remove_cron(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     func_name = TOOL_NAME_REMOVE_CRON
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"task id: {arguments.get("id")}",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -1003,6 +1010,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         """evaluate the risk of bash command"""
         risk, reason, level = evaluate_bash_risk(arguments["command"], ctx)
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         command = arguments["command"]
         progress.console.print(get_bash_render(command))
@@ -1010,6 +1018,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                                          f"risk level: {level} with reason: {reason}.\n(Full command is shown above)",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"Permission denied: you don't have permission for `{risk}` with reson: {reason}"}
@@ -1192,10 +1201,12 @@ def glob_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_GLOB_FILE
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name, f"pattern: {arguments.get("pattern")}, "
                                          f"path: {arguments.get("path", os.getcwd())}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -1322,6 +1333,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_GREP_FILE
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"pattern: {arguments.get("pattern")}, "
@@ -1334,6 +1346,7 @@ def grep_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"head_limit: {arguments.get("head_limit", GREP_FILE_HEAD_LIMIT_DEFAULT)}, "
                                          f"multiline: {arguments.get("multiline", False)}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -1439,6 +1452,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
     func_name = TOOL_NAME_READ_FILE
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, "
@@ -1448,6 +1462,7 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                                          f"encoding: {arguments.get("encoding", READ_FILE_ENCODING_DEFAULT)}",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -1649,6 +1664,7 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     func_name = TOOL_NAME_WRITE_FILE
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         file_path = arguments["path"]
         content: str = arguments["content"]
@@ -1660,6 +1676,7 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          f"encoding: {arguments.get("encoding", WRITE_FILE_ENCODING_DEFAULT)}",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -1955,10 +1972,12 @@ def edit_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
                             f"identify the instance."}
         multi_match = True if (count > 1 and replace_all) else False
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_edit_tui(file_path, actual_old, new_string_norm, raw_line, match_lines, multi_match, match_mode,
                                    ctx, progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2050,11 +2069,13 @@ def skill(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> t
                                                       f"`--noskills` argument"}, None
         name = str(arguments["name"])
         """permission request"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, f"{func_name}",
                                          f"skill name: {arguments["name"]}, "
                                          f"purpose: {arguments.get("purpose", "None")}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}, None
@@ -2142,11 +2163,13 @@ def web_fetch(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         url = arguments["url"]
         prompt = arguments["prompt"]
         """permission request"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"URL: {arguments["url"]}, "
                                          f"prompt: {arguments["prompt"]}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2261,10 +2284,12 @@ def web_search(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     try:
         query = arguments["query"]
         """permission request"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"Web search with keywords {query}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2381,11 +2406,13 @@ def wechat_send_file(arguments: dict[str, Any], ctx: AgentContext, progress: Pro
     func_name = TOOL_NAME_WECHAT_SEND_FILE
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"path: {arguments["path"]}, ",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2464,9 +2491,11 @@ def call_mcp(tool_name: str, arguments: dict[str, Any], ctx: AgentContext, progr
         else:
             mcp_name = mcp_client.name
         """permission request"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, tool_name, f"Tool call from MCP: {mcp_name}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2583,10 +2612,12 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
     func_name = TOOL_NAME_INIT_DESIGN
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,f"initialize a new design. Subject: {arguments["subject"]}\n"
                                                         f"Description: {arguments["description"]}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2744,6 +2775,7 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
     func_name = TOOL_NAME_LAUNCH_SIM
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"launch simulation run under design: {arguments["design_id"]} (rev "
@@ -2751,6 +2783,7 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
                                          f"Description : {arguments["description"]}",
                                          progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
@@ -2903,6 +2936,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
     func_name = TOOL_NAME_READ_LOG
     try:
         """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, info = ask_permission_tui(ctx, func_name,
                                          f"run id: {arguments["run_id"]}, "
@@ -2911,6 +2945,7 @@ def read_log(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -
                                          f"read-in line: {arguments.get("line_num", "None")}, "
                                          f"offset: {arguments.get("offset", "None")}", progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}

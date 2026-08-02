@@ -18,6 +18,7 @@ Revision:
 2026.6.7       Yu Huang      1.6      Revise the display style of all ask permission TUIs & Add newline and space padding for all ask permission TUIs
 2026.6.29      Yu Huang      1.7      Multi-select no choice → explicit label; add get_answers_render for answer display
 2026.7.3       Yu Huang      1.8      Bugfix of buffered keyboard press before real TUI interaction
+2026.7.31      Yu Huang      1.9      Revise the displays of user's customize answer
 
 Details:
 ---------
@@ -31,6 +32,7 @@ import logging
 from typing import Any
 from prompt_toolkit.keys import Keys
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import ANSI
 from rich.console import Group, Console
 from rich.panel import Panel
 from rich.text import Text
@@ -120,7 +122,8 @@ def get_user_input(questions: list[dict[str, Any]], active_idx: int, selected_in
         is_empty = True
         is_modify = False
         cache = user_cache[active_idx]
-        user_input = agent_session.prompt(f"{AGENT_CONSOLE_ICON} Your idea about [{question['header']}]: \n  ", default=cache)
+        user_input = agent_session.prompt(
+            ANSI(f"\033[90m{AGENT_CONSOLE_ICON} Your idea about \033[0m{question['header']}: \n  "), default=cache)
         user_cache[active_idx] = user_input
         if user_input.strip():
             is_empty = False

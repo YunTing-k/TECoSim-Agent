@@ -24,6 +24,7 @@ Revision:
 2026.7.15      Yu Huang      2.1      Add merge subagent statistic method
 2026.7.23      Yu Huang      2.2      Add launch support in arbitrary path
 2026.7.26      Yu Huang      2.3      Support of dumping webfetch caches to file
+2026.7.31      Yu Huang      2.4      Support of configuring LLM's top_p
 
 Details:
 ---------
@@ -111,6 +112,7 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     # objects
     ctx.agent_session = None
     ctx.llm_client = parent_ctx.llm_client
+    ctx.in_thread = None
     ctx.webfetch_caches = []
     ctx.wechat_bot = None
     ctx.last_wechat_msg = None
@@ -154,6 +156,7 @@ def clone_context(parent_ctx: AgentContext, agent_id: str, subagent_type: str) -
     ctx.loaded_skills = list(parent_ctx.loaded_skills)
     # signals
     ctx.task_end = True
+    ctx.pending_request = False
     ctx.tui_mute = True
     ctx.permissions = dict(parent_ctx.permissions)
 
@@ -415,6 +418,7 @@ class SubAgent:
         params: dict[str, Any] = {
             "model": self.model,
             "temperature": self.ctx.api_configs.get(f"{prefix}TEMPERATURE"),
+            "top_p": self.ctx.api_configs.get(f"{prefix}TOP_P"),
             "max_tokens": self.ctx.api_configs.get(f"{prefix}MAX_TOKENS"),
             "stream": False,
             "messages": self.ctx.messages,

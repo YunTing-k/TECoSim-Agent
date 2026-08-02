@@ -167,6 +167,7 @@ TECoSimAgent.exe --notools                 # 禁用工具 / Disable agent tools
 TECoSimAgent.exe --nocrons                 # 禁用定时任务 / Disable cron tasks
 TECoSimAgent.exe --noskills                # 禁用技能 / Disable skills
 TECoSimAgent.exe --nomcps                  # 禁用MCP / Disable MCPs
+TECoSimAgent.exe --noinsert                # 禁用忙碌期消息插入 / Disable busy-phase message insert
 TECoSimAgent.exe --dangerously_allow_all   # ⚠️ 允许所有权限（危险！） / Allow all permissions (dangerous!)
 
 # 源码运行（Linux/macOS/Windows）| Source (Linux/macOS/Windows)
@@ -179,6 +180,7 @@ python -m src.main --notools               # 禁用工具 / Disable agent tools
 python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
 python -m src.main --noskills              # 禁用技能 / Disable skills
 python -m src.main --nomcps                # 禁用MCP / Disable MCPs
+python -m src.main --noinsert              # 禁用忙碌期消息插入 / Disable busy-phase message insert
 python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险！） / Allow all permissions (dangerous!)
 ```
 
@@ -243,6 +245,32 @@ All commands start with `/` in the agent interaction interface:
 | `/agent_list` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
 | `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
 | `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
+
+---
+
+## 忙碌期消息插入 | Busy-Phase Message Insert
+
+在 LLM 请求、工具执行与流式渲染期间，终端底部会显示一个常驻输入条（insert bar），用户可随时打字并在 Enter 后提交；消息以 `<cli_insert>` 标签在**下一个 LLM 请求边界**自动注入，无需等待当前轮结束。空闲期打字中的草稿会自动预填到输入框继续编辑。
+
+During LLM requests, tool execution and streaming, a persistent input bar is shown at the bottom of the terminal. Type anytime and press Enter to submit; the message is auto-injected at the **next LLM request boundary** (wrapped in `<cli_insert>`) without waiting for the current round to finish. A draft typed during busy phases is pre-filled into the prompt for continued editing when idle.
+
+**按键 | Key Bindings**
+
+| 键 Key | 行为 Behavior |
+|---------|-------------|
+| 可打印字符 / Printable chars | 追加到草稿 / Append to draft |
+| `Backspace` | 删除草稿末尾字符（CJK/emoji 安全）/ Delete last char (CJK/emoji safe) |
+| `Shift+Tab` | 插入换行（多行草稿）/ Insert newline (multi-line draft) |
+| `Enter` | 提交草稿并入队 / Submit draft to queue |
+| `Esc` | 清空草稿（放弃）/ Discard draft |
+| `Ctrl+C` | 草稿非空 → 清空草稿；草稿为空 → 取消当前操作 / Draft non-empty → clear draft; empty → cancel current operation |
+
+**说明 | Notes**
+
+- 忙碌期提交的消息以 `/` 开头会被**忽略**（忙碌期无命令补全）/ Messages starting with `/` are **dropped** during busy phases (no command completion available)
+- 中文输入使用系统 IME 候选窗（无行内拼音预览）/ Chinese input uses the OS IME candidate window (no inline pinyin preview)
+- 权限弹窗、提问等模态 TUI 期间输入条暂停，不会串键 / The input bar pauses during modal TUIs (permission, question, etc.) — no key conflicts
+- 使用 `--noinsert` 可完全禁用该功能 / Use `--noinsert` to fully disable this feature
 
 ---
 
@@ -363,6 +391,7 @@ TECoSimAgent/
 │   │   └── errors.py            # 错误类型体系 / Error hierarchy
 │   └── utility/
 │       ├── basic_utils.py       # 共享工具函数 / Shared utilities (config, platform, markdown)
+│       ├── input_thread.py      # 忙碌期后台输入线程（草稿/消息队列/Ctrl+C 转发）/ Busy-phase background input thread (draft, msg queue, Ctrl+C forwarding)
 │       ├── command.py           # 内建命令系统 / Built-in command system
 │       ├── cli_args.py          # 命令行参数解析 / CLI argument parsing
 │       ├── sys_logger.py        # 日志系统 / Logging system
