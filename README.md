@@ -127,9 +127,9 @@ You must set your LLM API endpoint and key:
 **`BASH_PATH` 必须指向 GNU Bash**（不可用 `cmd`, `PowerShell` etc.,）。Agent 通过 `bash -c` 执行命令，并内置基于 Bash 语义的风险检测引擎。Windows操作系统可使用`git bash`。
 **`BASH_PATH` must point to GNU Bash** (not `cmd`, `PowerShell` etc.,). The agent executes commands via `bash -c` with Bash-semantics-based risk detection. For Windows OS, please use `git bash`.
 
-> **⚠️ 安全建议** — Agent 可通过 `bash` 执行任意系统命令，风险检测并非绝对可靠。强烈建议在沙箱环境（Docker/VM/隔离服务器）中以最小权限账户运行，并用 `/readonly_add` 保护关键路径。
+> **⚠️ 安全建议** — Agent 可通过 `bash` 执行任意系统命令，风险检测并非绝对可靠。强烈建议在沙箱环境（Docker/VM/隔离服务器）中以最小权限账户运行，并用 `/readonlyAdd` 保护关键路径。
 >
-> **⚠️ Security Advisory** — The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonly_add` to protect critical paths.
+> **⚠️ Security Advisory** — The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonlyAdd` to protect critical paths.
 
 **ripgrep** — `grep_file` 工具依赖 ripgrep（`rg`）。安装：`winget install BurntSushi.ripgrep`（Win）/ `sudo apt install ripgrep`（Linux）/ `brew install ripgrep`（macOS）。或在 `agent_configs.json` 中设 `RIPGREP_PATH`。
 **ripgrep** — the `grep_file` tool requires ripgrep (`rg`). Install via your package manager, or set `RIPGREP_PATH` in `agent_configs.json`.
@@ -222,29 +222,29 @@ All commands start with `/` in the agent interaction interface:
 | 命令 Command | 功能 Description |
 |---------|-------------|
 | `/help` | 查看所有可用命令 / Show all available commands |
-| `/design_list` | 查询设计列表 / Query design list |
-| `/run_list` | 查询仿真运行记录 / Query simulation run records |
+| `/designList` | 查询设计列表 / Query design list |
+| `/runList` | 查询仿真运行记录 / Query simulation run records |
 | `/context` | 查看 Token 用量与上下文统计 / View token usage and context stats |
-| `/fread_list` | 查看所有已读文件 / View all read files |
-| `/url_caches` | 查看缓存的 URL / View cached URLs |
-| `/session_list` | 查看所有会话 / View all sessions |
-| `/session_remove <UUID>` | 删除指定会话 / Remove a session |
-| `/readonly_list` | 查看只读路径 / View read-only paths |
-| `/readonly_add <PATH> [PATH...]` | 添加只读路径 / Add read-only paths |
-| `/readonly_remove <idx> [idx...]` | 移除只读路径 / Remove read-only paths |
-| `/permission_list` | 查看权限配置 / View permission configs |
-| `/permission_toggle <NAME>` | 切换权限开关 / Toggle a permission |
-| `/skill_list` | 列出可用技能 / List available skills |
-| `/skills_loaded` | 列出已加载技能 / List loaded skills |
+| `/freadList` | 查看所有已读文件 / View all read files |
+| `/webCacheList` | 查看缓存的 URL / View cached URLs |
+| `/sessionList` | 查看所有会话 / View all sessions |
+| `/sessionRemove <UUID>` | 删除指定会话 / Remove a session |
+| `/readonlyList` | 查看只读路径 / View read-only paths |
+| `/readonlyAdd <PATH> [PATH...]` | 添加只读路径 / Add read-only paths |
+| `/readonlyRemove <idx> [idx...]` | 移除只读路径 / Remove read-only paths |
+| `/permissionList` | 查看权限配置 / View permission configs |
+| `/permissionToggle <NAME>` | 切换权限开关 / Toggle a permission |
+| `/skillList` | 列出可用技能 / List available skills |
+| `/skillsLoaded` | 列出已加载技能 / List loaded skills |
 | `/<skill_name>` | 手动加载技能 / Manually load a skill |
-| `/mcp_list` | 查看 MCP 信息 / View MCP information |
-| `/cron_list` | 查看定时任务列表 / View cron task list |
-| `/cron_remove <ID>` | 删除定时任务 / Remove a cron task |
-| `/task_list` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
-| `/task_list_all` | 查看所有历史的 Agent 任务 / List all history agent tasks |
-| `/agent_list` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
-| `/update_title` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
-| `/set_title <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
+| `/mcpList` | 查看 MCP 信息 / View MCP information |
+| `/cronList` | 查看定时任务列表 / View cron task list |
+| `/cronRemove <ID>` | 删除定时任务 / Remove a cron task |
+| `/taskList` | 查看未归档的 Agent 任务 / List non-archived agent tasks |
+| `/taskListAll` | 查看所有历史的 Agent 任务 / List all history agent tasks |
+| `/agentList` | 查看所有子Agent（活跃和已归档）/ List all subagents (active and archived) |
+| `/updateTitle` | 用 LLM 自动更新当前会话标题 / Auto-update current session title with LLM |
+| `/setTitle <TITLE>` | 手动设置当前会话标题 / Manually set current session title |
 
 ---
 
@@ -344,8 +344,8 @@ The agent integrates full TECoSim simulator workflow management:
 
 在 Agent 交互界面中，也可通过内建命令快速查询：
 Inside the agent interface, use built-in commands for quick queries:
-- `/design_list` — 列出所有设计 / List all designs
-- `/run_list` — 列出所有仿真运行 / List all simulation runs
+- `/designList` — 列出所有设计 / List all designs
+- `/runList` — 列出所有仿真运行 / List all simulation runs
 
 ---
 

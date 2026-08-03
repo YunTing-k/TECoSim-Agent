@@ -64,6 +64,7 @@ Revision:
 2026.7.18      Yu Huang      5.3      Add tool of checking WeChat status & Disable ask user question in WeChat Bot
 2026.7.23      Yu Huang      5.4      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 2026.8.1-2     Yu Huang      5.5      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.3       Yu Huang      5.6      Written file is also logged as read
 
 Details:
 ---------
@@ -1713,6 +1714,7 @@ def write_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
             f.write(content)
         content_bytes = content.encode(encoding)
         byte_count = len(content_bytes)
+        ctx.file_read_log(file_path)
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: "
                       f"Path: {file_path}, mode: {mode}, create_dirs: {create_dirs}, encoding: {encoding}, bytes: {byte_count}")
         progress.console.print(f"{func_name} {SUCCESS_LABEL}: "

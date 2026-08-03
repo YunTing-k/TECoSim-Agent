@@ -39,6 +39,7 @@ Revision:
 2026.7.18      Yu Huang      3.3      Add text reply to WeChat user when agent stops or fails
 2026.7.23      Yu Huang      3.4      Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      3.5      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.3       Yu Huang      3.6      Hide the insert box when live exits
 
 Details:
 ---------
@@ -295,6 +296,10 @@ def loading_spinner(func: Callable, *args,
     to this thread via ctypes injection, so it can still be interrupted.
     """
     is_main_thread = threading.current_thread() is threading.main_thread()
+    if input_thread is not None and PROGRESS_DISPLAY_REFRESH_RATE < (1000.0 / INSERT_LIVE_CHECK_GAP_MS):
+        refresh_rate = 1000.0 / INSERT_LIVE_CHECK_GAP_MS
+    else:
+        refresh_rate = PROGRESS_DISPLAY_REFRESH_RATE
 
     if not is_main_thread:
         # Running in a worker thread — signal.signal() would raise:
@@ -306,8 +311,7 @@ def loading_spinner(func: Callable, *args,
             GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
             SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
             TimeElapsedColumn(),
-            console=console,
-            transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+            console=console, transient=False, refresh_per_second=refresh_rate
         ) as progress:
             task = progress.add_task(waiting_desc, total=None)
             try:
@@ -350,19 +354,19 @@ def loading_spinner(func: Callable, *args,
             SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
             TimeElapsedColumn(),
             console=console,
-            transient=False, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE
+            transient=False, refresh_per_second=refresh_rate
         )
         base_time = datetime.now()
         insert_color_list = grad_color_hex_list(INSERT_TUI_COLOR_START, INSERT_TUI_COLOR_END, INSERT_TUI_COLOR_GRADIENT)
         insert_color_list = insert_color_list + insert_color_list[::-1]
 
-        def make_group() -> Group:
+        def make_group(show_insert: bool = True) -> Group:
             parts = [progress]
-            if input_thread is not None:
+            if input_thread is not None and show_insert:
                 parts.append(input_thread.get_render(datetime.now(), base_time, insert_color_list))
             return Group(*parts)
 
-        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+        with Live(make_group(), console=console, refresh_per_second=refresh_rate, transient=False) as live:
             task = progress.add_task(waiting_desc, total=None)
             if not with_progress:
                 def target():
@@ -399,16 +403,16 @@ def loading_spinner(func: Callable, *args,
                 if t.is_alive():
                     # Thread didn't handle the interrupt, force cancel
                     progress.update(task, description=intrp_desc)
-                    live.update(make_group())
+                    live.update(make_group(show_insert=False))
                     raise out_except
                 # Thread handled the interrupt and finished.
                 # Regardless of whether target() caught the KeyboardInterrupt,
                 # the user pressed Ctrl+C so we must raise out_except.
                 progress.update(task, description=intrp_desc)
-                live.update(make_group())
+                live.update(make_group(show_insert=False))
                 raise out_except
             progress.update(task, description=done_desc if exception[0] is None else fail_desc)
-            live.update(make_group())
+            live.update(make_group(show_insert=False))
             if exception[0] is not None:
                 raise exception[0]
             return result[0]
@@ -444,19 +448,23 @@ def loading_spinner_with_board(func: Callable, *args,
     insert_color_list = insert_color_list + insert_color_list[::-1]
     base_time = datetime.now()
 
+    if input_thread is not None and PROGRESS_DISPLAY_REFRESH_RATE < (1000.0 / INSERT_LIVE_CHECK_GAP_MS):
+        refresh_rate = 1000.0 / INSERT_LIVE_CHECK_GAP_MS
+    else:
+        refresh_rate = PROGRESS_DISPLAY_REFRESH_RATE
+
     columns = [
         GradientTextColumn(start_rgb=hex_to_rgb(MAJOR_COLOR1), end_rgb=hex_to_rgb(MAJOR_COLOR2)),
         SpinnerColumn(spinner_name=spinner, style=MAJOR_COLOR2),
         TimeElapsedColumn(),
     ]
-    progress = Progress(*columns, console=console, transient=False,
-                        refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE)
+    progress = Progress(*columns, console=console, transient=False, refresh_per_second=refresh_rate)
 
     # Store reference to the outer Live so worker thread can pause/resume it
     # during permission TUI (see pause_for_permission / resume_from_permission).
     progress._outer_live = None  # placeholder, set after Live is created
 
-    def make_group() -> Group:
+    def make_group(show_subagent: bool = True, show_task: bool = True, show_insert: bool = True) -> Group:
         subagent_render = None
         now_time = datetime.now()
         if agent_list is not None:
@@ -466,24 +474,23 @@ def loading_spinner_with_board(func: Callable, *args,
         render_str = Text("")
 
         parts = [progress]
-        if subagent_render is not None:
+        if subagent_render is not None and show_subagent:
             render_str.append(subagent_render)
             render_str.append(Text("\n"))
-        if task_str.plain.strip():
+        if task_str.plain.strip() and show_task:
             render_str.append(Text("\n"))
             render_str.append(task_str)
             render_str.append(Text("\n"))
         else:
-            render_str.append(Text("\n"))
             render_str.append(Text(TASK_EMPTY_TITLE, style="bright_black"))
         parts.append(render_str)
-        if input_thread is not None:
+        if input_thread is not None and show_insert:
             if input_thread.is_alive and not input_thread.is_paused:
                 parts.append(input_thread.get_render(now_time, base_time, insert_color_list))
         return Group(*parts)
 
     if not is_main_thread:
-        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+        with Live(make_group(), console=console, refresh_per_second=refresh_rate, transient=False) as live:
             progress._outer_live = live
             task_id = progress.add_task(waiting_desc, total=None)
             try:
@@ -492,11 +499,11 @@ def loading_spinner_with_board(func: Callable, *args,
                 else:
                     ret = func(*args, progress=progress, **kwargs)
                 progress.update(task_id, description=done_desc)
-                live.update(make_group())
+                live.update(make_group(show_insert=False))
                 return ret
             except Exception as e:
                 progress.update(task_id, description=fail_desc)
-                live.update(make_group())
+                live.update(make_group(show_insert=False))
                 raise e
             finally:
                 board.archive_tasks()
@@ -533,7 +540,7 @@ def loading_spinner_with_board(func: Callable, *args,
         t = threading.Thread(target=target, daemon=True)
         worker_thread[0] = t
 
-        with Live(make_group(), console=console, refresh_per_second=PROGRESS_DISPLAY_REFRESH_RATE, transient=False) as live:
+        with Live(make_group(), console=console, refresh_per_second=refresh_rate, transient=False) as live:
             progress._outer_live = live
             task_id = progress.add_task(waiting_desc, total=None)
             t.start()
@@ -551,14 +558,14 @@ def loading_spinner_with_board(func: Callable, *args,
                 t.join(SPINNER_TERMINATE_WAIT_S)
                 if t.is_alive():
                     progress.update(task_id, description=intrp_desc)
-                    live.update(make_group())
+                    live.update(make_group(show_insert=False))
                     raise out_except
                 progress.update(task_id, description=intrp_desc)
-                live.update(make_group())
+                live.update(make_group(show_insert=False))
                 raise out_except
             desc = done_desc if exception[0] is None else fail_desc
             progress.update(task_id, description=desc)
-            live.update(make_group())
+            live.update(make_group(show_insert=False))
             if exception[0] is not None:
                 raise exception[0]
             return result[0]

@@ -28,6 +28,8 @@ Revision:
 2026.6.29      Yu Huang      2.6      Add session title info when removing sessions
 2026.6.30      Yu Huang      2.7      Add time info to agent list builtin command
 2026.7.23      Yu Huang      2.8      Add launch support in arbitrary path
+2026.8.3       Yu Huang      2.9      Rename the builtin command & Revise the visual effect of /context /freadList /readonlyList
+                                      /webCacheList /mcpList /cronList /taskList /taskListAll /agentList
 
 Details:
 ---------
@@ -142,25 +144,25 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str = Text()
     cmd_str.append("Session UUID: ", style=f"white")
     cmd_str.append(f"{ctx.session_uuid}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total input tokens of this session: ", style=f"white")
+    cmd_str.append(" ├─Total input tokens of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total output tokens of this session: ", style=f"white")
+    cmd_str.append(" ├─Total output tokens of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total uncached tokens of this session: ", style=f"white")
+    cmd_str.append(" ├─Total uncached tokens of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_uncached_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", uncached: ", style=f"white")
     cmd_str.append(f"{uncached_rate:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", cached: ", style=f"white")
     cmd_str.append(f"{100 - uncached_rate:.3f} %\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total tokens consumption of this session: ", style=f"white")
+    cmd_str.append(" ├─Total tokens consumption of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue input tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last dialogue input tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue output tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last dialogue output tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue total tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last dialogue total tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Last dialogue's context usage of this session (main agent): ", style=f"white")
+    cmd_str.append(" └─Last dialogue's context usage of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx_usage:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
@@ -170,26 +172,28 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
 
     cmd_str.append("\nTotal LLM API request num: ", style=f"white")
     cmd_str.append(f"{ctx.total_llm_requests}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Total messages num (main agent): ", style=f"white")
+    cmd_str.append(" ├─Total messages num (main agent): ", style=f"white")
     cmd_str.append(f"{len(ctx.messages)}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("System prompts num (main agent): ", style=f"white")
+    cmd_str.append(" ├─Total WeChat reply num (main agent): ", style=f"white")
+    cmd_str.append(f"{ctx.wechat_reply_total_count}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(" ├─System prompts num (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.system_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Tools prompts num (main agent): ", style=f"white")
+    cmd_str.append(" ├─Tools prompts num (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.tools_prompts}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f" (", style=f"white")
     cmd_str.append(f"{len(ctx.tools) - len(ctx.mcp_router.reg_tools)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f" agent tools, ", style=f"white")
     cmd_str.append(f"{len(ctx.mcp_router.reg_tools)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f" MCP tools)\n", style=f"white")
-    cmd_str.append("User prompts num: ", style=f"white")
+    cmd_str.append(" ├─User prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.user_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant content prompts num: ", style=f"white")
+    cmd_str.append(" ├─Assistant content prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.content_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant reasoning content prompts num: ", style=f"white")
+    cmd_str.append(" ├─Assistant reasoning content prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.reasoning_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Assistant tool calls prompts num: ", style=f"white")
+    cmd_str.append(" ├─Assistant tool calls prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_calls_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append("Tool results prompts num: ", style=f"white")
+    cmd_str.append(" └─Tool results prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_results_prompts}\n", style=f"bold {MAJOR_COLOR2}")
 
     cmd_str.append("\nAvailable skills amount: ", style=f"white")
@@ -203,13 +207,16 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append("\nLoaded skills amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.loaded_skills)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Loaded skills: ", style=f"white")
-    for skill in ctx.loaded_skills:
-        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f" ,", style=f"white")
-    if cmd_str.plain.endswith(" ,"):
-        cmd_str.right_crop(2)
+    if len(ctx.loaded_skills) == 0:
+        cmd_str.append("(None)", style=f"bold {MAJOR_COLOR2}")
+    else:
+        for skill in ctx.loaded_skills:
+            cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f" ,", style=f"white")
+        if cmd_str.plain.endswith(" ,"):
+            cmd_str.right_crop(2)
 
-    cmd_str.append("\nAvailable MCPs amount: ", style=f"white")
+    cmd_str.append("\n\nAvailable MCPs amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.mcps_configs)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f" (", style=f"white")
     cmd_str.append(f"{len(ctx.mcp_router.clients)}", style=f"bold {MAJOR_COLOR2}")
@@ -241,10 +248,24 @@ def cmd_fread_list(args: list[str], ctx: AgentContext, board: Scoreboard, consol
     cmd_str.append(f" files read by TECoSim Agent\n\n", style=f"white")
 
     cmd_str.append("File list: \n", style=f"bold {MAJOR_COLOR2}")
+
+    if len(ctx.files_read) > 1:
+        prefix1 = " ├─ "
+    else:
+        prefix1 = " └─ "
+    prefix2 = " ├─ "
+    idx = 0
     for path, amount in ctx.files_read.items():
-        cmd_str.append(f"{path}: ", style=f"white")
+        if idx == 0:
+            prefix = prefix1
+        elif idx == len(ctx.files_read) - 1:
+            prefix = " └─ "
+        else:
+            prefix = prefix2
+        cmd_str.append(f"{prefix}{path}: ", style=f"white")
         cmd_str.append(f"{amount}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(" times\n", style=f"white")
+        idx += 1
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -258,19 +279,44 @@ def cmd_readonly_list(args: list[str], ctx: AgentContext, board: Scoreboard, con
              f"({len(ctx.system_read_only_paths)} system, {len(ctx.read_only_paths)} custom)")
     cmd_str = Text()
     cmd_str.append(f"System readonly paths (can not edit):\n", style=f"bold {MAJOR_COLOR2}")
+    if len(ctx.system_read_only_paths) > 1:
+        prefix1 = " ├─ "
+    else:
+        prefix1 = " └─ "
+    prefix2 = " ├─ "
+    idx1 = 0
     for path in ctx.system_read_only_paths:
+        if idx1 == 0:
+            prefix = prefix1
+        elif idx1 == len(ctx.system_read_only_paths) - 1:
+            prefix = " └─ "
+        else:
+            prefix = prefix2
         if path.exists():
-            cmd_str.append(f"{path.resolve()}", style=f"white")
+            cmd_str.append(f"{prefix}{path.resolve()}", style=f"white")
             cmd_str.append(f" (exists)\n", style=f"bold {MAJOR_COLOR2}")
         else:
-            cmd_str.append(f"{path}", style=f"white")
+            cmd_str.append(f"{prefix}{path}", style=f"white")
             cmd_str.append(f" (nonexists)\n", style=f"bright_black")
+        idx1 += 1
     cmd_str.append("\n")
 
     cmd_str.append(f"Customizable readonly paths:\n", style=f"bold {MAJOR_COLOR2}")
-    for idx, path in enumerate(ctx.read_only_paths):
-        cmd_str.append(f"[", style=f"white")
-        cmd_str.append(f"{idx}", style=f"bold {MAJOR_COLOR1}")
+    if len(ctx.read_only_paths) > 1:
+        prefix1 = " ├─ "
+    else:
+        prefix1 = " └─ "
+    prefix2 = " ├─ "
+    idx2 = 0
+    for path_idx, path in enumerate(ctx.read_only_paths):
+        if idx2 == 0:
+            prefix = prefix1
+        elif idx2 == len(ctx.read_only_paths) - 1:
+            prefix = " └─ "
+        else:
+            prefix = prefix2
+        cmd_str.append(f"{prefix}[", style=f"white")
+        cmd_str.append(f"{path_idx}", style=f"bold {MAJOR_COLOR1}")
         cmd_str.append(f"] ", style=f"white")
         if path.exists():
             cmd_str.append(f"{path.resolve()}", style=f"white")
@@ -278,15 +324,16 @@ def cmd_readonly_list(args: list[str], ctx: AgentContext, board: Scoreboard, con
         else:
             cmd_str.append(f"{path}", style=f"white")
             cmd_str.append(f" (nonexists)\n", style=f"bright_black")
+        idx2 += 1
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 
     hint = Text()
     hint.append(f"  Tips: You can add custom readonly path with following builtin command: ", style=f"bright_black")
-    hint.append(f"/readonly_add ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"/readonlyAdd ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[PATH1] [PATH2] [PATH3] ...\n", style=f"bold {MAJOR_COLOR1}")
     hint.append(f"        You can remove custom readonly path with following builtin command: ", style=f"bright_black")
-    hint.append(f"/readonly_remove ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"/readonlyRemove ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[idx1] [idx2] [idx3] ...", style=f"bold {MAJOR_COLOR1}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -393,7 +440,7 @@ def cmd_permission_list(args: list[str], ctx: AgentContext, board: Scoreboard, c
 
     hint = Text()
     hint.append(f"  Tips: You can also toggle the permission config with following builtin command: \n", style=f"bright_black")
-    hint.append(f"        /permission_toggle ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"        /permissionToggle ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[NAME OF PERMISSION]", style=f"bold {MAJOR_COLOR1}")
     hint.append(f" (Swap ", style=f"white")
     hint.append(f"True", style=f"bold {MAJOR_COLOR1}")
@@ -479,88 +526,6 @@ def cmd_skills_loaded(args: list[str], ctx: AgentContext, board: Scoreboard, con
     console.print("\n")
 
 
-def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
-    """query all subagents (active and archived)"""
-    active = [p for p in ctx.agent_list.values() if not p.if_archived]
-    archived = [p for p in ctx.agent_list.values() if p.if_archived]
-    title = f"Subagent List ({len(active)} active, {len(archived)} archived)"
-    cmd_str = Text()
-
-    _status_color = {
-        AgentStatus.PENDING.value: "bright_black",
-        AgentStatus.RUNNING.value: f"bold {MAJOR_COLOR2}",
-        AgentStatus.DONE.value: TASK_COMPLETED_COLOR,
-        AgentStatus.ERROR.value: "bold red",
-        AgentStatus.TIMEOUT.value: "bold yellow",
-    }
-    if active:
-        cmd_str.append(f"Active Subagents\n", style=f"bold {MAJOR_COLOR2}")
-        for p in active:
-            mode = "background" if p.if_background else "foreground"
-            cmd_str.append(f"ID: ", style=f"white")
-            cmd_str.append(f"{p.agent_id}", style=f"bold {MAJOR_COLOR2}")
-            cmd_str.append(f" Type: ", style=f"white")
-            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
-            cmd_str.append(f" Subject: ", style=f"white")
-            cmd_str.append(f"{p.subject}\n", style="bright_black")
-            status_color = _status_color.get(p.status.value, "bright_black")
-            if p.current_tool:
-                cmd_str.append(f" ├─status: ", style="white")
-            else:
-                cmd_str.append(f" └─status: ", style="white")
-            cmd_str.append(f"{p.status.value}", style=status_color)
-            cmd_str.append(f", step: ", style="white")
-            cmd_str.append(f"{p.step}", style=f"bright_black")
-            cmd_str.append(f", tool calls: ", style="white")
-            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
-            cmd_str.append(f", elpased: ", style="white")
-            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
-            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
-            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
-            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
-            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
-            if p.current_tool:
-                cmd_str.append(f"\n └─current on: ", style="white")
-                cmd_str.append(f"{p.current_tool}", style="bright_black")
-            cmd_str.append("\n\n")
-
-    if archived:
-        cmd_str.append(f"Archived Subagents\n", style=f"bold {MAJOR_COLOR2}")
-        for p in archived:
-            mode = "background" if p.if_background else "foreground"
-            cmd_str.append(f"ID: ", style=f"white")
-            cmd_str.append(f"{p.agent_id}", style=f"bright_black")
-            cmd_str.append(f" Type: ", style=f"white")
-            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
-            cmd_str.append(f" Subject: ", style=f"white")
-            cmd_str.append(f"{p.subject}\n", style="bright_black")
-            status_color = _status_color.get(p.status.value, "bright_black")
-            if p.current_tool:
-                cmd_str.append(f" ├─status: ", style="white")
-            else:
-                cmd_str.append(f" └─status: ", style="white")
-            cmd_str.append(f"{p.status.value}", style=status_color)
-            cmd_str.append(f", step: ", style="white")
-            cmd_str.append(f"{p.step}", style=f"bright_black")
-            cmd_str.append(f", tool calls: ", style="white")
-            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
-            cmd_str.append(f", elpased: ", style="white")
-            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
-            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
-            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
-            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
-            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
-            if p.current_tool:
-                cmd_str.append(f"\n └─last on: ", style="white")
-                cmd_str.append(f"{p.current_tool}\n", style="bright_black")
-
-    if cmd_str.plain.endswith("\n"):
-        cmd_str.rstrip()
-    console.print(Panel.fit(cmd_str, title=title, title_align="left",
-                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
-    console.print("\n")
-
-
 def skill_bound_command(name: str, func: Callable, *args, **kwargs):
     """crete a partial function for loading skills"""
     bound_func = partial(func, *args, **kwargs)
@@ -595,7 +560,7 @@ def cmd_load_skills(skill_name: str, args: list[str], ctx: AgentContext, board: 
                                         f"{SKILL_END_LABEL}"})
 
 
-def cmd_webfetch_caches(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+def cmd_web_cache_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all cached URLs in webfetch tools"""
     title = f"Cached URLs ({len(ctx.webfetch_caches)})"
     cmd_str = Text()
@@ -651,7 +616,7 @@ def cmd_mcp_list(args: list[str], ctx: AgentContext, board: Scoreboard, console:
             mcp_ini_info = mcps_ini_info[config["name"]]
             cmd_str.append(f"MCP initialize information: \n", style=f"bold {MAJOR_COLOR2}")
             for key, value in mcp_ini_info.items():
-                cmd_str.append(f"  - {key}: ", style=f"white")
+                cmd_str.append(f"  ▶ {key}: ", style=f"white")
                 cmd_str.append(f"{value}\n", style=f"bright_black")
 
             mcp_tools = mcps_tools[config["name"]]
@@ -660,7 +625,7 @@ def cmd_mcp_list(args: list[str], ctx: AgentContext, board: Scoreboard, console:
                 tool_desc = tool["description"]
                 if len(tool_desc) > MCP_TOOL_DESC_CHAR_LIMIT:
                     tool_desc = tool_desc[:MCP_TOOL_DESC_CHAR_LIMIT] + "..."
-                cmd_str.append(f"  - {tool["name"]}: ", style=f"bold {MAJOR_COLOR1}")
+                cmd_str.append(f"  ● {tool["name"]}: ", style=f"bold {MAJOR_COLOR1}")
                 cmd_str.append(f"{tool_desc}\n", style=f"white")
             cmd_str.append("\n")
 
@@ -837,8 +802,8 @@ def cmd_cron_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
     cmd_str = Text()
     for cron_task in ctx.cron_tasks:
         cmd_str.append(f"ID: ", style=f"white")
-        cmd_str.append(f"{cron_task["id"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f"  Pattern: ", style=f"white")
+        cmd_str.append(f"{cron_task["id"]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Pattern: ", style=f"white")
         cmd_str.append(f"{cron_task["cron_str"]}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f"  Durable: ", style=f"white")
         if not cron_task["durable"]:
@@ -855,14 +820,14 @@ def cmd_cron_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
             cmd_str.append(f"False", style=f"bright_black")
         else:
             cmd_str.append(f"True", style=f"bold {MAJOR_COLOR1}")
-        cmd_str.append(f"\nPrompt: ", style=f"white")
+        cmd_str.append(f"\n └─Prompt: ", style=f"white")
         cmd_str.append(f"{cron_task["prompt"]}\n\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
         cmd_str.rstrip()
 
     hint = Text()
     hint.append(f"  Tips: You can remove any cron task with following builtin command: ", style=f"bright_black")
-    hint.append(f"/cron_remove ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"/cronRemove ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[Cron ID]", style=f"bold {MAJOR_COLOR1}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
@@ -917,7 +882,7 @@ def cmd_task_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
             cmd_str.append(f"{task["owner"]}", style=f"{MAJOR_COLOR2}")
         cmd_str.append(f", Status: ", style=f"white")
         cmd_str.append(f"{status}\n", style=f"{MAJOR_COLOR2}")
-        cmd_str.append(f"Subject: ", style=f"white")
+        cmd_str.append(f" ├─Subject: ", style=f"white")
         if status == TaskStatus.PENDING:
             if owner is None:
                 cmd_str.append(
@@ -941,9 +906,9 @@ def cmd_task_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
             cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_DELETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
                         style=f"bold {TASK_DELETED_COLOR}")
             cmd_str.append(f"{subject}\n", style=f"strike {TASK_DELETED_COLOR}")
-        cmd_str.append(f"Description: ", style=f"white")
+        cmd_str.append(f" ├─Description: ", style=f"white")
         cmd_str.append(f"{task["description"]}\n", style=f"bright_black")
-        cmd_str.append(f"Blocks: ", style=f"white")
+        cmd_str.append(f" └─Blocks: ", style=f"white")
         cmd_str.append(f"{task["blocks"]}", style=f"{MAJOR_COLOR2}")
         cmd_str.append(f", Blocked By: ", style=f"white")
         cmd_str.append(f"{task["blocked_by"]}\n\n", style=f"{MAJOR_COLOR2}")
@@ -953,7 +918,7 @@ def cmd_task_list(args: list[str], ctx: AgentContext, board: Scoreboard, console
     hint = Text()
     hint.append(f"  Tips: Resolved agent tasks will be archived after {TASK_DISPLAYS_BEFORE_ARCHIVED} times of displays.\n", style=f"bright_black")
     hint.append(f"        You can query all history agent tasks with following builtin command: ", style=f"bright_black")
-    hint.append(f"/task_list_all ", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"/taskListAll ", style=f"bold {MAJOR_COLOR2}")
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
     console.print(hint)
@@ -979,7 +944,7 @@ def cmd_task_list_all(args: list[str], ctx: AgentContext, board: Scoreboard, con
             cmd_str.append(f"{task["owner"]}", style=f"{MAJOR_COLOR2}")
         cmd_str.append(f", Status: ", style=f"white")
         cmd_str.append(f"{status}\n", style=f"{MAJOR_COLOR2}")
-        cmd_str.append(f"Subject: ", style=f"white")
+        cmd_str.append(f" ├─Subject: ", style=f"white")
         if status == TaskStatus.PENDING:
             if owner is None:
                 cmd_str.append(
@@ -1003,9 +968,9 @@ def cmd_task_list_all(args: list[str], ctx: AgentContext, board: Scoreboard, con
             cmd_str.append(f"{' ' * TASK_VIEW_LEFT_MARGIN}{TASK_DELETED_ICON}{' ' * TASK_VIEW_RIGHT_MARGIN}",
                         style=f"bold {TASK_DELETED_COLOR}")
             cmd_str.append(f"{subject}\n", style=f"strike {TASK_DELETED_COLOR}")
-        cmd_str.append(f"Description: ", style=f"white")
+        cmd_str.append(f" ├─Description: ", style=f"white")
         cmd_str.append(f"{task["description"]}\n", style=f"bright_black")
-        cmd_str.append(f"Blocks: ", style=f"white")
+        cmd_str.append(f" └─Blocks: ", style=f"white")
         cmd_str.append(f"{task["blocks"]}", style=f"{MAJOR_COLOR2}")
         cmd_str.append(f", Blocked By: ", style=f"white")
         cmd_str.append(f"{task["blocked_by"]}\n\n", style=f"{MAJOR_COLOR2}")
@@ -1017,38 +982,120 @@ def cmd_task_list_all(args: list[str], ctx: AgentContext, board: Scoreboard, con
     console.print("\n")
 
 
+def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query all subagents (active and archived)"""
+    active = [p for p in ctx.agent_list.values() if not p.if_archived]
+    archived = [p for p in ctx.agent_list.values() if p.if_archived]
+    title = f"Subagent List ({len(active)} active, {len(archived)} archived)"
+    cmd_str = Text()
+
+    _status_color = {
+        AgentStatus.PENDING.value: "bright_black",
+        AgentStatus.RUNNING.value: f"bold {MAJOR_COLOR2}",
+        AgentStatus.DONE.value: TASK_COMPLETED_COLOR,
+        AgentStatus.ERROR.value: "bold red",
+        AgentStatus.TIMEOUT.value: "bold yellow",
+    }
+    if active:
+        cmd_str.append(f"Active Subagents\n", style=f"bold {MAJOR_COLOR2}")
+        for p in active:
+            mode = "background" if p.if_background else "foreground"
+            cmd_str.append(f"ID: ", style=f"white")
+            cmd_str.append(f"{p.agent_id}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f" Type: ", style=f"white")
+            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
+            cmd_str.append(f" Subject: ", style=f"white")
+            cmd_str.append(f"{p.subject}\n", style="bright_black")
+            status_color = _status_color.get(p.status.value, "bright_black")
+            if p.current_tool:
+                cmd_str.append(f" ├─status: ", style="white")
+            else:
+                cmd_str.append(f" └─status: ", style="white")
+            cmd_str.append(f"{p.status.value}", style=status_color)
+            cmd_str.append(f", step: ", style="white")
+            cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f", tool calls: ", style="white")
+            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
+            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
+            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
+            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            if p.current_tool:
+                cmd_str.append(f"\n └─current on: ", style="white")
+                cmd_str.append(f"{p.current_tool}", style="bright_black")
+            cmd_str.append("\n\n")
+
+    if archived:
+        cmd_str.append(f"Archived Subagents\n", style=f"bold {MAJOR_COLOR2}")
+        for p in archived:
+            mode = "background" if p.if_background else "foreground"
+            cmd_str.append(f"ID: ", style=f"white")
+            cmd_str.append(f"{p.agent_id}", style=f"bright_black")
+            cmd_str.append(f" Type: ", style=f"white")
+            cmd_str.append(f" [{mode} | {p.subagent_type}]", style=f"bright_black")
+            cmd_str.append(f" Subject: ", style=f"white")
+            cmd_str.append(f"{p.subject}\n", style="bright_black")
+            status_color = _status_color.get(p.status.value, "bright_black")
+            if p.current_tool:
+                cmd_str.append(f" ├─status: ", style="white")
+            else:
+                cmd_str.append(f" └─status: ", style="white")
+            cmd_str.append(f"{p.status.value}", style=status_color)
+            cmd_str.append(f", step: ", style="white")
+            cmd_str.append(f"{p.step}", style=f"bright_black")
+            cmd_str.append(f", tool calls: ", style="white")
+            cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
+            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
+            cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
+            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            if p.current_tool:
+                cmd_str.append(f"\n └─last on: ", style="white")
+                cmd_str.append(f"{p.current_tool}\n", style="bright_black")
+
+    if cmd_str.plain.endswith("\n"):
+        cmd_str.rstrip()
+    console.print(Panel.fit(cmd_str, title=title, title_align="left",
+                            padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
 class BuiltinCommands:
     """builtin command class"""
     def __init__(self, console: Console):
         self._commands: dict[str, tuple[Callable[..., Any], str, str]] = {
             "help": (self.cmd_help, "help info", "print all available builtin commands"),
-            "design_list": (cmd_design_list, "query all designs", "query the list of current designs"),
-            "run_list": (cmd_run_list, "query all runs", "query the list of all launched simulation"),
+            "designList": (cmd_design_list, "query all designs", "query the list of current designs"),
+            "runList": (cmd_run_list, "query all runs", "query the list of all launched simulation"),
             "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
-            "fread_list": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
-            "readonly_list": (cmd_readonly_list, "query all readonly paths", "query the absolute paths of all readonly paths"),
-            "readonly_add": (cmd_readonly_add, "add readonly path", "add readonly paths into list (converted to absolute path)"),
-            "readonly_remove": (cmd_readonly_remove, "remove readonly path", "remove readonly path from list with indexes list"),
-            "permission_list": (cmd_permission_list, "query permission info",
+            "freadList": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
+            "readonlyList": (cmd_readonly_list, "query all readonly paths", "query the absolute paths of all readonly paths"),
+            "readonlyAdd": (cmd_readonly_add, "add readonly path", "add readonly paths into list (converted to absolute path)"),
+            "readonlyRemove": (cmd_readonly_remove, "remove readonly path", "remove readonly path from list with indexes list"),
+            "permissionList": (cmd_permission_list, "query permission info",
                                 "query the configs of always-allowed-configurable tool calls permission token"),
-            "permission_toggle": (cmd_permission_toggle, "toggle the permission with given name",
+            "permissionToggle": (cmd_permission_toggle, "toggle the permission with given name",
                                 "toggle the permission token of the tool calls permission with given name"),
-            "skill_list": (cmd_skill_list, "query all available skills",
+            "skillList": (cmd_skill_list, "query all available skills",
                                                "query all the available skills with name and truncated description"),
-            "skills_loaded": (cmd_skills_loaded, "query all loaded skills",
+            "skillsLoaded": (cmd_skills_loaded, "query all loaded skills",
                                                "query all the loaded skills with name and full description"),
-            "webfetch_caches": (cmd_webfetch_caches, "query all web fetch caches",
+            "webCacheList": (cmd_web_cache_list, "query all web fetch caches",
                                                "query all the cached URLs with timestamp and truncated content in web fetch tool"),
-            "mcp_list": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
-            "update_title": (cmd_update_title, "update session title with LLM", "update title of this session with history immediately by LLM"),
-            "set_title": (cmd_set_title, "set session title manually", "manually set title of this session by user"),
-            "session_list": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
-            "session_remove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
-            "cron_list": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
-            "cron_remove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
-            "task_list": (cmd_task_list, "list agent tasks", "list all agent tasks that are not archived"),
-            "task_list_all": (cmd_task_list_all, "list all agent tasks", "list all history agent tasks"),
-            "agent_list": (cmd_agent_list, "list subagents", "list all active and archived subagents with status"),
+            "mcpList": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
+            "updateTitle": (cmd_update_title, "update session title with LLM", "update title of this session with history immediately by LLM"),
+            "setTitle": (cmd_set_title, "set session title manually", "manually set title of this session by user"),
+            "sessionList": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
+            "sessionRemove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
+            "cronList": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
+            "cronRemove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
+            "taskList": (cmd_task_list, "list agent tasks", "list all agent tasks that are not archived"),
+            "taskListAll": (cmd_task_list_all, "list all agent tasks", "list all history agent tasks"),
+            "agentList": (cmd_agent_list, "list subagents", "list all active and archived subagents with status"),
         }
         self._request_commands: list[str] = []
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")

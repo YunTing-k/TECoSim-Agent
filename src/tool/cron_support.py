@@ -285,7 +285,7 @@ def cron_list_cli(console: Console):
     hint.append(f"{AGENT_EXECUTE} cron remove ", style=f"bold {MAJOR_COLOR2}")
     hint.append(f"[Cron ID]\n", style=f"bold {MAJOR_COLOR1}")
     hint.append(f"        You can only remove session-specific cron task with builtin command: ", style=f"bright_black")
-    hint.append(f"/cron_remove", style=f"bold {MAJOR_COLOR2}")
+    hint.append(f"/cronRemove", style=f"bold {MAJOR_COLOR2}")
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))

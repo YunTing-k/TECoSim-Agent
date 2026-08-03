@@ -1168,7 +1168,10 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     insert_color_list = grad_color_hex_list(INSERT_TUI_COLOR_START, INSERT_TUI_COLOR_END, INSERT_TUI_COLOR_GRADIENT)
     insert_color_list = insert_color_list + insert_color_list[::-1]
 
-    refresh_rate = STREAM_DISPLAY_REFRESH_RATE if ctx.in_thread is not None else (1000.0 / INSERT_LIVE_CHECK_GAP_MS)
+    if ctx.in_thread is not None and STREAM_DISPLAY_REFRESH_RATE < (1000.0 / INSERT_LIVE_CHECK_GAP_MS):
+        refresh_rate = 1000.0 / INSERT_LIVE_CHECK_GAP_MS
+    else:
+        refresh_rate = STREAM_DISPLAY_REFRESH_RATE
 
     """process each chunk"""
     with ExitStack() as stack, Live(get_stream_render(collected_reasoning, collected_content, as_md, show_reason, tool_names, ctx.in_thread,

@@ -30,7 +30,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 6
+TECOSIM_AGENT_UPDATE_VERSION: int = 7
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
