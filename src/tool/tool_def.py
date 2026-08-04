@@ -65,6 +65,7 @@ Revision:
 2026.7.23      Yu Huang      5.4      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 2026.8.1-2     Yu Huang      5.5      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.3       Yu Huang      5.6      Written file is also logged as read
+2026.8.4       Yu Huang      5.7      WeChat bot can get more information of AgentContext via wechat_status tool
 
 Details:
 ---------
@@ -2341,9 +2342,9 @@ def tool_wechat_status_def() -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": TOOL_NAME_WECHAT_STATUS,
-            "description": "Get the current status of the WeChat Bot connection, including login state, the bounded WeChat "
-                           "user ID, queued messages, logged user messages, and CDN download statistics for images/videos/"
-                           "voices/files",
+            "description": "Get the current status of the WeChat Bot and Agent, including WeChat login state, bounded WeChat "
+                           "user ID, WeChat messages status, WeChat CDN download statistics for images/videos/voices/files, "
+                           "LLM API request and LLM/Agent context statistics",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2365,7 +2366,7 @@ def wechat_status(ctx: AgentContext, progress: Progress) -> dict[str, Any]:
         if ctx.wechat_bot is None:
             return {"status": FAIL_LABEL, "info": "WeChat bot is not running"}
         """get status"""
-        status = ctx.wechat_bot.get_status()
+        status = ctx.wechat_bot.get_status(ctx.get_status())
         progress.console.print(get_syntax_render("wechat.md", status, "$stats"))
         sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done")
         progress.console.print(f"{func_name} {SUCCESS_LABEL}: Get WeChat bot status done", style="bright_black")

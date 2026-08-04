@@ -183,7 +183,8 @@ class TestHighlightAndWrap(unittest.TestCase):
         from src.tool.bash_support import get_bash_render
         with patch('os.get_terminal_size', return_value=os.terminal_size((5, 24))):
             result = get_bash_render("echo hello")
-        self.assertIsInstance(result, Text)
+        # render functions return a Text-compatible wrapper (plain/spans/str)
+        self.assertTrue(hasattr(result, "plain"))
 
     def test_tab_expanded(self):
         from src.tool.bash_support import _highlight_and_wrap

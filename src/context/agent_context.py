@@ -31,6 +31,7 @@ Revision:
 2026.7.23      Yu Huang      2.9      Add launch support in arbitrary path
 2026.7.26      Yu Huang      3.0      Support of dumping webfetch caches to file & Revise TUI info for session file I/O
 2026.8.1-2     Yu Huang      3.1      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.4       Yu Huang      3.2      Support of tracking the amount of received WeChat messages & Add get_status method
 
 Details:
 ---------
@@ -171,10 +172,11 @@ class AgentContext:
         self.run_man: RunManager = RunManager() # (shared)
         self.agent_list: dict[str, SubAgentProgress] = {}  # agent_id -> SubAgentProgress
         self.background_agents: list[tuple[dict[str, Any], "SubAgent", threading.Thread, float]] = []  # (don't dump) (tc, agent, thread, start_time)
-        # params
+        # status (update with get_status)
         self.agent_id: str = MAIN_AGENT_ID  # (don't dump)
         self.session_uuid: str = ""  # (don't dump, shared)
         self.enable_wechat: bool = False  # (don't dump)
+        self.wechat_receive_total_count: int = 0
         self.wechat_reply_count: int = 0  # (don't dump)
         self.wechat_reply_total_count: int = 0
         self.if_summarized: bool = False
@@ -194,6 +196,7 @@ class AgentContext:
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_tokens: int = 0
+        # params
         self.system_read_only_paths: list[Path] = []  # (don't dump)
         self.read_only_paths: list[Path] = []
         self.task_tool_unuse: int = 0
@@ -237,6 +240,35 @@ class AgentContext:
             TOOL_NAME_INIT_DESIGN: False,
             TOOL_NAME_LAUNCH_SIM: False,
             TOOL_NAME_READ_LOG: False,
+        }
+
+
+    def get_status(self) -> dict[str, Any]:
+        """get the all status of context"""
+        return {
+            "agent_id": self.agent_id,
+            "session_uuid": self.session_uuid,
+            "enable_wechat": self.enable_wechat,
+            "wechat_receive_total_count": self.wechat_receive_total_count,
+            "wechat_reply_count": self.wechat_reply_count,
+            "wechat_reply_total_count": self.wechat_reply_total_count,
+            "if_summarized": self.if_summarized,
+            "session_title": self.session_title,
+            "system_prompts": self.system_prompts,
+            "tools_prompts": self.tools_prompts,
+            "user_prompts": self.user_prompts,
+            "content_prompts": self.content_prompts,
+            "reasoning_prompts": self.reasoning_prompts,
+            "tool_calls_prompts": self.tool_calls_prompts,
+            "tool_results_prompts": self.tool_results_prompts,
+            "total_llm_requests": self.total_llm_requests,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_tokens": self.total_tokens,
+            "total_uncached_tokens": self.total_uncached_tokens,
+            "last_input_tokens": self.last_input_tokens,
+            "last_output_tokens": self.last_output_tokens,
+            "last_tokens": self.last_tokens,
         }
 
 
@@ -383,6 +415,7 @@ class AgentContext:
     def to_dict(self, console: Console, mute: bool = False) -> dict:
         """convert class to dict"""
         out_dict = {
+            "wechat_receive_total_count": self.wechat_receive_total_count,
             "wechat_reply_total_count": self.wechat_reply_total_count,
             "if_summarized": self.if_summarized,
             "session_title": self.session_title,
@@ -417,6 +450,7 @@ class AgentContext:
     def from_dict(self, in_dict: dict[str, Any], console: Console, mute: bool = False):
         """convert dict to class"""
         try:
+            self.wechat_receive_total_count = in_dict["wechat_receive_total_count"]
             self.wechat_reply_total_count = in_dict["wechat_reply_total_count"]
             self.if_summarized = in_dict["if_summarized"]
             self.session_title = in_dict["session_title"]

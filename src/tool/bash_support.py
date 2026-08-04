@@ -29,6 +29,7 @@ Revision:
                                       export/umask/ulimit/stty from safe, fix 3<>file/&>> redirect detection. 408 tests.
 2026.7.3       Yu Huang      2.1      Fix of special Unicode render for bash, bash out, edit, write tool
 2026.7.17      Yu Huang      2.2      Fix: qutoed conetent in bash command is completely replaced in _mask_quoted
+2026.8.4       Yu Huang      2.3      Fix TUI text preview of NBSP mismatched VS16/ZWJ emoji
 
 Details:
 ---------
@@ -46,10 +47,11 @@ import os
 
 from rich.text import Text
 from rich.style import Style
-from src.constants import *
+from src.tool.file_io_support import NoJoinText
 from src.context.agent_context import AgentContext
 from src.tool.file_io_support import _highlight_fragment, _get_lexer, get_line_prefix, fill_str_line
-from src.tool.file_io_support import _char_display_width, _sanitize_control, _display_width
+from src.tool.file_io_support import _sanitize_control, _display_width, _slice_by_width
+from src.constants import *
 
 sys_log = logging.getLogger('logger')
 
@@ -1069,20 +1071,16 @@ def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: St
     pos = 0
     total = len(plain)
     while pos < total:
-        w = 0
-        start = pos
-        while pos < total:
-            cw = _char_display_width(plain[pos])
-            if w + cw > max_width:
-                break
-            w += cw
-            pos += 1
+        head, _ = _slice_by_width(plain[pos:], max_width)
+        if not head:
+            break
+        end = pos + len(head)
         chunk = Text()
-        i = start
-        while i < pos:
+        i = pos
+        while i < end:
             j = i + 1
             sty = char_styles[i]
-            while j < pos and char_styles[j] == sty:
+            while j < end and char_styles[j] == sty:
                 j += 1
             chunk.append(plain[i:j], style=sty)
             i = j
@@ -1090,10 +1088,11 @@ def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: St
         if lines:
             chunk = Text.assemble((" " * gutter_width, gutter_style), chunk)
         else:
-            _pad = max_width - w
+            _pad = max_width - _display_width(str(chunk))
             if _pad > 0:
                 chunk.append("\u00a0" * _pad, style=content_style)
         lines.append(chunk)
+        pos = end
 
     if len(lines) > 1:
         last = lines[-1]
@@ -1103,7 +1102,7 @@ def _highlight_and_wrap(line: str, lexer, content_style: Style, gutter_style: St
     return lines[0] if lines else Text(), lines[1:]
 
 
-def get_bash_render(commands: str) -> Text:
+def get_bash_render(commands: str) -> NoJoinText:
     """render bash command with line-number gutter, pygments syntax highlighting, and visual padding."""
     lexer = _get_lexer('script.sh')
     content_style = Style(bgcolor=EDIT_VIEW_NORMAL_BG)
@@ -1118,7 +1117,7 @@ def get_bash_render(commands: str) -> Text:
     _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
     gutter_nbsp = "\u00a0" * gutter_width
 
-    body = Text()
+    body = Text(no_wrap=True)
     for i in range(BASH_VIEW_PADDING_LINES):
         if i == 0:
             lbl = _pad_label("$in")
@@ -1150,10 +1149,12 @@ def get_bash_render(commands: str) -> Text:
         first, _ = fill_str_line("", offset=gutter_width)
         body.append(gutter_nbsp, style=f"bright_black on {BASH_VIEW_GUTTER_BG}")
         body.append(first, style=content_style)
-    return body
+    # NoJoinText wrapper: console.print() joins bare Text objects and drops no_wrap, letting rich's rstrip_end()
+    # (char-count based) strip NBSP fill from lines with ZWJ/VS16 emoji sequences. Non-Text wrapper keeps no_wrap.
+    return NoJoinText(body)
 
 
-def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
+def get_bash_result_render(stdout: str, stderr: str = "") -> NoJoinText:
     """render bash execution output with line numbers, configurable truncation, and visual padding."""
     output = stdout.rstrip('\n')
     if stderr and stderr.strip():
@@ -1187,7 +1188,7 @@ def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
     _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
     content_style = Style(bgcolor=BASH_RESULT_CONTENT_BG)
 
-    body = Text()
+    body = Text(no_wrap=True)
     for i in range(BASH_RESULT_PADDING_LINES):
         if i == 0:
             lbl = _pad_label("$ out")
@@ -1228,4 +1229,5 @@ def get_bash_result_render(stdout: str, stderr: str = "") -> Text:
         first, _ = fill_str_line("", offset=len(gutter_nbsp))
         body.append(gutter_nbsp, style=f"bright_black on {BASH_RESULT_GUTTER_BG}")
         body.append(first, style=content_style)
-    return body
+    # NoJoinText wrapper: see get_bash_render — keeps no_wrap through console.print().
+    return NoJoinText(body)

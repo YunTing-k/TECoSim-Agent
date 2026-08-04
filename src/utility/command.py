@@ -30,6 +30,7 @@ Revision:
 2026.7.23      Yu Huang      2.8      Add launch support in arbitrary path
 2026.8.3       Yu Huang      2.9      Rename the builtin command & Revise the visual effect of /context /freadList /readonlyList
                                       /webCacheList /mcpList /cronList /taskList /taskListAll /agentList
+2026.7.23      Yu Huang      3.0      Revise the entries' names and add received WeChat message count entry in /context
 
 Details:
 ---------
@@ -156,13 +157,13 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append(f"{100 - uncached_rate:.3f} %\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total tokens consumption of this session: ", style=f"white")
     cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Last dialogue input tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last round input tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Last dialogue output tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last round output tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Last dialogue total tokens of this session (main agent): ", style=f"white")
+    cmd_str.append(" ├─Last round total tokens of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" └─Last dialogue's context usage of this session (main agent): ", style=f"white")
+    cmd_str.append(" └─Last round's context usage of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx_usage:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", ", style=f"white")
     cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
@@ -174,11 +175,13 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append(f"{ctx.total_llm_requests}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total messages num (main agent): ", style=f"white")
     cmd_str.append(f"{len(ctx.messages)}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Total WeChat reply num (main agent): ", style=f"white")
+    cmd_str.append(" ├─Total WeChat messages received (main agent): ", style=f"white")
+    cmd_str.append(f"{ctx.wechat_receive_total_count}\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(" ├─Total WeChat messages replied (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.wechat_reply_total_count}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─System prompts num (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.system_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Tools prompts num (main agent): ", style=f"white")
+    cmd_str.append(" ├─Tool schema prompts num (main agent): ", style=f"white")
     cmd_str.append(f"{ctx.tools_prompts}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f" (", style=f"white")
     cmd_str.append(f"{len(ctx.tools) - len(ctx.mcp_router.reg_tools)}", style=f"bold {MAJOR_COLOR2}")
@@ -191,7 +194,7 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append(f"{ctx.content_prompts}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Assistant reasoning content prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.reasoning_prompts}\n", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" ├─Assistant tool calls prompts num: ", style=f"white")
+    cmd_str.append(" ├─Assistant tool calls num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_calls_prompts}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" └─Tool results prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_results_prompts}\n", style=f"bold {MAJOR_COLOR2}")

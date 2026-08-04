@@ -44,6 +44,7 @@ Revision:
 2026.7.15-16   Yu Huang      3.5      Add WeChat bot interaction support
 2026.7.23      Yu Huang      3.6      Add launch support in arbitrary path
 2026.7.31      Yu Huang      3.7      Fix of invalid truncated line amount of get_syntax_render
+2026.8.4       Yu Huang      3.8      Fix TUI text preview of NBSP mismatched VS16/ZWJ emoji
 
 Details:
 ---------
@@ -68,6 +69,7 @@ from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 from rich.live import Live
+from rich.cells import cell_len as _rich_cell_len
 from prompt_toolkit.keys import Keys
 from pygments.styles import get_style_by_name
 from pygments.lexers import get_lexer_for_filename, TextLexer
@@ -82,6 +84,33 @@ sys_log = logging.getLogger('logger')
 
 _lexer_cache: dict[str, object] = {}
 _pygments_style_map: dict | None = None
+
+
+class NoJoinText:
+    """Text-like wrapper returned by padded render functions.
+
+    rich's Console.print() joins bare Text objects via Text.join(), which
+    rebuilds the Text without the no_wrap flag; the wrap path's rstrip_end()
+    then compares CHAR count (not cell width) and strips trailing NBSP fill
+    from lines containing ZWJ/VS16 emoji sequences. Wrapping in a non-Text
+    object makes print() render it directly (preserving no_wrap) while
+    forwarding the Text interface (plain/spans/str/len) for callers and tests.
+    """
+
+    def __init__(self, text: Text):
+        object.__setattr__(self, "_text", text)
+
+    def __getattr__(self, name):
+        return getattr(self._text, name)
+
+    def __str__(self):
+        return str(self._text)
+
+    def __len__(self):
+        return len(self._text)
+
+    def __rich_console__(self, console, options):
+        yield from self._text.__rich_console__(console, options)
 
 
 def _get_lexer(path: str):
@@ -645,21 +674,40 @@ def _sanitize_control(text: str) -> str:
 
 
 def _display_width(s: str) -> int:
-    """compute the terminal display width of a string (CJK characters count as 2)."""
-    w = 0
-    for ch in s:
-        w += _char_display_width(ch)
-    return w
+    """terminal display width of a string, aligned with rich's cell_len.
+
+    CJK → 2, VS16 emoji sequences (e.g. "⚠️") → 2, ZWJ sequences → 2,
+    combining marks / control chars → 0.  Using rich's own cell_len keeps
+    padding and wrapping consistent with how rich actually renders the text.
+    """
+    return _rich_cell_len(s)
 
 
 def _slice_by_width(s: str, max_width: int) -> tuple[str, str]:
-    """split s at the display-width boundary: (head, tail) where display_width(head) <= max_width."""
-    w = 0
-    for i, ch in enumerate(s):
-        cw = _char_display_width(ch)
-        if w + cw > max_width:
-            return s[:i], s[i:]
-        w += cw
+    """split s at the display-width boundary: (head, tail) where display_width(head) <= max_width.
+
+    VS16/ZWJ emoji sequences are never split: if the boundary would fall on a
+    variation selector (e.g. "⚠️"), the whole sequence moves to the tail.
+    """
+    if not s:
+        return '', ''
+    if '\u200d' not in s and '\ufe0f' not in s:
+        # fast path (O(n)): no context-dependent widths, single-char widths suffice
+        w = 0
+        for i, ch in enumerate(s):
+            cw = _char_display_width(ch)
+            if w + cw > max_width:
+                return s[:i], s[i:]
+            w += cw
+        return s, ''
+    # slow path: rich cell_len is context-aware (VS16/ZWJ sequences).
+    # O(n^2) prefix rescans, but only for rare lines containing emoji sequences.
+    for i in range(1, len(s) + 1):
+        if _rich_cell_len(s[:i]) > max_width:
+            j = i - 1
+            while j > 0 and s[j] in ('\u200d', '\ufe0f'):
+                j -= 1
+            return s[:j], s[j:]
     return s, ''
 
 
@@ -697,24 +745,21 @@ def _highlight_and_wrap_edit(line: str, lexer, max_width: int, strip_bg: bool = 
     pos = 0
     total = len(plain)
     while pos < total:
-        w = 0
-        start = pos
-        while pos < total:
-            cw = _char_display_width(plain[pos])
-            if w + cw > max_width:
-                break
-            w += cw
-            pos += 1
+        head, _ = _slice_by_width(plain[pos:], max_width)
+        if not head:
+            break
+        end = pos + len(head)
         chunk = Text()
-        i = start
-        while i < pos:
+        i = pos
+        while i < end:
             j = i + 1
             sty = char_styles[i]
-            while j < pos and char_styles[j] == sty:
+            while j < end and char_styles[j] == sty:
                 j += 1
             chunk.append(plain[i:j], style=sty)
             i = j
         chunks.append(chunk)
+        pos = end
 
     return chunks[0] if chunks else Text(), chunks[1:]
 
@@ -888,7 +933,7 @@ def _render_diff_block(body: Text, lines: list[str], start_idx: int, budget: int
                 body.append(cl[p1_len + p2_len:] + "\n", style=f"bold white on {content_bg}")
 
 
-def get_syntax_render(path: str, content: str, label: str = "$write") -> Text:
+def get_syntax_render(path: str, content: str, label: str = "$write") -> NoJoinText:
     """render file content preview with syntax-highlighted (based on file extension), with line-number gutter,
     configurable truncation, highlight-then-split long-line wrapping, and visual padding above/below.
     """
@@ -919,7 +964,7 @@ def get_syntax_render(path: str, content: str, label: str = "$write") -> Text:
     _pad_label = lambda txt: " " * (gutter_width - len(txt)) + txt
     gutter_nbsp = "\u00a0" * gutter_width
 
-    body = Text()
+    body = Text(no_wrap=True)
     for i in range(WRITE_VIEW_PADDING_LINES):
         if i == 0:
             lbl = _pad_label(label)
@@ -966,11 +1011,14 @@ def get_syntax_render(path: str, content: str, label: str = "$write") -> Text:
         body.append(gutter_nbsp, style=f"bright_black on {WRITE_VIEW_GUTTER_BG}")
         body.append(first, style=content_style)
 
-    return body
+    # NoJoinText wrapper: console.print() joins bare Text objects via Text.join, which drops the no_wrap flag and lets
+    # rich's rstrip_end() (which compares CHAR counts, not cell widths) strip trailing NBSP fill from lines containing
+    # ZWJ/VS16 emoji sequences. A non-Text wrapper is not joined, so body keeps no_wrap.
+    return NoJoinText(body)
 
 
 def render_preview_single(path:str, old_string: str, new_string: str, str_line: list[str], match_lines: list[tuple[int, int]],
-                         match_mode: str = MATCH_MODE_EXACT, lexer = None):
+                         match_mode: str = MATCH_MODE_EXACT, lexer = None) -> NoJoinText:
     """render single-line file edit preview"""
     (start_line, end_line) = match_lines[0]
     old_lines = str_line[start_line - 1:end_line]
@@ -979,7 +1027,7 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
     new_lines = new_str.splitlines()
     styles = _create_diff_styles()
 
-    body = Text()
+    body = Text(no_wrap=True)
     _render_edit_header(body, path, len(new_lines), len(old_lines), match_mode)
 
     budget_lines = max(end_line, end_line + len(new_lines) - len(old_lines))
@@ -1012,7 +1060,8 @@ def render_preview_single(path:str, old_string: str, new_string: str, str_line: 
         else:
             line_prefix2 = str_line[end_line:end_line + EDIT_VIEW_LINE_MARGIN_SINGLE]
         _render_normal_block(body, line_prefix2, end_line + 1 + len(new_lines) - len(old_lines), budget, lexer, styles)
-    return body
+    # NoJoinText wrapper: see get_syntax_render — keeps no_wrap through console.print().
+    return NoJoinText(body)
 
 
 def merge_intervals(match_lines: list[tuple[int, int]]):
@@ -1054,7 +1103,7 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
         budget_lines = max(budget_lines, tail_lines)
     budget = math.floor(math.log10(budget_lines)) + 1
 
-    body = Text()
+    body = Text(no_wrap=True)
     added_lines = 0
     removed_lines = 0
     for block_idx, (start_line, end_line) in enumerate(merged_match_lines):
@@ -1120,10 +1169,11 @@ def render_preview_multi(path:str, old_string: str, new_string: str, str_line: l
         removed_lines += len(old_lines)
         added_lines += len(new_lines)
 
-    head = Text()
+    head = Text(no_wrap=True)
     _render_edit_header(head, path, added_lines, removed_lines, match_mode)
     head.append(body)
-    return head
+    # NoJoinText wrapper: see get_syntax_render — keeps no_wrap through console.print().
+    return NoJoinText(head)
 
 
 def render_edit_permission(path:str, active_idx: int, user_cache: str, match_mode: str = MATCH_MODE_EXACT):

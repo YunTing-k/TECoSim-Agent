@@ -15,6 +15,8 @@ Revision:
 2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status & SILK voice is processed as other media types
 2026.7.23      Yu Huang      1.3      Add launch support in arbitrary path & Revise visibility of cron/web/WeChat tool calls
 2026.7.28      Yu Huang      1.4      Simplify the preview of WeChat message when there is only one message
+2026.8.4       Yu Huang      1.5      WeChat bot can get more information of AgentContext with wechat_status tool & Fix
+                                      the bug of duration and text is not saved into WeChat CDN cache files
 
 Details:
 ---------
@@ -65,9 +67,9 @@ class CachedMedia:
     type: str               # "image" | "file" | "video" | "voice"
     local_path: Optional[str] = None
     cdn_ref: Optional[CDNMedia] = None
-    file_name: Optional[str] = None
-    text: Optional[str] = None          # ASR text for voice
-    duration_ms: Optional[int] = None   # voice duration
+    file_name: Optional[str] = None     # "file"
+    text: Optional[str] = None          # "voice" ASR text for voice
+    duration_ms: Optional[int] = None   # "voice" voice duration
     size: Optional[int] = None          # file size in bytes (from HEAD or len field)
 
 
@@ -409,6 +411,8 @@ class WeChatBridge:
                     type=entry.get("type", "file"),
                     local_path=entry["local_path"],
                     file_name=entry.get("file_name"),
+                    text=entry.get("text"),
+                    duration_ms=entry.get("duration_ms"),
                     size=entry.get("size"),
                 )
             sys_log.info(f"WeChat CDN log with {len(self._cdn_cache)} entries of session {self.session_uuid} loaded")
@@ -427,9 +431,11 @@ class WeChatBridge:
             for key, cm in self._cdn_cache.items():
                 if cm.local_path:
                     data[key] = {
-                        "local_path": cm.local_path,
                         "type": cm.type,
+                        "local_path": cm.local_path,
                         "file_name": cm.file_name,
+                        "text": cm.text,
+                        "duration_ms": cm.duration_ms,
                         "size": cm.size,
                     }
             self._cache_json.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
@@ -509,7 +515,8 @@ class WeChatBridge:
                     voice_ms += item.duration_ms
                 if item.local_path is not None:
                     voice_downloaded += 1
-                    voice_downloaded_ms += item.duration_ms
+                    if item.duration_ms:
+                        voice_downloaded_ms += item.duration_ms
                 if item.size is not None:
                     voice_downloaded_size += item.size
                     total_downloaded_size += item.size
@@ -526,19 +533,39 @@ class WeChatBridge:
                    f" - Voice: `{voice_count}` received, total `{voice_ms / 1000:.2f}` s, "
                    f"(`{voice_downloaded}` downloaded, `{voice_downloaded_size / (1024 * 1024):.3f}` MB, `{voice_downloaded_ms / 1000:.2f}` s)\n"
                    f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{file_downloaded_size / (1024 * 1024):.3f}` MB)\n"
-                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024):.3f}` MB\n")
+                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024):.3f}` MB\n\n")
         return cdn_str
 
 
-    def get_status(self) -> str:
+    def get_status(self, ctx_status: dict[str, Any]) -> str:
         """get the status of WeChat bot"""
         status_str = (f"Session UUID: `{self.session_uuid if self.session_uuid else "None"}`\n"
-                      f"Login Status: {"`ONLINE`" if self.if_login else "`OFFLINE`"}\n"
-                      f"Login Error: `{self._login_error if self._login_error else "None"}`\n"
-                      f"Bounded User: `{self._bound_user_id if self.if_bound else "None"}`\n\n"
-                      f"Queued Messages: `{self._msg_queue.qsize()}`\n"
-                      f"Logged User Messages: `{len(self._msg_history)}`\n"
-                      f"{self.get_cdn_status()}")
+                      f" - Session Title: `{ctx_status.get("session_title", UNKNOWN_SESSION_TITLE)}`\n"
+                      f" - Agent ID: `{ctx_status.get("agent_id", UNKNOWN_LABEL)}`\n\n"
+                      f"WeChat Login Status: `{"ONLINE" if self.if_login else "OFFLINE"}`\n"
+                      f" - Login Error: `{self._login_error if self._login_error else "None"}`\n"
+                      f" - Bounded User: `{self._bound_user_id if self.if_bound else "None"}`\n"
+                      f" - Total Messages Receive: `{ctx_status.get("wechat_receive_total_count", UNKNOWN_LABEL)}`\n"
+                      f" - Total Messages Reply: `{ctx_status.get("wechat_reply_total_count", UNKNOWN_LABEL)}`\n"
+                      f" - Logged User Messages: `{len(self._msg_history)}`\n"
+                      f" - Queued Messages: `{self._msg_queue.qsize()}`\n\n"
+                      f"{self.get_cdn_status()}"
+                      f"Total LLM Requests: `{ctx_status.get("total_llm_requests", UNKNOWN_LABEL)}`\n"
+                      f" - Total Tokens: `{ctx_status.get("total_tokens", 0) / 1000:.1f}` K\n"
+                      f" - Input Tokens: `{ctx_status.get("total_input_tokens", 0) / 1000:.1f}` K\n"
+                      f" - Uncached Tokens: `{ctx_status.get("total_uncached_tokens", 0) / 1000:.1f}` K\n"
+                      f" - Output Tokens: `{ctx_status.get("total_output_tokens", 0) / 1000:.1f}` K\n\n"
+                      f"LLM Context Status:\n"
+                      f" - System Prompts: `{ctx_status.get("system_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Tool Schema Prompts: `{ctx_status.get("tools_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - User Prompts: `{ctx_status.get("user_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Assistant Content Prompts: `{ctx_status.get("content_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Assistant Reasoning Prompts: `{ctx_status.get("reasoning_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Assistant Tool Calls: `{ctx_status.get("tool_calls_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Tool Results Prompts: `{ctx_status.get("tool_results_prompts", UNKNOWN_LABEL)}`\n"
+                      f" - Last Round Total Tokens: `{ctx_status.get("last_tokens", 0) / 1000:.1f}` K\n"
+                      f" - Last Round Input Tokens: `{ctx_status.get("last_input_tokens", 0) / 1000:.1f}` K\n"
+                      f" - Last Round Output Tokens: `{ctx_status.get("last_output_tokens", 0) / 1000:.1f}` K")
         return status_str
 
     # [WeChat Bot internal API] Internal bot loop
@@ -632,9 +659,7 @@ class WeChatBridge:
 
 
     async def _process_one_media(
-        self, media: CDNMedia | None, mtype: str,
-        aes_key: str | None, file_name: str | None, known_size: int | None,
-    ) -> CachedMedia:
+        self, media: CDNMedia | None, mtype: str, aes_key: str | None, file_name: str | None, known_size: int | None) -> CachedMedia:
         if not media:
             return CachedMedia(type=mtype)
         cache_key = media.encrypt_query_param

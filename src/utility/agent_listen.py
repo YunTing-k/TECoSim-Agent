@@ -17,6 +17,7 @@ Revision:
 2026.7.15-16   Yu Huang      1.5      Add WeChat bot interaction support
 2026.7.17      Yu Huang      1.6      Fix: last response of LLM won't be missed if bot keep sending WeChat msg
 2026.8.1-2     Yu Huang      1.7      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.4       Yu Huang      1.8      Support of tracking the amount of received WeChat messages
 
 Details:
 ---------
@@ -170,6 +171,7 @@ def check_wechat(ctx: AgentContext) -> tuple[bool, str]:
         if len(msgs) == 0:
             return False, ""
         else:
+            ctx.wechat_receive_total_count += len(msgs)
             ctx.last_wechat_msg = msgs[-1]
             # first reply to bounded user
             if ctx.wechat_bot.budget_prefix:
