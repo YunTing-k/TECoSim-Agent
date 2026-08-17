@@ -20,6 +20,7 @@ Revision:
 2026.7.15-16   Yu Huang      1.8      Add WeChat bot interaction support
 2026.7.28      Yu Huang      1.9      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
 2026.8.1-2     Yu Huang      2.0      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.17      Yu Huang      2.1      Add CLI command support of session fork
 
 Details:
 ---------
@@ -57,6 +58,10 @@ def tecosim_agent_args() -> Namespace:
 
     # session list
     session_list = session_subparsers.add_parser('list', help='List all sessions')
+
+    # session fork
+    session_fork = session_subparsers.add_parser('fork', help='Fork a session with UUID')
+    session_fork.add_argument('uuid', type=str, help='Session\'s UUID to fork')
 
     # session remove
     session_remove = session_subparsers.add_parser('remove', help='Remove a session with UUID')

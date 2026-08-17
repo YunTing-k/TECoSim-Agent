@@ -36,6 +36,7 @@ Revision:
 2026.7.15      Yu Huang      3.4      Add merge subagent statistic method
 2026.7.23      Yu Huang      3.5      Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      3.6      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.15      Yu Huang      3.7      Fix: key listening race condition between subagent spawning and input thread
 
 Details:
 ---------
@@ -194,9 +195,11 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
             mode = "background" if args.get("if_background") else "foreground"
             desc_parts.append(f"  [{mode}] {args['subagent_type']}: {args.get('subject', '')}")
         desc = f"Spawn {len(all_agent_calls)} subagent(s):\n" + "\n".join(desc_parts)
+        if ctx.in_thread is not None: ctx.in_thread.pause()
         pause_for_permission(progress)
         token, comment = ask_permission_tui(ctx, TOOL_NAME_SPAWN_AGENT, desc, progress.console)
         resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
         if not token:
             if ctx.tui_mute:
                 denied_info = f"{MUTE_PERMISSION_DENIED_INFO}"

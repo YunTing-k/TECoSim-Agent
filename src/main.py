@@ -133,7 +133,8 @@ if __name__ == '__main__':
     ctx.system_read_only_paths.append(Path(os.getcwd()) / "session")
     ctx.system_read_only_paths.append(Path(os.getcwd()) / "log")
     if ctx.agent_configs.get("SIMULATOR_PATH"):
-        ctx.system_read_only_paths.append(Path(ctx.agent_configs["SIMULATOR_PATH"]))
+        if isinstance(ctx.agent_configs["SIMULATOR_PATH"], str):
+            ctx.system_read_only_paths.append(Path(ctx.agent_configs["SIMULATOR_PATH"]))
 
     """initialize builtin commands"""
     cmd_object = command.BuiltinCommands(console)  # basic commands
@@ -180,7 +181,7 @@ if __name__ == '__main__':
         sys_log.debug("All cron tasks are disabled in main agent and subagent")
         console.print("All cron tasks are disabled in main agent and subagent", style=f"bold {MAJOR_COLOR1}")
 
-    """config wechat bot & Input thread"""
+    """config WeChat bot & Input thread"""
     if ctx.args.wechat:
         wechat_bot = wechat_support.WeChatBridge(console=console, prompt_session=ctx.agent_session,
                                                  session_uuid=ctx.session_uuid, config=ctx.agent_configs)

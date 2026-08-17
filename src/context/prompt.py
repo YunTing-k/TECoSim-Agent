@@ -49,6 +49,9 @@ Revision:
 2026.7.28      Yu Huang      4.4      Support of customizable system prompts of main agent & replace --nosystem with --override_prompts
                                       & render user history messages as Markdown
 2026.8.1-2     Yu Huang      4.5      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.6       Yu Huang      4.6      Support of hiding reasoning contents when resuming session
+2026.8.15      Yu Huang      4.7      Support of messages thumbnail displays in builtin command /context
+2026.8.17      Yu Huang      4.8      Simplify the system prompts
 
 Details:
 ---------
@@ -66,6 +69,7 @@ import logging
 import threading
 import rich.box
 
+from enum import Enum
 from typing import Any, Literal
 from contextlib import ExitStack
 from datetime import datetime
@@ -133,8 +137,6 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 "# System\n"
                 " - All text you output outside of tool calls is displayed to the user. Output text to communicate with "
                 "the user. You can use Github-flavored markdown for formatting.\n"
-                " - You are embedded with TECoSim (Thermo-Electric Coupling Cross-level Display Simulator), capable of display "
-                "panel visual quality, IR drop, and temperature distribution analysis under thermo-electrical coupling effects\n"
                 "# Workflow Guidelines\n"
                 f"Task tools (`{TOOL_NAME_CREATE_TASK}`, `{TOOL_NAME_UPDATE_TASK}`, `{TOOL_NAME_QUERY_TASK}`) are your PRIMARY "
                 f"mechanism for planning, communicating with the user, and showing progress — keep them current at all times.\n\n"
@@ -144,60 +146,44 @@ def get_agent_guideline_prompts() -> list[dict[str, Any]]:
                 f"CONSTRAINT: For any request requiring 3+ distinct actions, you MUST call `{TOOL_NAME_CREATE_TASK}` FIRST "
                 f"to break work into meaningful milestones BEFORE taking action. Each task = a logical phase, NOT a single "
                 f"tool call. Do NOT create a single catch-all task, and do NOT begin work until tasks are created.\n"
-                f"Then: query existing tasks → work ONE task `{TASK_IN_PROGRESS_LABEL}` "
-                f"at a time, mark it `{TASK_COMPLETED_LABEL}` before starting the next. Never batch-complete.\n\n"
+                f"Then: query existing tasks → work ONE task `{TASK_IN_PROGRESS_LABEL}` at a time, mark it `{TASK_COMPLETED_LABEL}` "
+                f"before starting the next. Never batch-complete.\n\n"
                 f"Good: \"Set up design\" → \"Run simulation\" → \"Analyze results\" | Bad: \"Implement the feature\"\n"
                 "# Simulation Guidelines\n"
-                " - Before the first simulation, you should check if the simulator is available. Only recheck when needed.\n"
-                f" - A `{SIM_DESIGN_NAME}` is always needed before launching simulator for panel design or evaluation. "
-                f"Each `{SIM_DESIGN_NAME}` is identified by a single integer id starts from 1, and you should managed the all "
-                f"designs' ids and don't assume that user knows the ids. Each design can have multiple revisions, each revision "
-                f"is a version of the design. New revisions are created when the design is modified. Each design is created "
-                f"from scratch with default configuration. Designs cannot be deleted after creation.\n"
+                " - Before the first simulation, check if the simulator is available. Only recheck when needed.\n"
+                f" - A `{SIM_DESIGN_NAME}` is always needed before launching the simulator for panel design or evaluation. "
+                f"Design ids start from 1; track them yourself and don't assume the user knows them. Each design can have "
+                f"multiple revisions — a new revision is created when the design is modified. Designs are created from "
+                f"scratch with default configuration and cannot be deleted.\n"
                 # TODO: Support copy from existing designs and modify existing designs in future versions\n
-                f" - After each simulation, the following contents are available with the unit of "
-                f"`{SIM_RUN_NAME}`:\n"
-                "    - 1) simulator's stdout log (read via `read_log`)\n"
-                "    - 2) simulator's stderr log (read via `read_log`)\n"
-                # "    - 3) TODO: other content\n"
-                f"Each launch of simulator will create a `{SIM_RUN_NAME}` and each run is identified by a single integer "
-                f"id starts from 1. Each run is read-only and its id is automatically managed.\n"
+                f" - Each simulation produces a `{SIM_RUN_NAME}` with stdout/stderr logs (read via `{TOOL_NAME_READ_LOG}`). Run ids "
+                f"start from 1; runs are read-only and ids are managed automatically.\n"
                 "# User Requirements\n"
                 " - The user primarily requests display panel engineering tasks (panel design, IR drop validation, "
                 "temperature distribution analysis). When given an unclear instruction, consider it in the context of "
                 f"TECoSim capabilities and other available tools. Call `{TOOL_NAME_ASK_QUESTION}` to clarify if needed.\n"
                 " - Avoid giving time estimates or predictions for how long tasks will take.\n"
-                "# Tone and style\n"
-                " - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\n"
-                " - Your responses should be short and concise.\n"
-                " - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text "
-                "like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.\n"
-                "# Output efficiency\n"
-                "Lead with the answer or action, not the reasoning. Skip preamble and filler. Focus text output on "
+                "# Output style\n"
+                " - Lead with the answer or action, not the reasoning. Skip preamble and filler. Focus text output on "
                 "decisions the user needs to make, status updates at natural milestones, and errors or blockers. "
                 "Prefer one short sentence over three.\n"
+                " - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\n"
                 "# Session-specific guidance\n"
                 " - If a user denies your tool call, they may provide a comment explaining why. If you don't understand, "
                 f"use `{TOOL_NAME_ASK_QUESTION}` to ask them\n"
                 f" - IMPORTANT: Only use `{TOOL_NAME_SKILL}` for skills listed in user-invocable skills section, do not guess\n"
                 " - User can manually load full prompt of skill to context with /<skill-name>\n"
                 f"# Subagent Guidelines\n"
-                f"Use `{TOOL_NAME_SPAWN_AGENT}` when tasks are complex and would consume too many turns in the main loop, "
-                f"or independent of each other and can run in parallel. Prefer `{EXPLORER_AGENT_LABEL}` for read-only "
-                f"investigation, `{WORKER_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for task planning "
-                f"and dependency setup. Launch multiple agents per message when tasks are independent.\n"
-                f"Foreground agents (default): blocks until complete, use when results are needed for your next step. "
-                f"Background agents (`if_background`: true): runs independently, results delivered later, use for long "
-                f"standalone work.\n"
-                f"CRITICAL: Background agent results are injected into your message stream AUTOMATICALLY when "
-                f"they finish — you do NOT need to query or poll for completion. After spawning a background agent, "
-                f"move on to other work immediately. You will be notified when its results arrive.\n"
-                f"Scoreboard: `{SCHEDULER_AGENT_LABEL}` agents share your scoreboard — tasks they create appear immediately. "
-                f"Scheduler agents create UNOWNED tasks for you to claim and execute; they should not execute tasks themselves "
-                f"but may delete tasks they created incorrectly. Other agent types have independent scoreboards.\n"
-                f"IMPORTANT: `{SCHEDULER_AGENT_LABEL}` agents MUST run as foreground, not background — tasks appear "
-                f"incrementally and you may mistake partial output for completion. "
-                f"After spawning a scheduler, check `{TOOL_NAME_QUERY_TASK}` for new tasks to work on.\n"
+                f"Use `{TOOL_NAME_SPAWN_AGENT}` for complex work or independent parallel tasks. Prefer `{EXPLORER_AGENT_LABEL}` "
+                f"for read-only investigation, `{WORKER_AGENT_LABEL}` for implementation, `{SCHEDULER_AGENT_LABEL}` for "
+                f"main agent's task planning and dependency setup. Launch multiple agents per message when tasks are independent.\n"
+                f"Foreground (default): blocks until done — use when you need results for your next step. Background "
+                f"(`if_background`: true): runs independently, results delivered later — use for long standalone work. "
+                f"Background results are injected AUTOMATICALLY; do NOT poll — move on and you will be notified.\n"
+                f"`{SCHEDULER_AGENT_LABEL}` agents share your scoreboard and MUST run as foreground (tasks appear incrementally; "
+                f"you may mistake partial output for completion). They create UNOWNED tasks for you to claim and execute; "
+                f"they should not execute tasks themselves but may delete tasks they created incorrectly. Other agent types "
+                f"have independent scoreboards. After spawning a scheduler, check `{TOOL_NAME_QUERY_TASK}` for new tasks.\n"
                 f"Do NOT duplicate work a subagent is already doing.\n"}]
     return prompts
 
@@ -228,11 +214,12 @@ def get_agent_environment_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     if git_available:
         primary_dir_prompts += f" (is git repository: {str(is_git_repo(os.getcwd()))})"
     primary_dir_prompts += "\n"
+    platform_info = get_platform_info()
     prompts = [{"role": "system", "content":
                 "# Environment\n"
                 f"Today is: {now.strftime("%Y-%m-%d")}\n"
                 "You have been invoked in the following environment: \n"
-                f" - Platform: {get_platform_info()[0]} {get_platform_info()[1]} version: {get_platform_info()[2]}\n"
+                f" - Platform: {platform_info[0]} {platform_info[1]} version: {platform_info[2]}\n"
                 f"{bash_prompts}"
                 f"{git_prompts}"
                 f"{grep_prompts}"
@@ -261,7 +248,7 @@ def get_agent_skills_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
     else:
         prompts = [{"role": "system", "content":
                     f"The following skills are user-invocable with the `{TOOL_NAME_SKILL}` tool:\n"
-                    f"(No available skill)\n)"}]
+                    f"(No available skill)\n"}]
     return prompts
 
 
@@ -492,9 +479,183 @@ def msg_fix_toolcall(messages: list[dict[str, Any]], console: Console, mute: boo
                 insert_idx += 1
 
 
+class MsgType(str, Enum):
+    """enumerate of message type"""
+    SYSTEM_PROMPT = SYSTEM_PROMPT_TYPE_LABEL
+    USER_INPUT = USER_INPUT_TYPE_LABEL
+    WECHAT_BOT = WECHAT_BOT_TYPE_LABEL
+    BG_SUBAGENT = BG_SUBAGENT_TYPE_LABEL
+    AGENT_SKILL = AGENT_SKILL_TYPE_LABEL
+    CRON_TASK = CRON_TASK_TYPE_LABEL
+    SYS_REMINDER = SYS_REMINDER_TYPE_LABEL
+    AGENT_REASON = AGENT_REASON_TYPE_LABEL
+    AGENT_CHAT = AGENT_CHAT_TYPE_LABEL
+    TOOL_CALL = TOOL_CALL_TYPE_LABEL
+    TOOL_RESULT = TOOL_RESULT_TYPE_LABEL
+    UNKNOWN = UNKNOWN_TYPE_LABEL
+
+
+MsgThumbColorLut: dict[MsgType, str] = {
+    MsgType.SYSTEM_PROMPT: SYSTEM_PROMPT_THUMB_COLOR,
+    MsgType.USER_INPUT: USER_INPUT_THUMB_COLOR,
+    MsgType.WECHAT_BOT: WECHAT_BOT_THUMB_COLOR,
+    MsgType.BG_SUBAGENT: BG_SUBAGENT_THUMB_COLOR,
+    MsgType.AGENT_SKILL: AGENT_SKILL_THUMB_COLOR,
+    MsgType.CRON_TASK: CRON_TASK_THUMB_COLOR,
+    MsgType.SYS_REMINDER: SYS_REMINDER_THUMB_COLOR,
+    MsgType.AGENT_REASON: AGENT_REASON_THUMB_COLOR,
+    MsgType.AGENT_CHAT: AGENT_CHAT_THUMB_COLOR,
+    MsgType.TOOL_CALL: TOOL_CALL_THUMB_COLOR,
+    MsgType.TOOL_RESULT: TOOL_RESULT_THUMB_COLOR,
+    MsgType.UNKNOWN: UNKNOWN_THUMB_COLOR
+}
+
+
+MsgThumbBarLut: dict[MsgType, str] = {
+    MsgType.SYSTEM_PROMPT: MSG_THUMB_BAR,
+    MsgType.USER_INPUT: MSG_THUMB_BAR,
+    MsgType.WECHAT_BOT: MSG_THUMB_BAR,
+    MsgType.BG_SUBAGENT: MSG_THUMB_BAR,
+    MsgType.AGENT_SKILL: MSG_THUMB_BAR,
+    MsgType.CRON_TASK: MSG_THUMB_BAR,
+    MsgType.SYS_REMINDER: MSG_THUMB_BAR,
+    MsgType.AGENT_REASON: MSG_THUMB_BAR,
+    MsgType.AGENT_CHAT: MSG_THUMB_BAR,
+    MsgType.TOOL_CALL: MSG_THUMB_BAR,
+    MsgType.TOOL_RESULT: MSG_THUMB_BAR,
+    MsgType.UNKNOWN: UNKNOWN_MSG_THUMB_BAR
+}
+
+
+def get_msg_type(msg: dict[str, Any]) -> MsgType | list[MsgType]:
+    """get the type of message"""
+    if msg["role"] == "system":
+        return MsgType.SYSTEM_PROMPT
+    elif msg["role"] == "user":
+        """WeChat bot"""
+        if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
+            return MsgType.WECHAT_BOT
+        """system reminder"""
+        if (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
+            return MsgType.SYS_REMINDER
+        """agent skill"""
+        if ("skill_directory" in msg["content"]) and (SKILL_START_LABEL in msg["content"]) and (SKILL_END_LABEL in msg["content"]):
+            return MsgType.AGENT_SKILL
+        """cron task"""
+        if (CRON_START_LABEL in msg["content"]) and (CRON_END_LABEL in msg["content"]):
+            return MsgType.CRON_TASK
+        """background subagent"""
+        # foreground subagent directly return in tool results
+        if (SUBAGENT_START_LABEL in msg["content"]) and (SUBAGENT_END_LABEL in msg["content"]):
+            return MsgType.BG_SUBAGENT
+        """user input"""
+        return MsgType.USER_INPUT
+    elif msg["role"] == "assistant":
+        """reasoning"""
+        assistant_reasoning = get_reasoning(msg)
+        assistant_thumb: list[MsgType] = []
+        if assistant_reasoning not in (None, ""):
+            assistant_thumb.append(MsgType.AGENT_REASON)
+        """chat"""
+        if msg["content"] not in (None, ""):
+            assistant_thumb.append(MsgType.AGENT_CHAT)
+        """tool calls"""
+        if msg["tool_calls"] is not None:
+            assistant_thumb.append(MsgType.TOOL_CALL)
+        return assistant_thumb
+    elif msg["role"] == "tool":
+        return MsgType.TOOL_RESULT
+    else:
+        sys_log.debug(f"Unknown role: {msg["role"]} in input massage")
+        return MsgType.UNKNOWN
+
+
+def get_msg_stats(messages: list[dict[str, Any]]) -> tuple[dict[MsgType, int], list[MsgType | list[MsgType]]]:
+    """get the statistics of the messages according to the mode, merge tool calls and tool results in the same round
+       list: get the list of type of each message
+       all: get type counts of all messages
+    """
+    stats_list: list[MsgType | list[MsgType]] = []
+    stats: dict[MsgType, int]= {
+        MsgType.SYSTEM_PROMPT: 0,
+        MsgType.USER_INPUT: 0,
+        MsgType.WECHAT_BOT: 0,
+        MsgType.BG_SUBAGENT: 0,
+        MsgType.AGENT_SKILL: 0,
+        MsgType.CRON_TASK: 0,
+        MsgType.SYS_REMINDER: 0,
+        MsgType.AGENT_REASON: 0,
+        MsgType.AGENT_CHAT: 0,
+        MsgType.TOOL_CALL: 0,
+        MsgType.TOOL_RESULT: 0,
+        MsgType.UNKNOWN: 0
+    }
+    for msg_idx, msg in enumerate(messages):
+        if msg["role"] == "system":
+            stats[MsgType.SYSTEM_PROMPT] += 1
+            stats_list.append(MsgType.SYSTEM_PROMPT)
+        elif msg["role"] == "user":
+            """WeChat bot"""
+            if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
+                stats[MsgType.WECHAT_BOT] += 1
+                stats_list.append(MsgType.WECHAT_BOT)
+                continue
+            """system reminder"""
+            if (SYS_REMINDER_START_LABEL in msg["content"]) and (SYS_REMINDER_END_LABEL in msg["content"]):
+                stats[MsgType.SYS_REMINDER] += 1
+                stats_list.append(MsgType.SYS_REMINDER)
+                continue
+            """agent skill"""
+            if ("skill_directory" in msg["content"]) and (SKILL_START_LABEL in msg["content"]) and (SKILL_END_LABEL in msg["content"]):
+                stats[MsgType.AGENT_SKILL] += 1
+                stats_list.append(MsgType.AGENT_SKILL)
+                continue
+            """cron task"""
+            if (CRON_START_LABEL in msg["content"]) and (CRON_END_LABEL in msg["content"]):
+                stats[MsgType.CRON_TASK] += 1
+                stats_list.append(MsgType.CRON_TASK)
+                continue
+            """background subagent"""
+            # foreground subagent directly return in tool results
+            if (SUBAGENT_START_LABEL in msg["content"]) and (SUBAGENT_END_LABEL in msg["content"]):
+                stats[MsgType.BG_SUBAGENT] += 1
+                stats_list.append(MsgType.BG_SUBAGENT)
+                continue
+            """user input"""
+            stats[MsgType.USER_INPUT] += 1
+            stats_list.append(MsgType.USER_INPUT)
+        elif msg["role"] == "assistant":
+            """reasoning"""
+            assistant_reasoning = get_reasoning(msg)
+            assistant_thumb: list[MsgType] = []
+            if assistant_reasoning not in (None, ""):
+                stats[MsgType.AGENT_REASON] += 1
+                assistant_thumb.append(MsgType.AGENT_REASON)
+            """chat"""
+            if msg["content"] not in (None, ""):
+                stats[MsgType.AGENT_CHAT] += 1
+                assistant_thumb.append(MsgType.AGENT_CHAT)
+            """tool calls"""
+            if msg["tool_calls"] is not None:
+                stats[MsgType.TOOL_CALL] += 1
+                assistant_thumb.append(MsgType.TOOL_CALL)
+            if assistant_thumb:
+                stats_list.append(assistant_thumb)
+        elif msg["role"] == "tool":
+            if msg_idx != 0 and messages[msg_idx - 1]["role"] != "tool":
+                stats[MsgType.TOOL_RESULT] += 1
+                stats_list.append(MsgType.TOOL_RESULT)
+        else:
+            sys_log.debug(f"Unknown role: {msg["role"]} in history massages")
+            stats[MsgType.UNKNOWN] += 1
+            stats_list.append(MsgType.UNKNOWN)
+    return stats, stats_list
+
+
 def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: Console):
     """print the given messages (exclude system) with AgentContext"""
     try:
+        show_reason: bool = ctx.agent_configs["RENDER_RESPONSE_REASON"]
         as_md: bool = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
         user_history_as_md: bool = ctx.agent_configs["RESUME_RENDER_USER_HISTORY_AS_MD"]
         display_subagent: bool = ctx.agent_configs["RESUME_DISPLAY_SUBAGENT"]
@@ -516,7 +677,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
-                """WeChat Bot"""
+                """WeChat bot"""
                 if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
                     console.print(get_msg_render_strip(
                         msg, WECHAT_PROMPT_START_LABEL, WECHAT_PROMPT_END_LABEL, WECHAT_PROMPT_ICON, "", as_md))
@@ -575,12 +736,16 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                               box=None, collapse_padding=True)
                     t.add_column(width=MESSAGE_PRINT_MARGIN, min_width=MESSAGE_PRINT_MARGIN, no_wrap=True, vertical="top")
                     t.add_column(vertical="top", overflow="fold")
-                    if as_md:
-                        t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                                  ReasonMD("{Think}: " + assistant_reasoning))
+                    if show_reason:
+                        if as_md:
+                            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                                      ReasonMD("{Think}: " + assistant_reasoning))
+                        else:
+                            t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
+                                      Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
                     else:
                         t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                                  Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
+                                  Text("Thinking complete", style=REASON_STYLE))
                     console.print(t)
                     console.print("")
 
@@ -932,7 +1097,7 @@ def llm_nonstream_manage(response: ChatCompletion, ctx: AgentContext, console: C
 
     """print the final content"""
     console.print(get_block_render(assistant_reasoning, assistant_chat, ctx.agent_configs["RENDER_RESPONSE_AS_MD"],
-                                   ctx.agent_configs["DISPLAY_RESPONSE_REASON"]))
+                                   ctx.agent_configs["RENDER_RESPONSE_REASON"]))
 
     """send to WeChat"""
     # If there is tool call, and WECHAT_BOT_REPLY_DURING_TOOL_CALL is set:
@@ -1024,7 +1189,7 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
                           Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
         else:
             t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                      Text("Think done", style=REASON_STYLE))
+                      Text("Thinking complete", style=REASON_STYLE))
         parts.append(t)
         parts.append(Text("\n"))
 
@@ -1160,7 +1325,7 @@ def llm_stream_manage(response: Stream[ChatCompletionChunk], ctx: AgentContext, 
     final_usage = None
     final_finish_reason = None
     as_md = ctx.agent_configs["RENDER_RESPONSE_AS_MD"]
-    show_reason = ctx.agent_configs["DISPLAY_RESPONSE_REASON"]
+    show_reason = ctx.agent_configs["RENDER_RESPONSE_REASON"]
     tool_names: list[str] = []
     base_time = datetime.now()
     stream_color_list = grad_color_hex_list(MAJOR_COLOR1, MAJOR_COLOR2, MESSAGE_COLOR_GRADIENT)

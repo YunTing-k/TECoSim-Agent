@@ -15,6 +15,7 @@ Revision:
 2026.6.11      Yu Huang      1.3      Adopt XML-wrapped pipe-format in read_log_impl via format_file_for_llm
 2026.6.14      Yu Huang      1.4      Fix: decode with errors=replace, timeout default guard
 2026.7.23      Yu Huang      1.5      Add launch support in arbitrary path
+2026.8.15      Yu Huang      1.6      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
 
 Details:
 ---------
@@ -37,7 +38,7 @@ import subprocess
 from enum import Enum
 from typing import Any, TypedDict
 from rich.console import Console
-from src.utility.basic_utils import read_line_with_limit, format_file_for_llm
+from src.utility.basic_utils import read_line_with_limit, format_file_for_llm, drain_after_kill
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -550,7 +551,8 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
             return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev})'s path doesn't exist. `{SIM_RUN_NAME}` "
                                        f"is not created. Launch failed")
         """clean up"""
-        clean_up_re = subprocess.run([run_man.simulator_path + "/clean.bat", "1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        clean_up_re = subprocess.run([run_man.simulator_path + "/clean.bat", "1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     stdin=subprocess.DEVNULL)
         if clean_up_re.returncode != 0 or clean_up_re.stdout is None:
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"Clean up script exits with error. `{SIM_RUN_NAME}` is not created. Launch failed")
@@ -577,7 +579,8 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
             configs = design_path
         else:
             configs = design_path + "/"
-        proc = subprocess.Popen([run_man.simulator_path + '/TECoSim.exe', configs], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen([run_man.simulator_path + '/TECoSim.exe', configs], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.DEVNULL)
         try:
             stdout, stderr = proc.communicate(timeout=run_man.time_out if run_man.time_out > 0 else SIMULATOR_TIMEOUT_DEFAULT_S)
             sim_re = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
@@ -589,7 +592,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                 stdout, stderr = proc.communicate(timeout=1)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                stdout, stderr = proc.communicate()
+                stdout, stderr = drain_after_kill(proc)
             run["status"] = RunStatus.CANCELLED
             if_success, run_id, insert_info = run_man.insert_run(run)
             if not if_success:
@@ -621,7 +624,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                 stdout, stderr = proc.communicate(timeout=1)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                stdout, stderr = proc.communicate()
+                stdout, stderr = drain_after_kill(proc)
             run["status"] = RunStatus.TIMEOUT
             if_success, run_id, insert_info = run_man.insert_run(run)
             if not if_success:
@@ -653,7 +656,7 @@ def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Con
                 stdout, stderr = proc.communicate(timeout=1)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                stdout, stderr = proc.communicate()
+                stdout, stderr = drain_after_kill(proc)
             run["status"] = RunStatus.RUNTIME_ERROR
             if_success, run_id, insert_info = run_man.insert_run(run)
             if not if_success:

@@ -193,6 +193,7 @@ python -m src.main --dangerously_allow_all # ⚠️ 允许所有权限 （危险
 ```bash
 # 预构建 exe（Windows）| Pre-built exe (Windows)
 TECoSimAgent.exe session list                # 列出所有会话 / List all sessions
+TECoSimAgent.exe session fork <UUID>         # 分叉指定会话 / Fork a session
 TECoSimAgent.exe session remove <UUID>       # 删除指定会话 / Remove a session
 TECoSimAgent.exe cron list                   # 列出持久化定时任务 / List durable cron tasks
 TECoSimAgent.exe cron remove <ID>            # 删除持久化定时任务 / Remove a durable cron task
@@ -204,6 +205,7 @@ TECoSimAgent.exe mcp remove <name>           # 移除 MCP 服务器 / Remove an 
 
 # 源码运行（Linux/macOS/Windows）| Source (Linux/macOS/Windows)
 python -m src.main session list              # 列出所有会话 / List all sessions
+python -m src.main session fork <UUID>       # 分叉指定会话 / Fork a session
 python -m src.main session remove <UUID>     # 删除指定会话 / Remove a session
 python -m src.main cron list                 # 列出持久化定时任务 / List durable cron tasks
 python -m src.main cron remove <ID>          # 删除持久化定时任务 / Remove a durable cron task
@@ -225,10 +227,13 @@ All commands start with `/` in the agent interaction interface:
 | `/designList` | 查询设计列表 / Query design list |
 | `/runList` | 查询仿真运行记录 / Query simulation run records |
 | `/context` | 查看 Token 用量与上下文统计 / View token usage and context stats |
+| `/regen` | 从最后一条用户输入后重新生成回复 / Regenerate the latest round after user's last input |
+| `/pop <COUNT>` | 弹出最近 N 条消息（仅限高级用户，可能破坏上下文）/ Pop latest N messages (advanced only, may damage context) |
 | `/freadList` | 查看所有已读文件 / View all read files |
 | `/webCacheList` | 查看缓存的 URL / View cached URLs |
 | `/sessionList` | 查看所有会话 / View all sessions |
 | `/sessionRemove <UUID>` | 删除指定会话 / Remove a session |
+| `/sessionFork` | 将当前会话分叉为新会话（新 UUID）/ Fork current session as a new session with new UUID |
 | `/readonlyList` | 查看只读路径 / View read-only paths |
 | `/readonlyAdd <PATH> [PATH...]` | 添加只读路径 / Add read-only paths |
 | `/readonlyRemove <idx> [idx...]` | 移除只读路径 / Remove read-only paths |
@@ -392,6 +397,7 @@ TECoSimAgent/
 │   └── utility/
 │       ├── basic_utils.py       # 共享工具函数 / Shared utilities (config, platform, markdown)
 │       ├── input_thread.py      # 忙碌期后台输入线程（草稿/消息队列/Ctrl+C 转发）/ Busy-phase background input thread (draft, msg queue, Ctrl+C forwarding)
+│       ├── process_kill.py      # 跨平台进程树管理（整树终止）/ Cross-platform process tree management (whole-tree kill)
 │       ├── command.py           # 内建命令系统 / Built-in command system
 │       ├── cli_args.py          # 命令行参数解析 / CLI argument parsing
 │       ├── sys_logger.py        # 日志系统 / Logging system
@@ -413,12 +419,16 @@ TECoSimAgent/
 │   ├── configuration.md         # 完整配置参数参考 / Full configuration reference
 │   ├── constants_reference.md   # constants.py 完整参考 / Complete constants.py reference
 │   ├── mcp_skills_setup.md      # MCP 与 Skills 详细设置指南 / MCP & Skills detailed setup guide
-│   ├── bash_comparison.md       # Bash 命令风险检测对比 / Bash risk evaluation comparison
 │   ├── rich_pitfalls.md         # Rich 库开发注意事项 / Rich development pitfalls
 │   ├── wechat_behavior.md       # 微信机器人行为与限制 / WeChat bot behavior & limitations
-│   ├── task_management_comparison.md  # 任务管理机制对比研究 / Task management comparison
-│   ├── subagent_comparison.md   # Subagent 架构对比分析 / Subagent architecture comparison
-│   └── ref/                     # 参考系统提示词 / Reference system prompts
+│   └── ref/                     # 对比研究与参考系统提示词 / Comparison research & reference system prompts
+│       ├── shell_comparison.md  # Shell/Bash 命令实现对比 / Shell command implementation comparison
+│       ├── subagent_comparison.md  # Subagent 架构对比分析 / Subagent architecture comparison
+│       ├── task_comparison.md   # 任务管理机制对比研究 / Task management comparison
+│       ├── Claude Code CLI/     # Claude Code CLI 参考材料 / Claude Code CLI reference files
+│       ├── Codex CLI/           # Codex CLI 参考材料 / Codex CLI reference files
+│       ├── CodeWhale/           # CodeWhale 参考材料 / CodeWhale reference files
+│       └── DeepSeek Harness/    # DeepSeek Harness 参考材料 / DeepSeek Harness reference files
 ├── test/                        # 单元测试 / Unit tests
 └── requirements.txt
 ```
@@ -432,8 +442,11 @@ TECoSimAgent/
 - [MCP 与 Skills 设置指南 | MCP & Skills Setup Guide](./doc/mcp_skills_setup.md) — MCP 服务器与技能详细设置指南 / Detailed setup guide for MCP servers and skills
 - [Rich 开发注意事项 | Rich Development Pitfalls](./doc/rich_pitfalls.md) — 终端 TUI 预览功能开发中遇到的 Rich 库关键问题与解决方案 / Key issues and solutions when developing TUI preview features with the Rich library
 - [微信机器人行为与限制 | WeChat Bot Behavior & Limitations](./doc/wechat_behavior.md) — 微信 SDK 集成中的行为细节、已知限制与处理方法 / Behavioral details, known limitations, and workarounds for the WeChat SDK integration
-- [任务管理机制对比研究 | Task Management Comparison](./doc/task_management_comparison.md) — 四款主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across four major coding agents
-- [Subagent 架构对比分析 | Subagent Architecture Comparison](./doc/subagent_comparison.md) — Claude Code · CodeWhale · Codex · OpenCode 四款 Agent 架构深度对比 / In-depth comparison of subagent/task architectures across four coding agents
+
+
+- [Shell 命令实现对比 | Shell Command Comparison](./doc/ref/shell_comparison.md) — 五款 Agent 项目（Claude Code · CodeWhale · Codex · OpenCode · deepseek-harness）Bash/Shell 命令实现横向对比 / Horizontal comparison of Bash/Shell command implementation across five agent projects
+- [任务管理机制对比研究 | Task Management Comparison](doc/ref/task_comparison.md) — 主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across major coding agents
+- [Subagent 架构对比分析 | Subagent Architecture Comparison](doc/ref/subagent_comparison.md) — Claude Code · CodeWhale · Codex · OpenCode Agent 架构深度对比 / In-depth comparison of subagent/task architectures across coding agents
 
 ## 致谢 | Acknowledgement
 

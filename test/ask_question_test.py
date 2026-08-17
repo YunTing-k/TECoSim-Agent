@@ -169,6 +169,7 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
         mock_ctx = MagicMock()
         mock_ctx.agent_configs = {
             "RENDER_RESPONSE_AS_MD": False,
+            "RENDER_RESPONSE_REASON": False,
             "RESUME_DISPLAY_SYS_REMINDER": False,
             "RESUME_DISPLAY_SKILLS": False,
             "RESUME_DISPLAY_CRONS": False,
@@ -220,6 +221,7 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
         mock_ctx = MagicMock()
         mock_ctx.agent_configs = {
             "RENDER_RESPONSE_AS_MD": False,
+            "RENDER_RESPONSE_REASON": False,
             "RESUME_DISPLAY_SYS_REMINDER": False,
             "RESUME_DISPLAY_SKILLS": False,
             "RESUME_DISPLAY_CRONS": False,
@@ -265,6 +267,7 @@ class TestPrintMessagesAskQuestion(unittest.TestCase):
         mock_ctx = MagicMock()
         mock_ctx.agent_configs = {
             "RENDER_RESPONSE_AS_MD": False,
+            "RENDER_RESPONSE_REASON": False,
             "RESUME_DISPLAY_SYS_REMINDER": False,
             "RESUME_DISPLAY_SKILLS": False,
             "RESUME_DISPLAY_CRONS": False,

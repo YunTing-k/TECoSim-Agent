@@ -14,6 +14,7 @@ Revision:
 2026.6.1       Yu Huang      1.2      Define all used status labels in constants.py
 2026.6.8       Yu Huang      1.3      Bash and ripgrep path configurable support
 2026.7.3       Yu Huang      1.4      Revise visuals of messages print (create/query/remove crons, glob, query) when resuming session
+2026.8.15      Yu Huang      1.5      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
 
 Details:
 ---------
@@ -27,6 +28,7 @@ import logging
 import subprocess
 
 from typing import Any
+from src.utility.basic_utils import drain_after_kill
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -147,6 +149,7 @@ def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[st
     cmd.append(path)
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL,
                             text=True, encoding="utf-8", errors="replace")
     """rg operation"""
     try:
@@ -159,7 +162,7 @@ def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[st
             proc.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            drain_after_kill(proc)
         return "", False, "ripgrep is cancelled by user. Command interrupted"
     except subprocess.TimeoutExpired:
         proc.terminate()
@@ -167,7 +170,7 @@ def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[st
             stdout, stderr = proc.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            stdout, stderr = drain_after_kill(proc)
         return "", False, (f"ripgrep is timeout > {timeout} s.\n"
                            f"return code: {proc.returncode}\n"
                            f"stdout: {stdout}\n"
@@ -178,7 +181,7 @@ def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[st
             proc.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            drain_after_kill(proc)
         return "", False, f"ripgrep failed with error: {e}"
 
     # rg return code: 0=match found，1=no match，>1=error
@@ -190,7 +193,7 @@ def grep_impl(arguments: dict[str, Any], rg_path: str, timeout: int) -> tuple[st
             proc.communicate(timeout=1)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.communicate()
+            drain_after_kill(proc)
         return "", False, f"ripgrep failed with return code {proc.returncode}\nstderr: {stderr}\nstdout: {stdout}"
 
     """post-process"""

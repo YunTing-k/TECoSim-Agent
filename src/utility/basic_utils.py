@@ -27,6 +27,7 @@ Revision:
 2026.7.17      Yu Huang      2.3      Fix: block quoted won't be suppressed by _escape_html_outside_code
 2026.7.25      Yu Huang      2.4      Fix: prevent truncation in Markdown table with overflow="fold"
 2026.8.2       Yu Huang      2.5      Remove get_webfetch_str from web_support.py to basic_utils.py
+2026.8.15      Yu Huang      2.6      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
 
 Details:
 ---------
@@ -41,6 +42,7 @@ import uuid
 import logging
 import platform
 import subprocess
+import threading
 import math
 import rich.box
 
@@ -232,6 +234,43 @@ def get_console() -> Console:
     }))
 
 
+def drain_after_kill(proc: subprocess.Popen, grace_s: float = 1.0) -> tuple[bytes, bytes]:
+    """Bounded pipe drain after ``proc.kill()``.
+
+    Runs ``proc.communicate()`` in a daemon thread and waits up to ``grace_s``
+    seconds. If the pipe EOF never comes (a grandchild still holds the write
+    end), give up and return empty bytes — the daemon thread keeps blocking,
+    and its fds are reclaimed by the OS when the process exits.
+
+    Notes:
+    - Windows ``communicate(timeout=...)`` does not reliably time out
+      (observed waiting for the full child lifetime), so the bound is enforced
+      by a ``join`` with timeout instead of the timeout argument.
+    - On give-up the pipe fds are intentionally NOT closed: closing a pipe
+      read end on Windows blocks until the blocked reader thread unblocks
+      (observed ~full child lifetime), which would defeat the bounded wait.
+      The abandoned daemon thread + fds are reclaimed at process exit.
+
+    Returns ``(stdout, stderr)`` bytes, possibly partial or empty.
+    """
+    result: dict[str, object] = {}
+
+    def _read() -> None:
+        try:
+            result["out"], result["err"] = proc.communicate()
+        except Exception as e:  # pragma: no cover - defensive
+            result["exc"] = e
+
+    t = threading.Thread(target=_read, daemon=True)
+    t.start()
+    t.join(grace_s)
+    if t.is_alive():
+        return b"", b""
+    if "exc" in result:
+        raise result["exc"]  # type: ignore[misc]
+    return result.get("out", b""), result.get("err", b"")  # type: ignore[return-value]
+
+
 def truncate_tool_result(results: dict, limit: int, max_rounds: int) -> str:
     """Iteratively truncate the longest string field until json.dumps fits.
 
@@ -405,7 +444,7 @@ def write_configs(configs_path: str, configs, name: str, console: Console):
     """write JSON configs with given path"""
     try:
         with open(configs_path, 'w', encoding="utf-8") as file:
-            json.dump(configs, file, ensure_ascii=False, indent=2)
+            json.dump(configs, file, indent=2, ensure_ascii=False)
             sys_log.debug(f"Write {name} configs to {configs_path} done")
     except Exception as e:
         sys_log.error(f"Failed to write {name} configs to {configs_path} with error: {e}")

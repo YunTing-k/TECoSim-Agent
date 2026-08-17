@@ -36,7 +36,7 @@ def make_agent_ctx(enable_deepseek: bool = True) -> AgentContext:
     ctx.agent_configs = {
         "CONTEXT_THRESHOLD": 0.9,
         "RENDER_RESPONSE_AS_MD": False,
-        "DISPLAY_RESPONSE_REASON": False,
+        "RENDER_RESPONSE_REASON": False,
     }
     ctx.messages = []
     ctx.total_input_tokens = 0

@@ -95,7 +95,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `FLATTEN_BEFORE_SUMMARY` | 摘要前是否将多层消息扁平化为单层 / Whether to flatten multi-layer messages before summarization                                                                                                                                                                           |
 | `RANDOM_PROGRESS_TITLE` | 是否在 Spinner 中随机显示趣味标题（定义于 `constants.py`）/ Show random fun titles in spinner (defined in `constants.py`)                                                                                                                                                  |
 | `RENDER_RESPONSE_AS_MD` | 是否以 Markdown 格式渲染 LLM 响应 / Render LLM responses as Markdown                                                                                                                                                                                               |
-| `DISPLAY_RESPONSE_REASON` | 是否显示 LLM 的推理过程内容（关闭则显示 "Thinking ..." 占位）/ Whether to display LLM reasoning content (shows "Thinking ..." placeholder when disabled)                                                                                                                      |
+| `RENDER_RESPONSE_REASON` | 是否显示 LLM 的推理过程内容（关闭则显示 "Thinking ..." 占位）/ Whether to display LLM reasoning content (shows "Thinking ..." placeholder when disabled)                                                                                                                      |
 | `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session                                                                                                                                                                        |
 | `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected                                                                                                                                                                        |
 | `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated                                                                                                                                                          |
@@ -226,7 +226,5 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | MCP 参数 MCP Params | MCP 工具描述显示限制 / MCP tool description limit |
 | 子 Agent SubAgent | 子 Agent 状态、图标、色彩渐变、轮询间隔等参数 / Subagent status labels, icons, color gradients, poll intervals |
 | WeChat Bot | WeChat 凭证路径、媒体缓存路径、消息历史路径、提示标签、默认超时、验证码/锁定/拒绝文案列表 / WeChat credential & media cache & msg history paths, prompt labels, default timeouts, verify/lock/block reply lists |
-
-
 
 > 完整参数参考（工具名称列表、Bash 风险等级、UI 主题色、图标等）请参阅 | See [constants_reference.md](./constants_reference.md) for the full parameter reference.

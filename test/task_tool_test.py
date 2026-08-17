@@ -29,7 +29,7 @@ def make_agent_ctx(agent_id: str = "agent-1") -> AgentContext:
         "REMIND_TASK_TOOL_GAP": 8,
         "REMIND_TASK_CHAT_GAP": 3,
         "RENDER_RESPONSE_AS_MD": False,
-        "DISPLAY_RESPONSE_REASON": True,
+        "RENDER_RESPONSE_REASON": True,
     }
     return ctx
 

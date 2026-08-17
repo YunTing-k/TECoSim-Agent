@@ -31,6 +31,8 @@ Revision:
 2026.8.3       Yu Huang      2.9      Rename the builtin command & Revise the visual effect of /context /freadList /readonlyList
                                       /webCacheList /mcpList /cronList /taskList /taskListAll /agentList
 2026.7.23      Yu Huang      3.0      Revise the entries' names and add received WeChat message count entry in /context
+2026.8.15      Yu Huang      3.1      Support of messages thumbnail displays in builtin command /context
+2026.8.17      Yu Huang      3.2      Add builtin commands of /regen /pop /sessionFork
 
 Details:
 ---------
@@ -39,16 +41,18 @@ query, context statistics, session management (list/remove), read-only path mana
 cron list/remove, URL cache query, MCP info, and session title update. Skills are auto-registered as commands for manual loading.
 """
 import os
+import uuid
 import json
 import shutil
 import logging
 
 from functools import partial
-from typing import Callable, Any
+from typing import Callable, Any, Literal
 from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
 from src.utility import ui_info, basic_utils
+from src.context.prompt import get_msg_type, get_msg_stats, MsgType, MsgThumbColorLut, MsgThumbBarLut
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, TaskStatus
 from src.tool import summarize_support
@@ -199,6 +203,143 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append(" └─Tool results prompts num: ", style=f"white")
     cmd_str.append(f"{ctx.tool_results_prompts}\n", style=f"bold {MAJOR_COLOR2}")
 
+    thumb_bar_width = os.get_terminal_size().columns - 6 - MAX_TYPE_LABEL_LEN - 1
+    stats, stats_list = get_msg_stats(ctx.messages)
+    thumb_mode: Literal["full_bar", "recent_bar", "text"]
+    if thumb_bar_width > 0 and len(stats_list) > 0:
+        thumb_len = thumb_bar_width // len(stats_list)
+        if thumb_len <= 0:
+            thumb_len = 1
+    else:
+        thumb_len = 1
+    if thumb_bar_width <= 0:
+        thumb_mode = "text"
+    else:
+        if (len(stats_list) * thumb_len) > thumb_bar_width:
+            thumb_mode = "recent_bar"
+        else:
+            thumb_mode = "full_bar"
+
+    if thumb_mode == "text":
+        cmd_str.append("\nMain Agent Context Statistics:\n", style=f"white")
+        cmd_str.append(f" ├─{MsgType.SYSTEM_PROMPT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.SYSTEM_PROMPT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.USER_INPUT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.USER_INPUT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.WECHAT_BOT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.WECHAT_BOT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.BG_SUBAGENT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.BG_SUBAGENT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.AGENT_SKILL.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.AGENT_SKILL]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.CRON_TASK.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.CRON_TASK]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.SYS_REMINDER.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.SYS_REMINDER]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.AGENT_REASON.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.AGENT_REASON]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.AGENT_CHAT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.AGENT_CHAT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.TOOL_CALL.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.TOOL_CALL]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─{MsgType.TOOL_RESULT.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.TOOL_RESULT]}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" └─{MsgType.UNKNOWN.value}: ", style=f"white")
+        cmd_str.append(f"{stats[MsgType.UNKNOWN]}\n", style=f"bold {MAJOR_COLOR2}")
+    else:
+        if thumb_mode == "full_bar":
+            show_stats_list = stats_list
+        else:
+            num = thumb_bar_width // thumb_len
+            show_stats_list = stats_list[-num:]
+        stats_strs: dict[MsgType, Text] = {
+            MsgType.SYSTEM_PROMPT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.SYSTEM_PROMPT.value))}"
+                                        f"{MsgType.SYSTEM_PROMPT.value} ", style=f"bold bright_black"),
+            MsgType.USER_INPUT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.USER_INPUT.value))}"
+                                     f"{MsgType.USER_INPUT.value} ", style=f"bold bright_black"),
+            MsgType.WECHAT_BOT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.WECHAT_BOT.value))}"
+                                     f"{MsgType.WECHAT_BOT.value} ", style=f"bold bright_black"),
+            MsgType.BG_SUBAGENT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.BG_SUBAGENT.value))}"
+                                      f"{MsgType.BG_SUBAGENT.value} ", style=f"bold bright_black"),
+            MsgType.AGENT_SKILL: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.AGENT_SKILL.value))}"
+                                      f"{MsgType.AGENT_SKILL.value} ", style=f"bold bright_black"),
+            MsgType.CRON_TASK: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.CRON_TASK.value))}"
+                                    f"{MsgType.CRON_TASK.value} ", style=f"bold bright_black"),
+            MsgType.SYS_REMINDER: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.SYS_REMINDER.value))}"
+                                       f"{MsgType.SYS_REMINDER.value} ", style=f"bold bright_black"),
+            MsgType.AGENT_REASON: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.AGENT_REASON.value))}"
+                                       f"{MsgType.AGENT_REASON.value} ", style=f"bold bright_black"),
+            MsgType.AGENT_CHAT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.AGENT_CHAT.value))}"
+                                     f"{MsgType.AGENT_CHAT.value} ", style=f"bold bright_black"),
+            MsgType.TOOL_CALL: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.TOOL_CALL.value))}"
+                                    f"{MsgType.TOOL_CALL.value} ", style=f"bold bright_black"),
+            MsgType.TOOL_RESULT: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.TOOL_RESULT.value))}"
+                                      f"{MsgType.TOOL_RESULT.value} ", style=f"bold bright_black"),
+            MsgType.UNKNOWN: Text(f"{" " * (MAX_TYPE_LABEL_LEN - len(MsgType.UNKNOWN.value))}"
+                                  f"{MsgType.UNKNOWN.value} ", style=f"bold bright_black"),
+        }
+        for stat_union in show_stats_list:
+            if isinstance(stat_union, MsgType):
+                for k, v in stats_strs.items():
+                    if stat_union == k:
+                        stats_strs[k].append(f"{MsgThumbBarLut[k] * thumb_len}", style=f"{MsgThumbColorLut[k]}")
+                    else:
+                        stats_strs[k].append(f"{" " * thumb_len}", style="white")
+            else:
+                prefix_list: list[MsgType] = []
+                for stat in stat_union:
+                    prefix_list.append(stat)
+                    stats_strs[stat].append(f"{MsgThumbBarLut[stat] * thumb_len}", style=f"{MsgThumbColorLut[stat]}")
+                for k, v in stats_strs.items():
+                    if k not in prefix_list:
+                        stats_strs[k].append(f"{" " * thumb_len}", style="white")
+
+        cmd_str.append("\nMain Agent Context Statistics", style=f"white")
+        if thumb_mode == "full_bar":
+            cmd_str.append(f" (showing all context with ", style=f"white")
+            cmd_str.append(f"{len(stats_list)}", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f" entries):\n", style=f"white")
+        else:
+            cmd_str.append(f" (showing latest ", style=f"white")
+            cmd_str.append(f"{len(show_stats_list)}", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f" entries of context):\n", style=f"white")
+        if stats[MsgType.SYSTEM_PROMPT] > 0:
+            cmd_str.append(stats_strs[MsgType.SYSTEM_PROMPT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.USER_INPUT] > 0:
+            cmd_str.append(stats_strs[MsgType.USER_INPUT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.WECHAT_BOT] > 0:
+            cmd_str.append(stats_strs[MsgType.WECHAT_BOT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.BG_SUBAGENT] > 0:
+            cmd_str.append(stats_strs[MsgType.BG_SUBAGENT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.AGENT_SKILL] > 0:
+            cmd_str.append(stats_strs[MsgType.AGENT_SKILL])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.CRON_TASK] > 0:
+            cmd_str.append(stats_strs[MsgType.CRON_TASK])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.SYS_REMINDER] > 0:
+            cmd_str.append(stats_strs[MsgType.SYS_REMINDER])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.AGENT_REASON] > 0:
+            cmd_str.append(stats_strs[MsgType.AGENT_REASON])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.AGENT_CHAT] > 0:
+            cmd_str.append(stats_strs[MsgType.AGENT_CHAT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.TOOL_CALL] > 0:
+            cmd_str.append(stats_strs[MsgType.TOOL_CALL])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.TOOL_RESULT] > 0:
+            cmd_str.append(stats_strs[MsgType.TOOL_RESULT])
+            cmd_str.append(f"\n", style=f"white")
+        if stats[MsgType.UNKNOWN] > 0:
+            cmd_str.append(stats_strs[MsgType.UNKNOWN])
+            cmd_str.append(f"\n", style=f"white")
+
     cmd_str.append("\nAvailable skills amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.skills)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Available skills: ", style=f"white")
@@ -241,6 +382,77 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
     console.print("\n")
+
+
+def cmd_regen(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """regenerate latest round"""
+    try:
+        """find the last user's input"""
+        if_find = False
+        total_msg = len(ctx.messages)
+        last_msg_idx = -1
+        for msg_idx, msg in enumerate(reversed(ctx.messages)):
+            if get_msg_type(msg) == MsgType.USER_INPUT or get_msg_type(msg) == MsgType.WECHAT_BOT:
+                last_msg_idx = len(ctx.messages) - 1 - msg_idx
+                if_find = True
+                break
+        """prune messages"""
+        if not if_find:
+            sys_log.warning(f"There is no user input, regenerate may show unexpected behaviour")
+            console.print(f"There is no user input, regenerate may show unexpected behaviour", style="bold yellow")
+        else:
+            del ctx.messages[last_msg_idx + 1:]
+            sys_log.debug(f"Pop {total_msg - len(ctx.messages)} messages after index {last_msg_idx}, kept {len(ctx.messages)} "
+                          f"messages, regenerate start")
+            console.print(f"Pop [{MAJOR_COLOR2}]{total_msg - len(ctx.messages)}[/{MAJOR_COLOR2}] messages after index "
+                          f"[{MAJOR_COLOR2}]{last_msg_idx}[/{MAJOR_COLOR2}], kept [{MAJOR_COLOR2}]{len(ctx.messages)}[/{MAJOR_COLOR2}] "
+                          f"messages, regenerate start")
+    except Exception as e:
+        sys_log.error(f"Try to regenerate latest round failed with error: {e}. But the regenerate is still in progress, "
+                      f"may show unexpected behaviour")
+        console.print(f"Try to regenerate latest round failed with error: {e}. But the regenerate is still in progress, "
+                      f"may show unexpected behaviour", style="bold red")
+
+
+def cmd_pop(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """pop latest messages"""
+    try:
+        """get count"""
+        if not args:
+            sys_log.warning(f"Unable to pop messages, target count is empty")
+            console.print(f"Unable to pop messages, target count is empty", style=f"bold yellow")
+            return
+        count: int = int((args[0]))
+        if count <= 0:
+            sys_log.error(f"Invalid count value: {count} <= 0")
+            console.print(f"Invalid count value: {count} <= 0", style="bold red")
+            return
+        if count >= len(ctx.messages):
+            sys_log.error(f"Invalid count value: {count} >= {len(ctx.messages)} (total volume of messages)")
+            console.print(f"Invalid count value: {count} >= {len(ctx.messages)} (total volume of messages)", style="bold red")
+            return
+
+        """request"""
+        token = ui_info.request_tui(console=console, title="Pop Messages",
+                                    request_desc=f"pop {count} messages in context",
+                                    request_detail=f"pop {count} messages out of {len(ctx.messages)} messages in contex, "
+                                                   f"these messages will be deleted forever in this session (only for "
+                                                   f"advanced user, this command may damage the context)",
+                                    cancel_str=f"Pop messages cancelled")
+        if not token:
+            sys_log.debug(f"Pop messages cancelled")
+            console.print(f"Pop messages cancelled", style="bright_black")
+            return
+
+        """pop messages"""
+        total_msg = len(ctx.messages)
+        del ctx.messages[-count:]
+        sys_log.debug(f"{total_msg - len(ctx.messages)} messages popped, {len(ctx.messages)} left")
+        console.print(f"[{MAJOR_COLOR2}]{total_msg - len(ctx.messages)}[/{MAJOR_COLOR2}] messages popped, "
+                      f"[{MAJOR_COLOR2}]{len(ctx.messages)}[/{MAJOR_COLOR2}] left")
+    except Exception as e:
+        sys_log.error(f"Pop messages failed with error: {e}")
+        console.print(f"Pop messages failed with error: {e}", style="bold red")
 
 
 def cmd_fread_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
@@ -668,7 +880,7 @@ def cmd_set_title(args: list[str], ctx: AgentContext, board: Scoreboard, console
         ctx.session_title = title
         ui_info.set_terminal_title(ctx.session_title)
         sys_log.debug(f"Session title updated to {title}")
-        console.print(f"Session title updated to [{MAJOR_COLOR2}]{title}[/{MAJOR_COLOR2}]", style="bright_black")
+        console.print(f"Session title updated to [{MAJOR_COLOR2}]{title}[/{MAJOR_COLOR2}]")
     else:
         sys_log.warning(f"Unable to set the title, target title is empty")
         console.print(f"Unable to set the title, target title is empty", style=f"bold yellow")
@@ -799,6 +1011,50 @@ def cmd_session_remove(args: list[str], ctx: AgentContext, board: Scoreboard, co
         console.print(f"Remove session with args: {args} failed with error: {e}", style="bold red")
 
 
+def cmd_session_fork(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """fork current session"""
+    try:
+        """check current session"""
+        uuid_src_obj = uuid.UUID(ctx.session_uuid)
+        uuid_src_str = uuid_src_obj.__str__()
+        src_dir = str(AGENT_PATH / SESSION_PATH / uuid_src_str)
+        if not os.path.exists(src_dir):
+            sys_log.error(f"Session directory {src_dir} does not exist")
+            console.print(f"Session directory {src_dir} does not exist", style="bold red")
+            return
+
+        """copy session"""
+        uuid_dst_obj = uuid.uuid4()
+        uuid_dst_str = uuid_dst_obj.__str__()
+        dst_dir = str(AGENT_PATH / SESSION_PATH / uuid_dst_str)
+        shutil.copytree(src_dir, dst_dir)
+        sys_log.debug(f"Session {uuid_src_str} copy done")
+        console.print(f"Session [{MAJOR_COLOR2}]{uuid_src_str}[/{MAJOR_COLOR2}] copy done")
+
+        """update forked session's title"""
+        context_file = os.path.join(dst_dir, CONTEXT_NAME)
+        with open(context_file, 'r', encoding='utf-8') as f:
+            context = json.load(f)
+        if context.get("session_title"):
+            session_title: str = context["session_title"]
+            if not session_title.endswith(FORKED_SESSION_PREFIX):
+                session_title = session_title + " " + FORKED_SESSION_PREFIX
+                context["session_title"] = session_title
+        else:
+            session_title: str = UNKNOWN_SESSION_TITLE + " " + FORKED_SESSION_PREFIX
+            context["session_title"] = session_title
+        with open(context_file, 'w', encoding='utf-8') as f:
+            json.dump(context, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Forked session's title is updated as {session_title}")
+        console.print(f"[{MAJOR_COLOR2}]Forked session[/{MAJOR_COLOR2}]'s title is updated as [{MAJOR_COLOR2}]{session_title}[/{MAJOR_COLOR2}]")
+
+        sys_log.debug(f"Session {uuid_src_str} is forked to {uuid_dst_str} successfully")
+        console.print(f"Session [{MAJOR_COLOR2}]{uuid_src_str}[/{MAJOR_COLOR2}] is forked to [{MAJOR_COLOR2}]{uuid_dst_str}[/{MAJOR_COLOR2}] successfully")
+    except Exception as e:
+        sys_log.error(f"Fork session failed with error: {e}")
+        console.print(f"Fork session failed with error: {e}", style="bold red")
+
+
 def cmd_cron_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query all cron tasks"""
     title = f"Available Cron Tasks ({len(ctx.cron_tasks)} total, {ctx.active_cron} active)"
@@ -861,7 +1117,7 @@ def cmd_cron_remove(args: list[str], ctx: AgentContext, board: Scoreboard, conso
             console.print(f"Remove cron task with id: {id_str} failed with error, details: {remove_info}", style="bold red")
         else:
             sys_log.debug(f"Remove cron task with id: {id_str} successfully")
-            console.print(f"Remove cron task with id: [{MAJOR_COLOR2}]{id_str}[/{MAJOR_COLOR2}] successfully", style="bright_black")
+            console.print(f"Remove cron task with id: [{MAJOR_COLOR2}]{id_str}[/{MAJOR_COLOR2}] successfully")
     except Exception as e:
         sys_log.error(f"Remove cron task with args: {args} failed with error: {e}")
         console.print(f"Remove cron task with args: {args} failed with error: {e}", style="bold red")
@@ -1075,6 +1331,9 @@ class BuiltinCommands:
             "designList": (cmd_design_list, "query all designs", "query the list of current designs"),
             "runList": (cmd_run_list, "query all runs", "query the list of all launched simulation"),
             "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
+            "regen": (cmd_regen, "regenerate latest round", "regenerate the latest round of response after user's last input"),
+            "pop": (cmd_pop, "pop latest messages (advanced only)",
+                    "pop the latest messages with the given input count (only for advanced user, may damage the context)"),
             "freadList": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
             "readonlyList": (cmd_readonly_list, "query all readonly paths", "query the absolute paths of all readonly paths"),
             "readonlyAdd": (cmd_readonly_add, "add readonly path", "add readonly paths into list (converted to absolute path)"),
@@ -1094,13 +1353,14 @@ class BuiltinCommands:
             "setTitle": (cmd_set_title, "set session title manually", "manually set title of this session by user"),
             "sessionList": (cmd_session_list, "query all sessions", "query all sessions with UUID and title"),
             "sessionRemove": (cmd_session_remove, "remove a session", "remove a session with given UUID"),
-            "cronList": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks with ID, pattern and prompt"),
-            "cronRemove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with ID"),
+            "sessionFork": (cmd_session_fork, "fork current session", "fork current session as a new session with new UUID"),
+            "cronList": (cmd_cron_list, "query all cron tasks", "query all scheduled tasks' ID, pattern and prompt"),
+            "cronRemove": (cmd_cron_remove, "remove a cron task", "remove a scheduled tasks with given ID"),
             "taskList": (cmd_task_list, "list agent tasks", "list all agent tasks that are not archived"),
             "taskListAll": (cmd_task_list_all, "list all agent tasks", "list all history agent tasks"),
             "agentList": (cmd_agent_list, "list subagents", "list all active and archived subagents with status"),
         }
-        self._request_commands: list[str] = []
+        self._request_commands: list[str] = ["regen"]
         sys_log.debug(f"{len(self._commands)} builtin commands initialized")
         console.print(f"[{MAJOR_COLOR2}]{len(self._commands)}[/{MAJOR_COLOR2}] builtin commands initialized")
 
@@ -1150,11 +1410,12 @@ class BuiltinCommands:
 
     def cmd_help(self, args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
         """print all available commands"""
+        max_cmd_len = max(len(key) for key in self._commands.keys())
         title = f"Available Commands ({len(self._commands)})"
         cmd_str = Text()
         for cmd, (func, label, desc) in self._commands.items():
             cmd_str.append(f"/{cmd}", style=f"bold {MAJOR_COLOR1}")
-            cmd_str.append(f": ", style=f"white")
+            cmd_str.append(f":{" " * (max_cmd_len - len(cmd) + 1)}", style=f"white")
             cmd_str.append(f"{label}", style=f"{MAJOR_COLOR2}")
             cmd_str.append(f", {desc}\n", style=f"white")
         if cmd_str.plain.endswith("\n"):

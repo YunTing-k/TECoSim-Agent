@@ -438,3 +438,28 @@ When the Think block is rendered via `Table(overflow="fold")` + `ReasonMD` (Mark
 根本原因推测是 rich 的 Table fold 在 Markdown 列表 + emoji 场景下行高计算与 Live 的 ANSI 光标回溯之间存在偏差，纯 ASCII 或单行 emoji 不受影响。除非重构渲染结构（如手工 wrap 后逐行放入 `no_wrap=True` 的 Table 列），否则无法根治。
 
 The root cause is believed to be a mismatch between rich's Table fold line-height calculation and Live's ANSI cursor rollback in the presence of Markdown lists + emoji. Pure ASCII and single-line emoji content are unaffected. A complete fix would require restructuring the render pipeline (e.g. manually wrapping ReasonMD output and feeding it row-by-row into a `no_wrap=True` Table column).
+
+---
+
+## 18. 嵌套子进程继承终端句柄导致控制台模式被污染、TUI 卡死 | Nested child inheriting terminal handle pollutes console mode and freezes the TUI
+
+`bash` 工具（`tool_def.py`）的 `subprocess.Popen([BASH_PATH, "-c", command], stdout=PIPE, stderr=PIPE, ...)` **未指定 `stdin`**，导致命令的所有子孙进程继承 agent 的终端 stdin 句柄。当命令内部**嵌套启动 msys bash**（如 `python -c "subprocess.Popen(['bash', ...])"`）时，该 msys bash 作为**原生进程（python.exe）经 CreateProcess 启动的子进程**，其 msys 运行时初始化会 `GetConsoleMode`/`SetConsoleMode` 修改控制台模式——而 Windows 控制台模式是 **per-handle 共享**的（继承的句柄指向同一控制台对象），且 **bash 退出时不恢复**。
+
+The `bash` tool's `subprocess.Popen([BASH_PATH, "-c", command], stdout=PIPE, stderr=PIPE, ...)` **does not specify `stdin`**, so every descendant of the command inherits the agent's terminal stdin handle. When the command **nested-spawns an msys bash** (e.g. `python -c "subprocess.Popen(['bash', ...])"`), that msys bash — started by a **native process (python.exe) via CreateProcess** — modifies the console mode (`GetConsoleMode`/`SetConsoleMode`) during msys runtime initialization. Windows console mode is **shared per handle** (inherited handles point to the same console object) and **bash does not restore it on exit**.
+
+**现象 / Symptoms**：
+- 命令本身正常完成（bash done 日志正常），但 **LLM request end 之后主循环卡死**（几十秒到两分钟无日志），最终 `WinError 233 管道的另一端上无任何进程` / The command itself completes normally (the bash done log is fine), but the main loop **hangs right after LLM request end** (no log output for tens of seconds to minutes), eventually failing with `WinError 233: no process on the other end of the pipe`
+- TUI 最后一行出现乱码：`♪`（= CR 0x0D 在 CP437/OEM 代码页的绘制）、`◙`（= LF 0x0A）、`←`（= ESC 0x1B）——即**控制序列被"文本模式"原样绘制**，终端不再解释 ANSI / The last TUI line shows mojibake: `♪` (= CR 0x0D drawn in CP437/OEM), `◙` (= LF 0x0A), `←` (= ESC 0x1B) — i.e. **control sequences are drawn literally in "text mode"** and the terminal no longer interprets ANSI
+- Console Window and PTY Host (OpenConsole) 进程高 CPU（Live 光标错乱后的修复输出风暴）/ The Console Window and PTY Host (OpenConsole) process spins at high CPU (repair output storm after Live cursor desync)
+- 只有**嵌套启动 msys bash 且子进程存活数秒**的命令稳定触发；`sleep 5` 直连、bash 嵌套 bash（msys fork 路径）、python 无嵌套、python 嵌套 `sleep.exe`/快速子进程均不触发 / Only commands that **nested-spawn an msys bash whose child stays alive for seconds** trigger reliably; direct `sleep 5`, bash-inside-bash (msys fork path), python without nesting, and python nesting `sleep.exe`/fast children do NOT trigger
+
+**根因 / Root cause**：嵌套 msys bash（父进程为原生进程）初始化时改写控制台模式 → busy 期间 `input_thread` 的 raw_mode 与 `llm_stream_manage` Live 的 VT 输出依赖该模式 → 模式损坏后 ESC 序列不被解释 → 字面乱码 + Live 光标错乱修复风暴 → 主线程阻塞卡死。 / The nested msys bash (spawned by a native parent) rewrites the console mode during initialization → the busy-phase `input_thread` raw_mode and `llm_stream_manage` Live VT output depend on that mode → once corrupted, ESC sequences are no longer interpreted → literal mojibake + Live cursor-repair storm → the main thread blocks and the TUI freezes.
+
+**修复 / Fix**：所有子进程 Popen/run 显式 `stdin=subprocess.DEVNULL`，切断终端句柄继承： / Explicitly pass `stdin=subprocess.DEVNULL` on every child Popen/run to sever terminal handle inheritance:
+
+```python
+proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], "-c", command],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        stdin=subprocess.DEVNULL,   # key: do not inherit the agent terminal stdin
+                        env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+```

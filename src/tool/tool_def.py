@@ -66,6 +66,8 @@ Revision:
 2026.8.1-2     Yu Huang      5.5      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.3       Yu Huang      5.6      Written file is also logged as read
 2026.8.4       Yu Huang      5.7      WeChat bot can get more information of AgentContext via wechat_status tool
+2026.8.15      Yu Huang      5.8      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
+2026.8.17      Yu Huang      5.9      bash tool uses spawn_managed_proc/kill_tree: whole-tree kill on timeout/cancel (Windows Job Object / POSIX killpg)
 
 Details:
 ---------
@@ -86,6 +88,7 @@ from rich.progress import Progress
 from src.utility import ui_info
 from src.utility.ui_info import pause_for_permission, resume_from_permission
 from src.utility.basic_utils import read_line_with_limit, format_file_for_llm, get_webfetch_str
+from src.utility.process_kill import spawn_managed_proc
 from src.context.agent_context import WebFetchCancelled, WebSearchCancelled, AgentContext
 from src.tool.cron_support import get_cron_list, get_cron_create_str, create_cron_impl
 from src.tool.scoreboard import Scoreboard, TaskStatus, args_to_taskupdate, task_to_info, tasks_to_info
@@ -1034,7 +1037,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
         sys_log.debug(f"{func_name}: {description} start")
         progress.console.print(f"{func_name}: {description} start", style="bright_black")
         try:
-            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], "-c", command],
+            mp = spawn_managed_proc([ctx.agent_configs["BASH_PATH"], "-c", command],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         except UnicodeEncodeError:
@@ -1047,19 +1050,14 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
             tmp.write(command)
             tmp.close()
             _tmp_script_paths.append(tmp.name)
-            proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
+            mp = spawn_managed_proc([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     env={**os.environ, "PYTHONIOENCODING": "utf-8"})
         try:
             try:
-                stdout, stderr = proc.communicate(timeout=timeout / 1000)
+                stdout, stderr = mp.proc.communicate(timeout=timeout / 1000)
             except KeyboardInterrupt:
-                proc.terminate()
-                try:
-                    proc.communicate(timeout=1)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.communicate()
+                mp.kill_tree()
                 sys_log.error(f"{func_name} {CANCELLED_LABEL}: {description} with command: {command} is cancelled by user. "
                               f"Command interrupted")
                 progress.console.print(f"{func_name} {CANCELLED_LABEL}: {description} is "
@@ -1067,12 +1065,7 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                 return {"status": CANCELLED_LABEL,  # no need to return results if user cancel
                         "info": "bash command is cancelled by user. Command interrupted"}
             except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    stdout, stderr = proc.communicate(timeout=1)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    stdout, stderr = proc.communicate()
+                stdout, stderr = mp.kill_tree()
                 sys_log.error(f"{func_name} {TIMEOUT_LABEL}: "
                               f"{description} with command: {command} timeout > {timeout / 1000} s. Command interrupted")
                 progress.console.print(f"{func_name} {TIMEOUT_LABEL}: "
@@ -1082,62 +1075,49 @@ def bash(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> di
                 if stdout_str.strip() or stderr_str.strip():
                     progress.console.print(get_bash_result_render(stdout_str, stderr_str))
                 return {"status": TIMEOUT_LABEL,
-                        "return code": proc.returncode,
+                        "return code": mp.proc.returncode,
                         "stdout": stdout_str,
                         "stderr": stderr_str}
             except Exception as e:
-                proc.terminate()
-                try:
-                    proc.communicate(timeout=1)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.communicate()
+                mp.kill_tree()
                 raise RuntimeError(e)
             sys_log.debug(f"{func_name}: {description} with command {command} done")
             progress.console.print(f"{func_name}: {description} done", style="bright_black")
             stdout_str = stdout.decode('utf-8', errors='replace')
             stderr_str = stderr.decode('utf-8', errors='replace')
-            if proc.returncode != 0 and not _quoting_retried and (
+            if mp.proc.returncode != 0 and not _quoting_retried and (
                 "No closing quotation" in stderr_str or "unexpected EOF" in stderr_str
             ):
                 sys_log.debug(f"{func_name}: quoting error detected, retrying via temp script")
                 progress.console.print(f"{func_name}: quoting error detected, retrying via temp script", style="bright_black")
                 _quoting_retried = True
+                mp.finish()  # first run completed; release its Job handle before respawn
                 tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, encoding='utf-8')
                 tmp.write("#!/bin/bash\n")
                 tmp.write(command)
                 tmp.close()
                 _tmp_script_paths.append(tmp.name)
-                proc = subprocess.Popen([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
+                mp = spawn_managed_proc([ctx.agent_configs["BASH_PATH"], _tmp_script_paths[-1]],
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         env={**os.environ, "PYTHONIOENCODING": "utf-8"})
                 try:
-                    stdout, stderr = proc.communicate(timeout=timeout / 1000)
+                    stdout, stderr = mp.proc.communicate(timeout=timeout / 1000)
                 except KeyboardInterrupt:
-                    proc.terminate()
-                    try:
-                        proc.communicate(timeout=1)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.communicate()
+                    mp.kill_tree()
                     return {"status": CANCELLED_LABEL, "info": "bash command is cancelled by user. Command interrupted"}
                 except subprocess.TimeoutExpired:
-                    proc.terminate()
-                    try:
-                        stdout, stderr = proc.communicate(timeout=1)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        stdout, stderr = proc.communicate()
+                    stdout, stderr = mp.kill_tree()
                     stdout_str = stdout.decode('utf-8', errors='replace')
                     stderr_str = stderr.decode('utf-8', errors='replace')
-                    return {"status": TIMEOUT_LABEL, "return code": proc.returncode,
+                    return {"status": TIMEOUT_LABEL, "return code": mp.proc.returncode,
                             "stdout": stdout_str, "stderr": stderr_str}
                 stdout_str = stdout.decode('utf-8', errors='replace')
                 stderr_str = stderr.decode('utf-8', errors='replace')
+            mp.finish()
             if stdout_str.strip() or stderr_str.strip():
                 progress.console.print(get_bash_result_render(stdout_str, stderr_str))
             return {"status": DONE_LABEL,
-                    "return code": proc.returncode,
+                    "return code": mp.proc.returncode,
                     "stdout": stdout_str,
                     "stderr": stderr_str}
         finally:
@@ -2033,7 +2013,7 @@ def tool_skill_def() -> dict[str, Any]:
                            "- Use this tool with the skill `name` and optional `purpose`\n"
                            "- FORMAT EXAMPLE (not actual skills):\n"
                            "  - `name: \"ms-office-suite:pdf\"`, `purpose: invoke the pdf skill to read ...`\n"
-                           "  - `name: \"svg-diagram\"`, `purpose: draw svg diagram on ... with the skill`\n"
+                           "  - `name: \"svg-diagram\"`, `purpose: draw svg diagram on ... `\n"
                            "  - `name: \"<skill_name>\"`, `purpose: \"<purpose to invode skill>\"`\n"
                            "Important:\n"
                            "- All available skills and their description are listed in your system prompts\n"
@@ -2128,7 +2108,7 @@ def tool_web_fetch_def() -> dict[str, Any]:
             "description": f"Use this tool when you need to retrieve and analyze web content. `{TOOL_NAME_WEB_FETCH}` WILL FAIL for "
                            "authenticated or private URLs. Before using this tool, check if the URL points to an authenticated "
                            "service (e.g. Google Docs, Confluence, Jira, GitHub). If so, look for a specialized MCP tool "
-                           "that provides authenticated access.\n"
+                           "(if available) that provides authenticated access.\n"
                            "Usage:\n"
                            "- Takes a URL and a prompt (describe what information you want to extract) as input\n"
                            "- Fetches the URL content, converts HTML to markdown and processes it using another AI model with "

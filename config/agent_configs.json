@@ -15,7 +15,7 @@
     "REMIND_TASK_CHAT_GAP": 5,
     "FLATTEN_BEFORE_SUMMARY": true,
 
-    "BASH_PATH": "bash",
+    "BASH_PATH": "C:/Program Files/git/bin/bash.exe",
     "RIPGREP_PATH": "rg",
     "RIPGREP_TIMEOUT_S": 20,
     "SIMULATOR_PATH": "C:/Users/admin/Desktop/C++File/Project/TECoSim",
@@ -90,7 +90,7 @@
         "ALL_MCP_TOOLS": true
     },
 
-    "DISPLAY_RESPONSE_REASON": true,
+    "RENDER_RESPONSE_REASON": true,
     "RENDER_RESPONSE_AS_MD": true,
     "RESUME_RENDER_USER_HISTORY_AS_MD": false,
     "RESUME_DISPLAY_SUBAGENT": false,

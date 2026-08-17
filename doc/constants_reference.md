@@ -164,6 +164,26 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `CRON_ICON` | `⬟` | 定时任务标记图标 / Cron marker icon |
 | `WECHAT_PROMPT_ICON` | `▶` | 微信消息标记图标 / WeChat message marker icon |
 
+### 消息类型标签 | Message Type Labels
+
+消息类型标签用于在消息列表（如内置命令 `/context`）中标识每条消息的来源类型 / Message type labels identify the source type of each message in message lists (e.g. builtin command `/context`):
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `SYSTEM_PROMPT_TYPE_LABEL` | `System ❯` | 系统提示消息类型标签 / System prompt message type label |
+| `USER_INPUT_TYPE_LABEL` | `CLI ❯` | 用户 CLI 输入消息类型标签 / User CLI input message type label |
+| `WECHAT_BOT_TYPE_LABEL` | `WeChat ❯` | 微信机器人消息类型标签 / WeChat bot message type label |
+| `BG_SUBAGENT_TYPE_LABEL` | `Subagent ❯` | 后台子 Agent 消息类型标签 / Background subagent message type label |
+| `AGENT_SKILL_TYPE_LABEL` | `Skill ❯` | 技能调用消息类型标签 / Skill invocation message type label |
+| `CRON_TASK_TYPE_LABEL` | `Cron ❯` | 定时任务消息类型标签 / Cron task message type label |
+| `SYS_REMINDER_TYPE_LABEL` | `Reminder ❯` | 系统提醒消息类型标签 / System reminder message type label |
+| `AGENT_REASON_TYPE_LABEL` | `Reason ❮` | Agent 推理消息类型标签 / Agent reasoning message type label |
+| `AGENT_CHAT_TYPE_LABEL` | `Chat ❮` | Agent 回复消息类型标签 / Agent chat reply message type label |
+| `TOOL_CALL_TYPE_LABEL` | `Tool Call ❮` | 工具调用消息类型标签 / Tool call message type label |
+| `TOOL_RESULT_TYPE_LABEL` | `Tool Result ❯` | 工具结果消息类型标签 / Tool result message type label |
+| `UNKNOWN_TYPE_LABEL` | `Unknown ?` | 未知类型消息标签 / Unknown message type label |
+| `MAX_TYPE_LABEL_LEN` | `13` | 所有类型标签的最大长度（用于对齐），由 `max(len(...))` 动态计算 / Max length among all type labels (for alignment), computed as `max(len(...))` |
+
 ### 样式与格式 | Styles & Formatting
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
@@ -173,7 +193,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
-| `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Enter: Submit)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
+| `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Esc: Discard draft)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
 
 ### Markdown 渲染 | Markdown Rendering
 
@@ -211,7 +231,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `TASK_DISPLAYS_BEFORE_ARCHIVED` | `6` | 已解决任务归档前的显示次数 / Displays before archiving resolved tasks |
-| `MUTE_TASK_OP_INFO` | `true` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
+| `MUTE_TASK_OP_INFO` | `True` | 是否在控制台静默任务操作日志 / Mute task operation logs in console |
 | `TASK_EMPTY_TITLE` | `` | 空任务的占位标题 / Placeholder title for empty task |
 | `TASK_VIEW_LEFT_MARGIN` | `6` | 任务列表状态图标左侧缩进 / Left margin for task status icons |
 | `TASK_VIEW_RIGHT_MARGIN` | `1` | 任务列表状态图标右侧缩进 / Right margin for task status icons |
@@ -262,6 +282,27 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `INSERT_TUI_COLOR_PERIOD` | `1.75` | 插入输入条颜色动画周期（秒）/ Insert bar color animation period (seconds) |
 | `INSERT_LISTEN_SLEEP_TIME_MS` | `20` | 插入输入线程按键轮询间隔（毫秒）/ Insert input thread key polling interval (ms) |
 
+### 消息缩略图 | Message Thumbnails
+
+内置命令 `/context` 以缩略图形式（条形字符 + 颜色）显示各类型消息 / The builtin `/context` command displays message thumbnails (bar char + color) for each message type:
+
+| 常量 Constant | 默认值 Default | 用途 Purpose |
+|----------|---------|---------|
+| `MSG_THUMB_BAR` | `█` | 消息缩略图条形字符 / Message thumbnail bar char |
+| `SYSTEM_PROMPT_THUMB_COLOR` | `bright_black` | 系统提示缩略图颜色 / System prompt thumbnail color |
+| `USER_INPUT_THUMB_COLOR` | `#FF9FF3` | 用户输入缩略图颜色 / User input thumbnail color |
+| `WECHAT_BOT_THUMB_COLOR` | `#FF75EE` | 微信消息缩略图颜色 / WeChat message thumbnail color |
+| `BG_SUBAGENT_THUMB_COLOR` | `#FF02DF` | 后台子 Agent 缩略图颜色 / Background subagent thumbnail color |
+| `AGENT_SKILL_THUMB_COLOR` | `#E600C9` | 技能消息缩略图颜色 / Skill message thumbnail color |
+| `CRON_TASK_THUMB_COLOR` | `#A80093` | 定时任务缩略图颜色 / Cron task thumbnail color |
+| `SYS_REMINDER_THUMB_COLOR` | `#800070` | 系统提醒缩略图颜色 / System reminder thumbnail color |
+| `AGENT_REASON_THUMB_COLOR` | `#54A0FF` | 推理消息缩略图颜色 / Reasoning message thumbnail color |
+| `AGENT_CHAT_THUMB_COLOR` | `#0067E6` | 回复消息缩略图颜色 / Chat reply thumbnail color |
+| `TOOL_CALL_THUMB_COLOR` | `#F5A742` | 工具调用缩略图颜色 / Tool call thumbnail color |
+| `TOOL_RESULT_THUMB_COLOR` | `#693F05` | 工具结果缩略图颜色 / Tool result thumbnail color |
+| `UNKNOWN_MSG_THUMB_BAR` | `░` | 未知消息缩略图条形字符 / Unknown message thumbnail bar char |
+| `UNKNOWN_THUMB_COLOR` | `bright_black` | 未知消息缩略图颜色 / Unknown message thumbnail color |
+
 ### 会话标题 | Session Titles
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
@@ -269,6 +310,7 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `DEFAULT_SESSION_TITLE` | `(Empty session)` | 空会话的默认标题 / Default title for empty session |
 | `UNKNOWN_SESSION_TITLE` | `(Unknown session)` | 无法识别会话的标题 / Title for unrecognizable session |
 | `ERROR_SESSION_TITLE` | `(Summarize fail, try manually)` | 摘要失败时的回退标题 / Fallback title when summarization fails |
+| `FORKED_SESSION_PREFIX` | `(forked)` | 分叉会话标题后缀（`/sessionFork` 或 `session fork` 后追加）/ Suffix appended to forked session titles (after `/sessionFork` or `session fork`) |
 
 ### 进度与 Spinner | Progress & Spinners
 
@@ -309,8 +351,8 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
 | `STREAM_DISPLAY_REFRESH_RATE` | `20` | 流式响应 TUI 刷新率（次/秒）/ Stream response TUI refresh rate (fps) |
-| `STREAM_DISPLAY_MAX_REASON_LINE` | `10` | 推理内容显示截断行数 / Max reasoning lines before truncation |
-| `STREAM_DISPLAY_MAX_CONTENT_LINE` | `20` | 内容显示截断行数 / Max content lines before truncation |
+| `STREAM_DISPLAY_MAX_REASON_LINE` | `8` | 推理内容显示截断行数 / Max reasoning lines before truncation |
+| `STREAM_DISPLAY_MAX_CONTENT_LINE` | `16` | 内容显示截断行数 / Max content lines before truncation |
 | `MESSAGE_COLOR_GRADIENT` | `128` | 消息动态颜色渐变的阶数 / Gradient color steps for message color animation |
 | `MESSAGE_COLOR_PERIOD` | `1.75` | 消息动态颜色变化周期（秒），与 `LISTEN_TUI_COLOR_PERIOD` 联动 / Message color animation period (seconds), synced with `LISTEN_TUI_COLOR_PERIOD` |
 
@@ -450,8 +492,10 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `8` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `9` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
+| `AGENT_PATH` | 动态（exe 所在目录或项目根目录）/ Dynamic (exe dir or project root) | Agent 根路径，所有相对路径解析的基础 / Agent root path; base for all relative path resolution |
+| `AGENT_EXECUTE` | `"TECoSim-Agent"` / `"python -m src.main"` | Agent 可执行命令（预构建 exe / 源码运行）/ Agent executable command (pre-built exe / source run) |
 | `API_CONFIGS_PATH` | `"./config/api_configs.json"` | API 配置路径 / API config path |
 | `AGENT_CONFIGS_PATH` | `"./config/agent_configs.json"` | Agent 配置路径 / Agent config path |
 | `OVERRIDE_PROMPTS_PATH` | `"./config/override_prompts.json"` | 覆盖式提示词配置文件路径 / Override prompts config file path |

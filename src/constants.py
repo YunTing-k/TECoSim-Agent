@@ -16,6 +16,7 @@ Revision:
 2026.7.15-16   Yu Huang      1.4      Add WeChat bot interaction support
 2026.7.23      Yu Huang      1.5      Classify constants into groups & Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      1.6      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.15      Yu Huang      1.7      Support of messages thumbnail displays in builtin command /context
 
 Details:
 ---------
@@ -30,7 +31,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 8
+TECOSIM_AGENT_UPDATE_VERSION: int = 9
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -76,11 +77,28 @@ SYS_REMINDER_ICON: str = "⚑"
 DEFAULT_SESSION_TITLE: str = "(Empty session)"
 UNKNOWN_SESSION_TITLE: str = "(Unknown session)"
 ERROR_SESSION_TITLE: str = "(Summarize fail, try manually)"
+FORKED_SESSION_PREFIX: str = "(forked)"
 INSERT_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Esc: Discard)"
 INSERT_PROMPT_START_LABEL: str = "<cli_insert>"
 INSERT_PROMPT_END_LABEL: str = "</cli_insert>"
 INSERT_PROMPT_ICON: str = "▶"
-USER_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Enter: Submit)"
+SYSTEM_PROMPT_TYPE_LABEL: str = "System ❯"
+USER_INPUT_TYPE_LABEL: str = "CLI ❯"
+WECHAT_BOT_TYPE_LABEL: str = "WeChat ❯"
+BG_SUBAGENT_TYPE_LABEL: str = "Subagent ❯"
+AGENT_SKILL_TYPE_LABEL: str = "Skill ❯"
+CRON_TASK_TYPE_LABEL: str = "Cron ❯"
+SYS_REMINDER_TYPE_LABEL: str = "Reminder ❯"
+AGENT_REASON_TYPE_LABEL: str = "Reason ❮"
+AGENT_CHAT_TYPE_LABEL: str = "Chat ❮"
+TOOL_CALL_TYPE_LABEL: str = "Tool Call ❮"
+TOOL_RESULT_TYPE_LABEL: str = "Tool Result ❯"
+UNKNOWN_TYPE_LABEL: str = "Unknown ?"
+MAX_TYPE_LABEL_LEN: int = max(len(SYSTEM_PROMPT_TYPE_LABEL), len(USER_INPUT_TYPE_LABEL), len(WECHAT_BOT_TYPE_LABEL),
+                              len(BG_SUBAGENT_TYPE_LABEL), len(AGENT_SKILL_TYPE_LABEL), len(CRON_TASK_TYPE_LABEL),
+                              len(SYS_REMINDER_TYPE_LABEL), len(AGENT_REASON_TYPE_LABEL), len(AGENT_CHAT_TYPE_LABEL),
+                              len(TOOL_CALL_TYPE_LABEL), len(TOOL_RESULT_TYPE_LABEL), len(UNKNOWN_TYPE_LABEL))
+USER_PROMPT_FIXED_PREFIX: str = "(Shift+Tab: New line, Esc: Discard draft)"
 USER_PROMPT_PREFIX_LIST: list[str] = [  # toggle in agent_configs -> RANDOM_PROGRESS_TITLE
     "Type, and behold the breath of silica",
     "Whisper your command into the chips",
@@ -107,8 +125,8 @@ LLM_REQUEST_FAIL_TITLE: str = "LLM request failed"
 AGENT_CONSOLE_ICON: str = "✦"
 MAJOR_COLOR1: str = "#FF9FF3"  # bright major color
 MAJOR_COLOR2: str = "#54A0FF"  # common major color
-PROGRESS_BAR_FULL: str = "█"  # █ ■
-PROGRESS_BAR_EMPTY: str = "░"  # ░ □
+PROGRESS_BAR_FULL: str = "█"
+PROGRESS_BAR_EMPTY: str = "░"
 PROGRESS_DISPLAY_REFRESH_RATE: int = 30
 TUI_USER_COMMENT_COLOR: str = "#A6CEEF"
 OPTIONS_TO_SELECT_PREFIX: str = "❯ "
@@ -133,6 +151,20 @@ INSERT_TUI_CURSOR_PERIOD: float = 1
 INSERT_LISTEN_SLEEP_TIME_MS: int = 20
 INSERT_LIVE_CHECK_GAP_MS: int = 20  # faster refresh gap when the input insert bar is active
 LLM_REQUEST_SPINNER: str = "dots2"
+MSG_THUMB_BAR: str = "█"
+SYSTEM_PROMPT_THUMB_COLOR: str = "bright_black"
+USER_INPUT_THUMB_COLOR: str = "#FF9FF3"
+WECHAT_BOT_THUMB_COLOR: str = "#FF75EE"
+BG_SUBAGENT_THUMB_COLOR: str = "#FF02DF"
+AGENT_SKILL_THUMB_COLOR: str = "#E600C9"
+CRON_TASK_THUMB_COLOR: str = "#A80093"
+SYS_REMINDER_THUMB_COLOR: str = "#800070"
+AGENT_REASON_THUMB_COLOR: str = "#54A0FF"
+AGENT_CHAT_THUMB_COLOR: str = "#0067E6"
+TOOL_CALL_THUMB_COLOR: str = "#F5A742"
+TOOL_RESULT_THUMB_COLOR: str = "#693F05"
+UNKNOWN_MSG_THUMB_BAR: str = "░"
+UNKNOWN_THUMB_COLOR: str = "bright_black"
 
 """Message Display"""
 REASONING_COLOR: str = MAJOR_COLOR2
@@ -339,7 +371,7 @@ SUBAGENT_ERROR_ICON: str = "✗"
 SUBAGENT_COLOR_START: str = "#202020"
 SUBAGENT_COLOR_END: str = "#808080"
 SUBAGENT_COLOR_GRADIENT: int = 128
-SUBAGENT_COLOR_PERIOD: float = 4
+SUBAGENT_COLOR_PERIOD: float = 4.0
 SUBAGENT_TOOL_DISPLAY_MAX_LEN: int = 120
 
 """Ask User Question"""

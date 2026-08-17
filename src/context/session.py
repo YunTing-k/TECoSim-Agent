@@ -25,6 +25,8 @@ Revision:
 2026.6.13      Yu Huang      2.3      Bugfix: session list displays N/A instead of -0.0K when token data unavailable
 2026.6.29      Yu Huang      2.4      Add session title info when removing sessions
 2026.7.23      Yu Huang      2.5      Add launch support in arbitrary path
+2026.8.15      Yu Huang      2.6      Key binding support of undo, discard for user prompt input
+2026.8.17      Yu Huang      2.7      Add CLI command support of session fork
 
 Details:
 ---------
@@ -137,8 +139,8 @@ def cmd_lexer(cmd_in: str, cmd_object: BuiltinCommands) -> tuple[str, list[str]]
     return BUILTIN_UNKNOWN, cmd_args
 
 
-def multiline_bindings() -> KeyBindings:
-    """key bindings for multi-line input"""
+def prompt_bindings() -> KeyBindings:
+    """key bindings for prompt session"""
     kb = KeyBindings()
 
     @kb.add(Keys.Enter)
@@ -152,6 +154,18 @@ def multiline_bindings() -> KeyBindings:
         """Shift+Tab inset new line"""
         event.current_buffer.insert_text('\n')
 
+    @kb.add(Keys.ControlZ)
+    def _(event):
+        """Ctrl+Z undo"""
+        event.current_buffer.undo()
+
+    @kb.add(Keys.Escape)
+    def _(event):
+        """Esc discard draft"""
+        buffer = event.current_buffer
+        buffer.text = ""
+        buffer.cursor_position = 0
+
     return kb
 
 
@@ -163,7 +177,7 @@ def get_prompt_session(path: str, cmd_object: BuiltinCommands) -> PromptSession:
         history=FileHistory(os.path.join(path, USER_HISTORY_NAME)),
         auto_suggest=AutoSuggestFromHistory(),
         mouse_support=False,
-        key_bindings=multiline_bindings(),
+        key_bindings=prompt_bindings(),
         multiline=True,
         show_frame=True,
         cursor=cursor_shapes.CursorShape.BLINKING_UNDERLINE,
@@ -243,6 +257,8 @@ def session_entry_cli(args: Namespace, console: Console):
     """session operations"""
     if args.session_action == 'list':
         session_list_cli(console)
+    elif args.session_action == 'fork':
+        session_fork_cli(args, console)
     elif args.session_action == 'remove':
         session_remove_cli(args, console)
     else:
@@ -297,6 +313,50 @@ def session_list_cli(console: Console):
 
     console.print(Panel.fit(cmd_str, title=title, title_align="left",
                             padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+
+
+def session_fork_cli(args: Namespace, console: Console):
+    """fork a session"""
+    try:
+        """check target session"""
+        uuid_src_obj = uuid.UUID(str(args.uuid))
+        uuid_src_str = uuid_src_obj.__str__()
+        src_dir = str(AGENT_PATH / SESSION_PATH / uuid_src_str)
+        if not os.path.exists(src_dir):
+            sys_log.error(f"Session directory {src_dir} does not exist")
+            console.print(f"Session directory {src_dir} does not exist", style="bold red")
+            return
+
+        """copy session"""
+        uuid_dst_obj = uuid.uuid4()
+        uuid_dst_str = uuid_dst_obj.__str__()
+        dst_dir = str(AGENT_PATH / SESSION_PATH / uuid_dst_str)
+        shutil.copytree(src_dir, dst_dir)
+        sys_log.debug(f"Session {uuid_src_str} copy done")
+        console.print(f"Session [{MAJOR_COLOR2}]{uuid_src_str}[/{MAJOR_COLOR2}] copy done")
+
+        """update forked session's title"""
+        context_file = os.path.join(dst_dir, CONTEXT_NAME)
+        with open(context_file, 'r', encoding='utf-8') as f:
+            context = json.load(f)
+        if context.get("session_title"):
+            session_title: str = context["session_title"]
+            if not session_title.endswith(FORKED_SESSION_PREFIX):
+                session_title = session_title + " " + FORKED_SESSION_PREFIX
+                context["session_title"] = session_title
+        else:
+            session_title: str = UNKNOWN_SESSION_TITLE + " " + FORKED_SESSION_PREFIX
+            context["session_title"] = session_title
+        with open(context_file, 'w', encoding='utf-8') as f:
+            json.dump(context, f, indent=2, ensure_ascii=False)
+        sys_log.debug(f"Forked session's title is updated as {session_title}")
+        console.print(f"[{MAJOR_COLOR2}]Forked session[/{MAJOR_COLOR2}]'s title is updated as [{MAJOR_COLOR2}]{session_title}[/{MAJOR_COLOR2}]")
+
+        sys_log.debug(f"Session {uuid_src_str} is forked to {uuid_dst_str} successfully")
+        console.print(f"Session [{MAJOR_COLOR2}]{uuid_src_str}[/{MAJOR_COLOR2}] is forked to [{MAJOR_COLOR2}]{uuid_dst_str}[/{MAJOR_COLOR2}] successfully")
+    except Exception as e:
+        sys_log.error(f"Fork session failed with error: {e}")
+        console.print(f"Fork session failed with error: {e}", style="bold red")
 
 
 def session_remove_cli(args: Namespace, console: Console):
