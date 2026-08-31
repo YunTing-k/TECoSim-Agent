@@ -25,6 +25,7 @@ Revision:
 2026.7.23      Yu Huang      2.2      Add launch support in arbitrary path
 2026.7.26      Yu Huang      2.3      Support of dumping webfetch caches to file
 2026.7.31      Yu Huang      2.4      Support of configuring LLM's top_p
+2026.8.24      Yu Huang      2.5      Support of image content read-in
 
 Details:
 ---------
@@ -543,14 +544,14 @@ class SubAgent:
                 if user_addon is not None:
                     self.ctx.messages.append({
                         "role": "user",
-                        "content": json.dumps(user_addon, ensure_ascii=False),
+                        "content": tool_def.format_user_addon_content(user_addon),
                     })
 
         if self.ctx.api_configs.get(f"{self.model_type.upper()}_MODEL_DEEPSEEK_SUPPORT"):
             for addon in user_addons:
                 self.ctx.messages.append({
                     "role": "user",
-                    "content": json.dumps(addon, ensure_ascii=False),
+                    "content": tool_def.format_user_addon_content(addon),
                 })
 
         self.ctx.tool_results_prompts += len(tool_calls)

@@ -52,6 +52,8 @@ Revision:
 2026.8.6       Yu Huang      4.6      Support of hiding reasoning contents when resuming session
 2026.8.15      Yu Huang      4.7      Support of messages thumbnail displays in builtin command /context
 2026.8.17      Yu Huang      4.8      Simplify the system prompts
+2026.8.24      Yu Huang      4.9      Support of image content read-in
+2026.8.27      Yu Huang      5.0      Modify the reasoning content style and add constants of strong & em style of Markdown rendering
 
 Details:
 ---------
@@ -356,6 +358,9 @@ _SYSTEM_REMINDER_STR = _SYSTEM_REMINDER_STR.append(" is inserted, content is not
 _SKILL_STR = Text(f"{SKILL_ICON}", style=f"{MAJOR_COLOR1}")
 _SKILL_STR = _SKILL_STR.append(" Agent skill", style=f"{MAJOR_COLOR1}")
 _SKILL_STR = _SKILL_STR.append(" is invoked, content is not displayed", style=f"bright_black")
+_MULTIMODAL_STR = Text(f"{CONTENT_ICON}", style=f"{MAJOR_COLOR1}")
+_MULTIMODAL_STR = _MULTIMODAL_STR.append(" Multimodal content", style=f"{MAJOR_COLOR1}")
+_MULTIMODAL_STR = _MULTIMODAL_STR.append(" is loaded in context, content is not displayed", style=f"bright_black")
 _CRON_STR = Text(f"{CRON_ICON}", style=f"{MAJOR_COLOR1}")
 _CRON_STR = _CRON_STR.append(" Cron tasks", style=f"{MAJOR_COLOR1}")
 _CRON_STR = _CRON_STR.append(" are invoked, content is not displayed", style=f"bright_black")
@@ -532,6 +537,9 @@ def get_msg_type(msg: dict[str, Any]) -> MsgType | list[MsgType]:
     if msg["role"] == "system":
         return MsgType.SYSTEM_PROMPT
     elif msg["role"] == "user":
+        """multimodal content (e.g. image_url) user message"""
+        if not isinstance(msg["content"], str):
+            return MsgType.USER_INPUT
         """WeChat bot"""
         if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
             return MsgType.WECHAT_BOT
@@ -595,6 +603,11 @@ def get_msg_stats(messages: list[dict[str, Any]]) -> tuple[dict[MsgType, int], l
             stats[MsgType.SYSTEM_PROMPT] += 1
             stats_list.append(MsgType.SYSTEM_PROMPT)
         elif msg["role"] == "user":
+            """multimodal content (e.g. image_url) user message"""
+            if not isinstance(msg["content"], str):
+                stats[MsgType.USER_INPUT] += 1
+                stats_list.append(MsgType.USER_INPUT)
+                continue
             """WeChat bot"""
             if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
                 stats[MsgType.WECHAT_BOT] += 1
@@ -677,6 +690,10 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
             if msg["role"] == "system":
                 continue
             elif msg["role"] == "user":
+                """multimodal content"""
+                if not isinstance(msg["content"], str):
+                    console.print(Panel(_MULTIMODAL_STR, box=rich.box.SQUARE))
+                    continue
                 """WeChat bot"""
                 if (WECHAT_PROMPT_START_LABEL in msg["content"]) and (WECHAT_PROMPT_END_LABEL in msg["content"]):
                     console.print(get_msg_render_strip(
@@ -726,7 +743,8 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                             "**(This is the response of a retrieved background subagent)** \n\n", as_md))
                     continue
                 """user input"""
-                console.print(get_user_history_render(msg["content"], user_history_as_md))
+                if isinstance(msg["content"], str):
+                    console.print(get_user_history_render(msg["content"], user_history_as_md))
             elif msg["role"] == "assistant":
                 """display reasoning"""
                 assistant_reasoning = get_reasoning(msg)
@@ -739,7 +757,7 @@ def print_messages(messages: list[dict[str, Any]], ctx: AgentContext, console: C
                     if show_reason:
                         if as_md:
                             t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                                      ReasonMD("{Think}: " + assistant_reasoning))
+                                      ReasonMD("**{Think}**: " + assistant_reasoning))
                         else:
                             t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
                                       Text("{Think}: " + assistant_reasoning, style=REASON_STYLE))
@@ -1183,7 +1201,7 @@ def get_block_render(collected_reasoning: str | None, collected_content: str | N
         if show_reason:
             if as_md:
                 t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-                          ReasonMD("{Think}: " + collected_reasoning))
+                          ReasonMD("**{Think}**: " + collected_reasoning))
             else:
                 t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
                           Text("{Think}: " + collected_reasoning, style=REASON_STYLE))
@@ -1251,7 +1269,7 @@ def get_stream_render(collected_reasoning: str | None, collected_content: str | 
                 reason_display = collected_reasoning
 
             if as_md:
-                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("{Think}: " + reason_display))
+                t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), ReasonMD("**{Think}**: " + reason_display))
             else:
                 t.add_row(Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE), Text("{Think}: " + reason_display, style=REASON_STYLE))
         else:

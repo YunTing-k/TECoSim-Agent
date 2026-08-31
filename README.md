@@ -131,7 +131,7 @@ You must set your LLM API endpoint and key:
 >
 > **⚠️ Security Advisory** — The agent can execute arbitrary system commands via `bash`. Risk detection is not infallible. Run in a sandbox (Docker/VM/isolated server) with least-privilege account; use `/readonlyAdd` to protect critical paths.
 
-**ripgrep** — `grep_file` 工具依赖 ripgrep（`rg`）。安装：`winget install BurntSushi.ripgrep`（Win）/ `sudo apt install ripgrep`（Linux）/ `brew install ripgrep`（macOS）。或在 `agent_configs.json` 中设 `RIPGREP_PATH`。
+**ripgrep** — `grep_file` 工具依赖 ripgrep（`rg`）。安装：`winget install BurntSushi.ripgrep.MSVC`（Win）/ `sudo apt install ripgrep`（Linux）/ `brew install ripgrep`（macOS）。或在 `agent_configs.json` 中设 `RIPGREP_PATH`。
 **ripgrep** — the `grep_file` tool requires ripgrep (`rg`). Install via your package manager, or set `RIPGREP_PATH` in `agent_configs.json`.
 
 `DDGS`：无需 API Key，[`Exa`](https://exa.ai/)、[`Tavily`](https://www.tavily.com/)、[`Linkup`](https://www.linkup.so/)：需注册账号获取 API Key 后填入 `WEB_SEARCH_API_KEY` /
@@ -164,6 +164,7 @@ TECoSimAgent.exe -r <UUID>                 # 恢复指定会话 / Resume a sessi
 TECoSimAgent.exe -wc                       # 启用微信机器人模式 / Enable WeChat Bot mode
 TECoSimAgent.exe --override_prompts        # 覆盖默认系统提示词 / Override default system prompts
 TECoSimAgent.exe --notools                 # 禁用工具 / Disable agent tools
+TECoSimAgent.exe --nosimtools              # 禁用TECoSim仿真工具 / Disable TECoSim simulation tools
 TECoSimAgent.exe --nocrons                 # 禁用定时任务 / Disable cron tasks
 TECoSimAgent.exe --noskills                # 禁用技能 / Disable skills
 TECoSimAgent.exe --nomcps                  # 禁用MCP / Disable MCPs
@@ -177,6 +178,7 @@ python -m src.main -r <UUID>               # 恢复指定会话 / Resume a sessi
 python -m src.main -wc                     # 启用微信机器人模式 / Enable WeChat Bot mode
 python -m src.main --override_prompts      # 覆盖默认系统提示词 / Override default system prompts
 python -m src.main --notools               # 禁用工具 / Disable agent tools
+python -m src.main --nosimtools            # 禁用TECoSim仿真工具 / Disable TECoSim simulation tools
 python -m src.main --nocrons               # 禁用定时任务 / Disable cron tasks
 python -m src.main --noskills              # 禁用技能 / Disable skills
 python -m src.main --nomcps                # 禁用MCP / Disable MCPs
@@ -228,9 +230,11 @@ All commands start with `/` in the agent interaction interface:
 | `/runList` | 查询仿真运行记录 / Query simulation run records |
 | `/context` | 查看 Token 用量与上下文统计 / View token usage and context stats |
 | `/regen` | 从最后一条用户输入后重新生成回复 / Regenerate the latest round after user's last input |
+| `/rewind` | 丢弃最后一轮回复，并将用户上一条输入回填到输入框重新编辑 / Discard the last round of response and re-edit user's last input in the prompt |
 | `/pop <COUNT>` | 弹出最近 N 条消息（仅限高级用户，可能破坏上下文）/ Pop latest N messages (advanced only, may damage context) |
 | `/freadList` | 查看所有已读文件 / View all read files |
 | `/webCacheList` | 查看缓存的 URL / View cached URLs |
+| `/wechatCDNList` | 查看微信机器人 CDN 媒体统计（图片/视频/语音/文件）/ View WeChat bot CDN media stats (image/video/voice/file) |
 | `/sessionList` | 查看所有会话 / View all sessions |
 | `/sessionRemove <UUID>` | 删除指定会话 / Remove a session |
 | `/sessionFork` | 将当前会话分叉为新会话（新 UUID）/ Fork current session as a new session with new UUID |
@@ -406,7 +410,9 @@ TECoSimAgent/
 │       └── agent_listen.py      # 监听TUI（cron/后台Agent/任务/微信监控）/ Listening TUI for cron, background agents, tasks, WeChat
 ├── config/
 │   ├── api_configs.json         # API 连接配置 / API connection configuration
-│   └── agent_configs.json       # Agent 运行参数 / Agent runtime parameters
+│   ├── agent_configs.json       # Agent 运行参数 / Agent runtime parameters
+│   ├── override_prompts.json    # 覆盖式系统提示词 / Override system prompts
+│   └── wechat_bot_cred.json     # 微信登录凭证（自动生成）/ WeChat login credentials (auto-generated)
 ├── skills/                      # 技能定义（每个技能一个子文件夹）/ Skill definitions
 ├── mcps/
 │   ├── mcps_configs.json        # MCP 服务器配置 / MCP server configuration

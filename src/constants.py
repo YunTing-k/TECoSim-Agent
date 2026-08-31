@@ -17,6 +17,8 @@ Revision:
 2026.7.23      Yu Huang      1.5      Classify constants into groups & Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      1.6      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.15      Yu Huang      1.7      Support of messages thumbnail displays in builtin command /context
+2026.8.24      Yu Huang      1.8      Support of image content read-in
+2026.8.27      Yu Huang      1.9      Modify the reasoning content style and add constants of strong & em style of Markdown rendering
 
 Details:
 ---------
@@ -31,7 +33,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 9
+TECOSIM_AGENT_UPDATE_VERSION: int = 10
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -128,6 +130,7 @@ MAJOR_COLOR2: str = "#54A0FF"  # common major color
 PROGRESS_BAR_FULL: str = "█"
 PROGRESS_BAR_EMPTY: str = "░"
 PROGRESS_DISPLAY_REFRESH_RATE: int = 30
+USAGE_BAR_ENTRY_COLOR: str = "#767676"
 TUI_USER_COMMENT_COLOR: str = "#A6CEEF"
 OPTIONS_TO_SELECT_PREFIX: str = "❯ "
 OPTIONS_UN_SELECT_PREFIX: str = "  "
@@ -167,9 +170,13 @@ UNKNOWN_MSG_THUMB_BAR: str = "░"
 UNKNOWN_THUMB_COLOR: str = "bright_black"
 
 """Message Display"""
-REASONING_COLOR: str = MAJOR_COLOR2
+REASONING_COLOR: str = "#797979"
 REASON_STYLE: str = f"italic {REASONING_COLOR}"
+REASON_ICON: str = "⟡"
+REASON_ICON_SYLTE: str = f"bold {MAJOR_COLOR2}"
 CONTENT_STYLE: str = "none"
+CONTENT_ICON: str = "●"
+CONTENT_ICON_SYLTE: str = f"bold {MAJOR_COLOR1}"
 MARKDOWN_TABLE_COLOR: str = MAJOR_COLOR2
 MARKDOWN_TABLE_HEADER_STYLE: str = f"bold {MAJOR_COLOR2}"
 MARKDOWN_LIST_BULLET_COLOR: str = "#FF9FF3"
@@ -179,6 +186,8 @@ MARKDOWN_BLOCKQUOTE_STYLE: str = "italic #696969"
 MARKDOWN_LINK_COLOR: str = "#F5A742"
 MARKDOWN_HR_COLOR: str = "#696969"
 MARKDOWN_IMAGE_STYLE: str = "#F5A742"
+MARKDOWN_STRONG_STYLE: str = f"bold {MAJOR_COLOR2}"
+MARKDOWN_EM_STYLE: str = f"italic"
 MARKDOWN_H1_STYLE: str = f"bold underline #FF9FF3"
 MARKDOWN_H2_STYLE: str = f"bold #FF9FF3"
 MARKDOWN_H3_STYLE: str = f"#FF9FF3"
@@ -188,10 +197,6 @@ MARKDOWN_H6_STYLE: str = f"italic #FFD9FA"
 STREAM_DISPLAY_REFRESH_RATE: int = 20
 STREAM_DISPLAY_MAX_REASON_LINE: int = 8
 STREAM_DISPLAY_MAX_CONTENT_LINE: int = 16
-REASON_ICON: str = "⟡"
-REASON_ICON_SYLTE: str = f"bold {MAJOR_COLOR2}"
-CONTENT_ICON: str = "●"
-CONTENT_ICON_SYLTE: str = f"bold {MAJOR_COLOR1}"
 MESSAGE_PRINT_MARGIN: int = 4
 MESSAGE_COLOR_GRADIENT: int = 128
 MESSAGE_COLOR_PERIOD: float = 1.75
@@ -273,6 +278,7 @@ TOOL_NAME_BASH: str = "bash"
 TOOL_NAME_GLOB_FILE: str = "glob_file"
 TOOL_NAME_GREP_FILE: str = "grep_file"
 TOOL_NAME_READ_FILE: str = "read_file"
+TOOL_NAME_READ_IMAGE: str = "read_image"
 TOOL_NAME_WRITE_FILE: str = "write_file"
 TOOL_NAME_EDIT_FILE: str = "edit_file"
 TOOL_NAME_SKILL: str = "skill"

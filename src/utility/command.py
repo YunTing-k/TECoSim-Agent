@@ -33,6 +33,8 @@ Revision:
 2026.7.23      Yu Huang      3.0      Revise the entries' names and add received WeChat message count entry in /context
 2026.8.15      Yu Huang      3.1      Support of messages thumbnail displays in builtin command /context
 2026.8.17      Yu Huang      3.2      Add builtin commands of /regen /pop /sessionFork
+2026.8.26      Yu Huang      3.3      Add builtin commands of /rewind
+2026.8.31      Yu Huang      3.4      Add number format with unit of K/M/B(G)/T % Add builtin command /wechatCDNList
 
 Details:
 ---------
@@ -52,9 +54,11 @@ from rich.console import Console
 from rich.text import Text
 from rich.panel import Panel
 from src.utility import ui_info, basic_utils
+from src.utility.basic_utils import format_number, format_bin_number
 from src.context.prompt import get_msg_type, get_msg_stats, MsgType, MsgThumbColorLut, MsgThumbBarLut
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard, TaskStatus
+from src.tool.wechat_support import CachedMedia
 from src.tool import summarize_support
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.agent.agent_types import AgentStatus
@@ -150,30 +154,30 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append("Session UUID: ", style=f"white")
     cmd_str.append(f"{ctx.session_uuid}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total input tokens of this session: ", style=f"white")
-    cmd_str.append(f"{ctx.total_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.total_input_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total output tokens of this session: ", style=f"white")
-    cmd_str.append(f"{ctx.total_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.total_output_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total uncached tokens of this session: ", style=f"white")
-    cmd_str.append(f"{ctx.total_uncached_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.total_uncached_tokens)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", uncached: ", style=f"white")
     cmd_str.append(f"{uncached_rate:.3f} %", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(", cached: ", style=f"white")
     cmd_str.append(f"{100 - uncached_rate:.3f} %\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Total tokens consumption of this session: ", style=f"white")
-    cmd_str.append(f"{ctx.total_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.total_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Last round input tokens of this session (main agent): ", style=f"white")
-    cmd_str.append(f"{ctx.last_input_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.last_input_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Last round output tokens of this session (main agent): ", style=f"white")
-    cmd_str.append(f"{ctx.last_output_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.last_output_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" ├─Last round total tokens of this session (main agent): ", style=f"white")
-    cmd_str.append(f"{ctx.last_tokens / 1000} K\n", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(f"{format_number(ctx.last_tokens)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" └─Last round's context usage of this session (main agent): ", style=f"white")
     cmd_str.append(f"{ctx_usage:.3f} %", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(", ", style=f"white")
-    cmd_str.append(f"{ctx.last_input_tokens / 1000} K", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(" (", style=f"white")
+    cmd_str.append(f"{format_number(ctx.last_input_tokens)}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(" out of ", style=f"white")
-    cmd_str.append(f"{ctx.api_configs["MAIN_MODEL_CONTEXT"] / 1000} K", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(" were used\n", style=f"white")
+    cmd_str.append(f"{format_number(ctx.api_configs["MAIN_MODEL_CONTEXT"])}", style=f"bold {MAJOR_COLOR2}")
+    cmd_str.append(" were used)\n", style=f"white")
 
     cmd_str.append("\nTotal LLM API request num: ", style=f"white")
     cmd_str.append(f"{ctx.total_llm_requests}\n", style=f"bold {MAJOR_COLOR2}")
@@ -220,8 +224,10 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
         else:
             thumb_mode = "full_bar"
 
+    cmd_str.append("\nTotal subagent spawned: ", style=f"white")
+    cmd_str.append(f"{len(ctx.agent_list)}\n", style=f"bold {MAJOR_COLOR2}")
     if thumb_mode == "text":
-        cmd_str.append("\nMain Agent Context Statistics:\n", style=f"white")
+        cmd_str.append("Main Agent Context Statistics:\n", style=f"white")
         cmd_str.append(f" ├─{MsgType.SYSTEM_PROMPT.value}: ", style=f"white")
         cmd_str.append(f"{stats[MsgType.SYSTEM_PROMPT]}\n", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f" ├─{MsgType.USER_INPUT.value}: ", style=f"white")
@@ -294,7 +300,7 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
                     if k not in prefix_list:
                         stats_strs[k].append(f"{" " * thumb_len}", style="white")
 
-        cmd_str.append("\nMain Agent Context Statistics", style=f"white")
+        cmd_str.append("Main Agent Context Statistics", style=f"white")
         if thumb_mode == "full_bar":
             cmd_str.append(f" (showing all context with ", style=f"white")
             cmd_str.append(f"{len(stats_list)}", style=f"{MAJOR_COLOR2}")
@@ -343,11 +349,14 @@ def cmd_context(args: list[str], ctx: AgentContext, board: Scoreboard, console: 
     cmd_str.append("\nAvailable skills amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.skills)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Available skills: ", style=f"white")
-    for skill in ctx.skills:
-        cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
-        cmd_str.append(f", ", style=f"white")
-    if cmd_str.plain.endswith(", "):
-        cmd_str.right_crop(2)
+    if len(ctx.skills) == 0:
+        cmd_str.append("(None)", style=f"bold {MAJOR_COLOR2}")
+    else:
+        for skill in ctx.skills:
+            cmd_str.append(f"{skill["name"]}", style=f"bold {MAJOR_COLOR2}")
+            cmd_str.append(f", ", style=f"white")
+        if cmd_str.plain.endswith(", "):
+            cmd_str.right_crop(2)
     cmd_str.append("\nLoaded skills amount: ", style=f"white")
     cmd_str.append(f"{len(ctx.loaded_skills)}\n", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append("Loaded skills: ", style=f"white")
@@ -412,6 +421,40 @@ def cmd_regen(args: list[str], ctx: AgentContext, board: Scoreboard, console: Co
                       f"may show unexpected behaviour")
         console.print(f"Try to regenerate latest round failed with error: {e}. But the regenerate is still in progress, "
                       f"may show unexpected behaviour", style="bold red")
+
+
+def cmd_rewind(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """rewind latest round's input"""
+    try:
+        """find the last user's input"""
+        if_find = False
+        total_msg = len(ctx.messages)
+        last_msg_idx = -1
+        for msg_idx, msg in enumerate(reversed(ctx.messages)):
+            if get_msg_type(msg) == MsgType.USER_INPUT or get_msg_type(msg) == MsgType.WECHAT_BOT:
+                last_msg_idx = len(ctx.messages) - 1 - msg_idx
+                if_find = True
+                break
+        """prune messages"""
+        if not if_find:
+            sys_log.debug(f"There is no user input for re-edit")
+            console.print(f"There is no user input for re-edit", style="bright_black")
+        else:
+            user_input = ctx.messages[last_msg_idx]["content"]
+            if not isinstance(user_input, str):
+                raise RuntimeError("Last user input is not a string")
+            ctx.in_thread.draft = user_input
+            sys_log.debug(f"Draft is set to last user's input")
+            console.print(f"Draft is set to last user's input", style="bright_black")
+            del ctx.messages[last_msg_idx:]
+            sys_log.debug(f"Pop {total_msg - len(ctx.messages)} messages from index {last_msg_idx}, kept {len(ctx.messages)} "
+                          f"messages, re-edit done")
+            console.print(f"Pop [{MAJOR_COLOR2}]{total_msg - len(ctx.messages)}[/{MAJOR_COLOR2}] messages from index "
+                          f"[{MAJOR_COLOR2}]{last_msg_idx}[/{MAJOR_COLOR2}], kept [{MAJOR_COLOR2}]{len(ctx.messages)}[/{MAJOR_COLOR2}] "
+                          f"messages, re-edit done")
+    except Exception as e:
+        sys_log.error(f"Try to re-edit latest round's user input failed with error: {e}")
+        console.print(f"Try to re-edit latest round's user input failed with error: {e}", style="bold red")
 
 
 def cmd_pop(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
@@ -802,6 +845,124 @@ def cmd_web_cache_list(args: list[str], ctx: AgentContext, board: Scoreboard, co
     console.print("\n")
 
 
+def cmd_wechat_cdn_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
+    """query CDN status of WeChat bot"""
+    title = f"WeChat Bot CDN Status"
+    cmd_str = Text()
+
+    try:
+        cache_json_path = AGENT_PATH / SESSION_PATH / ctx.session_uuid / WECHAT_MEDIA_CACHE_NAME
+        cdn_cache: dict[str, CachedMedia] = {}
+        if cache_json_path.exists():
+            data = json.loads(cache_json_path.read_text("utf-8"))
+            for key, entry in data.items():
+                path = Path(entry["local_path"])
+                if not path.exists():
+                    continue
+                cdn_cache[key] = CachedMedia(
+                    type=entry.get("type", "file"),
+                    local_path=entry["local_path"],
+                    file_name=entry.get("file_name"),
+                    text=entry.get("text"),
+                    duration_ms=entry.get("duration_ms"),
+                    size=entry.get("size"),
+                )
+            sys_log.info(f"WeChat CDN log with {len(cdn_cache)} entries loaded")
+    except Exception as e:
+        sys_log.error(f"Failed to load session {ctx.session_uuid}'s WeChat CDN log with error: {e}")
+        console.print(f"Failed to load session {ctx.session_uuid}'s WeChat CDN log with error: {e}", style="bold red")
+        cdn_cache: dict[str, CachedMedia] = {}
+
+    if len(cdn_cache) == 0:
+        cmd_str.append(f"(Status of WeChat Bot CDN is not available)", style=f"white")
+    else:
+        img_count = 0
+        img_downloaded = 0
+        img_downloaded_size = 0
+        video_count = 0
+        video_downloaded = 0
+        video_downloaded_size = 0
+        voice_count = 0
+        voice_ms = 0
+        voice_downloaded = 0
+        voice_downloaded_size = 0
+        voice_downloaded_ms = 0
+        file_count = 0
+        file_downloaded = 0
+        file_downloaded_size = 0
+        total_downloaded_size = 0
+        for item in cdn_cache.values():
+            if item.type == "image":
+                img_count += 1
+                if item.local_path is not None:
+                    img_downloaded += 1
+                if item.size is not None:
+                    img_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "video":
+                video_count += 1
+                if item.local_path is not None:
+                    video_downloaded += 1
+                if item.size is not None:
+                    video_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "voice":
+                voice_count += 1
+                if item.duration_ms:
+                    voice_ms += item.duration_ms
+                if item.local_path is not None:
+                    voice_downloaded += 1
+                    if item.duration_ms:
+                        voice_downloaded_ms += item.duration_ms
+                if item.size is not None:
+                    voice_downloaded_size += item.size
+                    total_downloaded_size += item.size
+            if item.type == "file":
+                file_count += 1
+                if item.local_path is not None:
+                    file_downloaded += 1
+                if item.size is not None:
+                    file_downloaded_size += item.size
+                    total_downloaded_size += item.size
+        cmd_str.append(f"Total image received: ", style=f"white")
+        cmd_str.append(f"{img_count}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Saved image: ", style=f"white")
+        cmd_str.append(f"{img_downloaded}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" └─Saved images' storage: ", style=f"white")
+        cmd_str.append(f"{format_bin_number(img_downloaded_size)}B\n\n", style=f"bold {MAJOR_COLOR2}")
+
+        cmd_str.append(f"Total video received: ", style=f"white")
+        cmd_str.append(f"{video_count}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Saved video: ", style=f"white")
+        cmd_str.append(f"{video_downloaded}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" └─Saved videos' storage: ", style=f"white")
+        cmd_str.append(f"{format_bin_number(video_downloaded_size)}B\n\n", style=f"bold {MAJOR_COLOR2}")
+
+        cmd_str.append(f"Total voice received: ", style=f"white")
+        cmd_str.append(f"{voice_count}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Total duration: ", style=f"white")
+        cmd_str.append(f"{voice_ms / 1000:.2f} s\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Saved voice count: ", style=f"white")
+        cmd_str.append(f"{voice_downloaded}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Saved voice duration: ", style=f"white")
+        cmd_str.append(f"{voice_downloaded_ms / 1000:.2f} s\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" └─Saved voices' storage: ", style=f"white")
+        cmd_str.append(f"{format_bin_number(voice_downloaded_size)}B\n\n", style=f"bold {MAJOR_COLOR2}")
+
+        cmd_str.append(f"Total file received: ", style=f"white")
+        cmd_str.append(f"{file_count}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" ├─Saved file: ", style=f"white")
+        cmd_str.append(f"{file_downloaded}\n", style=f"bold {MAJOR_COLOR2}")
+        cmd_str.append(f" └─Saved files' storage: ", style=f"white")
+        cmd_str.append(f"{format_bin_number(file_downloaded_size)}B\n\n", style=f"bold {MAJOR_COLOR2}")
+
+        cmd_str.append(f"Total storage of saved media: ", style=f"white")
+        cmd_str.append(f"{format_bin_number(total_downloaded_size)}B", style=f"bold {MAJOR_COLOR2}")
+
+    console.print(Panel.fit(cmd_str, title=title, title_align="left", padding=(1, 2, 1, 2), border_style=MAJOR_COLOR2))
+    console.print("\n")
+
+
 def cmd_mcp_list(args: list[str], ctx: AgentContext, board: Scoreboard, console: Console):
     """query MCPs info"""
     mcps_configs = ctx.mcps_configs
@@ -922,7 +1083,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
     cmd_str.append(f"{current_uuid}", style=f"bold {MAJOR_COLOR2}")
     cmd_str.append(f"  Title: ", style=f"white")
     cmd_str.append(f"{ctx.session_title}", style=f"bold {MAJOR_COLOR2}")
-    cmd_str.append(f" ({ctx.last_input_tokens / 1000.0:.1f} K tokens) ", style=f"bright_black")
+    cmd_str.append(f" ({format_number(ctx.last_input_tokens, 1)} tokens) ", style=f"bright_black")
     cmd_str.append(f"({AGENT_CONSOLE_ICON} Current)\n", style=f"bold {MAJOR_COLOR1}")
     for session in sessions_list:
         cmd_str.append(f"UUID: ", style=f"white")
@@ -930,7 +1091,7 @@ def cmd_session_list(args: list[str], ctx: AgentContext, board: Scoreboard, cons
         cmd_str.append(f"  Title: ", style=f"white")
         cmd_str.append(f"{session["title"]}", style=f"bold {MAJOR_COLOR2}")
         if isinstance(session["input_tokens"], int):
-            cmd_str.append(f" ({session["input_tokens"] / 1000.0:.1f} K tokens)\n", style=f"bright_black")
+            cmd_str.append(f" ({format_number(session["input_tokens"], 1)} tokens)\n", style=f"bright_black")
         else:
             cmd_str.append(f" (N/A K tokens)\n", style=f"bright_black")
     if cmd_str.plain.endswith("\n"):
@@ -1275,12 +1436,12 @@ def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, consol
             cmd_str.append(f"{p.step}", style=f"bright_black")
             cmd_str.append(f", tool calls: ", style="white")
             cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
-            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f", elapsed: ", style="white")
             cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
             cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
-            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"{format_number(p.input_tokens, 1)}", style=f"bright_black")
             cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
-            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"{format_number(p.output_tokens, 1)}", style=f"bright_black")
             if p.current_tool:
                 cmd_str.append(f"\n └─current on: ", style="white")
                 cmd_str.append(f"{p.current_tool}", style="bright_black")
@@ -1306,12 +1467,12 @@ def cmd_agent_list(args: list[str], ctx: AgentContext, board: Scoreboard, consol
             cmd_str.append(f"{p.step}", style=f"bright_black")
             cmd_str.append(f", tool calls: ", style="white")
             cmd_str.append(f"{p.tool_calls_done}", style=f"bright_black")
-            cmd_str.append(f", elpased: ", style="white")
+            cmd_str.append(f", elapsed: ", style="white")
             cmd_str.append(f"{basic_utils.format_time_sec(p.elapsed_s)}", style=f"bright_black")
             cmd_str.append(f"  ↑ ", style=f"{MAJOR_COLOR2}")
-            cmd_str.append(f"{p.input_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"{format_number(p.input_tokens, 1)}", style=f"bright_black")
             cmd_str.append(f"  ↓ ", style=f"{MAJOR_COLOR1}")
-            cmd_str.append(f"{p.output_tokens / 1000:.1f} K", style=f"bright_black")
+            cmd_str.append(f"{format_number(p.output_tokens, 1)}", style=f"bright_black")
             if p.current_tool:
                 cmd_str.append(f"\n └─last on: ", style="white")
                 cmd_str.append(f"{p.current_tool}\n", style="bright_black")
@@ -1332,6 +1493,7 @@ class BuiltinCommands:
             "runList": (cmd_run_list, "query all runs", "query the list of all launched simulation"),
             "context": (cmd_context, "query context info", "query the token usage, message and API requests statistics"),
             "regen": (cmd_regen, "regenerate latest round", "regenerate the latest round of response after user's last input"),
+            "rewind": (cmd_rewind, "rewind and edit latest input", "discard last round of response and edit user's input"),
             "pop": (cmd_pop, "pop latest messages (advanced only)",
                     "pop the latest messages with the given input count (only for advanced user, may damage the context)"),
             "freadList": (cmd_fread_list, "query all read files", "query the absolute paths of all read files"),
@@ -1348,6 +1510,7 @@ class BuiltinCommands:
                                                "query all the loaded skills with name and full description"),
             "webCacheList": (cmd_web_cache_list, "query all web fetch caches",
                                                "query all the cached URLs with timestamp and truncated content in web fetch tool"),
+            "wechatCDNList": (cmd_wechat_cdn_list, "query CDN status of WeChat bot", "query the voice, media and file statics of WeChat bot CDN"),
             "mcpList": (cmd_mcp_list, "query MCPs info", "query information of all available MCPs"),
             "updateTitle": (cmd_update_title, "update session title with LLM", "update title of this session with history immediately by LLM"),
             "setTitle": (cmd_set_title, "set session title manually", "manually set title of this session by user"),

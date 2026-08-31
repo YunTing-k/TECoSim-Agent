@@ -27,6 +27,7 @@ Revision:
 2026.7.23      Yu Huang      2.4      Add launch support in arbitrary path
 2026.7.31      Yu Huang      2.5      Support of configuring LLM's top_p
 2026.8.1-2     Yu Huang      2.6      Support of inserting messages during LLM request, LLM response display and tool calls
+2026.8.31      Yu Huang      2.7      Add number format with unit of K/M/B(G)/T
 
 Details:
 ---------
@@ -44,6 +45,7 @@ from rich.console import Console
 from typing import Callable, Any
 from src.utility.ui_info import loading_spinner
 from src.utility.input_thread import InputThread
+from src.utility.basic_utils import format_number
 from src.context.agent_context import RequestLLMCancelled
 from src.context.agent_context import AgentContext
 from src.constants import *
@@ -59,8 +61,12 @@ def config_client(ctx: AgentContext, console: Console) -> OpenAI:
             base_url=ctx.api_configs["API_URL"]
         )
         sys_log.debug("Config client with API configs done")
-        console.print(f"Main LLM model: [{MAJOR_COLOR2}]{ctx.api_configs["MAIN_MODEL_NAME"]}[/{MAJOR_COLOR2}]")
-        console.print(f"Fast LLM model: [{MAJOR_COLOR2}]{ctx.api_configs["FAST_MODEL_NAME"]}[/{MAJOR_COLOR2}]")
+        console.print(f" ├─ Main model  : [{MAJOR_COLOR2}]{ctx.api_configs["MAIN_MODEL_NAME"]}[/{MAJOR_COLOR2}]"
+                      f" ([{MAJOR_COLOR2}]{format_number(ctx.api_configs["MAIN_MODEL_CONTEXT"])}[/{MAJOR_COLOR2}])")
+        console.print(f" ├─ Medium model: [{MAJOR_COLOR2}]{ctx.api_configs["MEDIUM_MODEL_NAME"]}[/{MAJOR_COLOR2}]"
+                      f" ([{MAJOR_COLOR2}]{format_number(ctx.api_configs["MEDIUM_MODEL_CONTEXT"])}[/{MAJOR_COLOR2}])")
+        console.print(f" └─ Fast model  : [{MAJOR_COLOR2}]{ctx.api_configs["FAST_MODEL_NAME"]}[/{MAJOR_COLOR2}]"
+                      f" ([{MAJOR_COLOR2}]{format_number(ctx.api_configs["FAST_MODEL_CONTEXT"])}[/{MAJOR_COLOR2}])")
         return client
     except Exception as e:
         sys_log.error(f"Failed to config client with API configs with error: {e}")

@@ -12,6 +12,7 @@ Revision:
 2026.6.12      Yu Huang      1.0      First implementation
 2026.7.15-16   Yu Huang      1.1      Add WeChat bot interaction support
 2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status
+2026.8.24      Yu Huang      1.3      Support of image content read-in
 
 Details:
 ---------
@@ -82,6 +83,8 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
         elif func_name == TOOL_NAME_READ_FILE:
             results = tool_def.read_file(arguments, ctx, progress)
             user_addon = None
+        elif func_name == TOOL_NAME_READ_IMAGE:
+            results, user_addon = tool_def.read_image(arguments, ctx, progress)
         elif func_name == TOOL_NAME_WRITE_FILE:
             results = tool_def.write_file(arguments, ctx, progress)
             user_addon = None

@@ -37,6 +37,7 @@ Revision:
 2026.7.23      Yu Huang      3.5      Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      3.6      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.15      Yu Huang      3.7      Fix: key listening race condition between subagent spawning and input thread
+2026.8.24      Yu Huang      3.8      Support of image content read-in
 
 Details:
 ---------
@@ -60,6 +61,7 @@ from src.utility.ui_info import (
 from src.context.agent_context import AgentContext
 from src.tool.scoreboard import Scoreboard
 from src.tool.tool_dispatch import ToolCallsCancelled, if_tool_mute, call_tools
+from src.tool.tool_def import format_user_addon_content
 from src.tool.ask_permission import ask_permission_tui
 from src.utility.input_thread import InputThread
 from src.utility.basic_utils import truncate_tool_result
@@ -184,7 +186,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
             if user_addon is not None:
                 messages.append({
                     "role": "user",
-                    "content": json.dumps(user_addon, ensure_ascii=False),
+                    "content": format_user_addon_content(user_addon),
                 })
 
     if bg_agent_calls or fg_agent_calls:
@@ -228,7 +230,7 @@ def execute_tools(tool_calls: list[dict[str, Any]], ctx: AgentContext, board: Sc
         for addon in user_addons:
             messages.append({
                 "role": "user",
-                "content": json.dumps(addon, ensure_ascii=False),
+                "content": format_user_addon_content(addon),
             })
     return messages
 

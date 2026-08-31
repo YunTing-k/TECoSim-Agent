@@ -17,6 +17,7 @@ Revision:
 2026.7.28      Yu Huang      1.4      Simplify the preview of WeChat message when there is only one message
 2026.8.4       Yu Huang      1.5      WeChat bot can get more information of AgentContext with wechat_status tool & Fix
                                       the bug of duration and text is not saved into WeChat CDN cache files
+2026.8.31      Yu Huang      1.6      Add number format with unit of K/M/B(G)/T
 
 Details:
 ---------
@@ -55,7 +56,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from src.wechat import WeChatBot, IncomingMessage, CDNMedia
 from src.wechat.protocol import CDN_BASE_URL
-from src.utility.basic_utils import flush_terminal_input
+from src.utility.basic_utils import flush_terminal_input, format_number, format_bin_number
 from src.constants import *
 
 sys_log = logging.getLogger("logger")
@@ -528,12 +529,12 @@ class WeChatBridge:
                     file_downloaded_size += item.size
                     total_downloaded_size += item.size
         cdn_str = (f"WeChat CDN Status:\n"
-                   f" - Image: `{img_count}` received (`{img_downloaded}` downloaded, `{img_downloaded_size / (1024 * 1024):.3f}` MB)\n"
-                   f" - Video: `{video_count}` received (`{video_downloaded}` downloaded, `{video_downloaded_size / (1024 * 1024):.3f}` MB)\n"
-                   f" - Voice: `{voice_count}` received, total `{voice_ms / 1000:.2f}` s, "
-                   f"(`{voice_downloaded}` downloaded, `{voice_downloaded_size / (1024 * 1024):.3f}` MB, `{voice_downloaded_ms / 1000:.2f}` s)\n"
-                   f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{file_downloaded_size / (1024 * 1024):.3f}` MB)\n"
-                   f" - Total Downloaded: `{total_downloaded_size / (1024 * 1024):.3f}` MB\n\n")
+                   f" - Image: `{img_count}` received (`{img_downloaded}` downloaded, `{format_bin_number(img_downloaded_size)}B`)\n"
+                   f" - Video: `{video_count}` received (`{video_downloaded}` downloaded, `{format_bin_number(video_downloaded_size)}B`)\n"
+                   f" - Voice: `{voice_count}` received, total `{voice_ms / 1000:.2f} s`, "
+                   f"(`{voice_downloaded}` downloaded, `{format_bin_number(voice_downloaded_size)}B`, `{voice_downloaded_ms / 1000:.2f} s`)\n"
+                   f" - File: `{file_count}` received (`{file_downloaded}` downloaded, `{format_bin_number(file_downloaded_size)}B`)\n"
+                   f" - Total Downloaded: `{format_bin_number(total_downloaded_size)}B`\n\n")
         return cdn_str
 
 
@@ -551,10 +552,10 @@ class WeChatBridge:
                       f" - Queued Messages: `{self._msg_queue.qsize()}`\n\n"
                       f"{self.get_cdn_status()}"
                       f"Total LLM Requests: `{ctx_status.get("total_llm_requests", UNKNOWN_LABEL)}`\n"
-                      f" - Total Tokens: `{ctx_status.get("total_tokens", 0) / 1000:.1f}` K\n"
-                      f" - Input Tokens: `{ctx_status.get("total_input_tokens", 0) / 1000:.1f}` K\n"
-                      f" - Uncached Tokens: `{ctx_status.get("total_uncached_tokens", 0) / 1000:.1f}` K\n"
-                      f" - Output Tokens: `{ctx_status.get("total_output_tokens", 0) / 1000:.1f}` K\n\n"
+                      f" - Total Tokens: `{format_number(ctx_status.get("total_tokens", 0), 1)}`\n"
+                      f" - Input Tokens: `{format_number(ctx_status.get("total_input_tokens", 0), 1)}`\n"
+                      f" - Uncached Tokens: `{format_number(ctx_status.get("total_uncached_tokens", 0), 1)}`\n"
+                      f" - Output Tokens: `{format_number(ctx_status.get("total_output_tokens", 0), 1)}`\n\n"
                       f"LLM Context Status:\n"
                       f" - System Prompts: `{ctx_status.get("system_prompts", UNKNOWN_LABEL)}`\n"
                       f" - Tool Schema Prompts: `{ctx_status.get("tools_prompts", UNKNOWN_LABEL)}`\n"
@@ -563,9 +564,9 @@ class WeChatBridge:
                       f" - Assistant Reasoning Prompts: `{ctx_status.get("reasoning_prompts", UNKNOWN_LABEL)}`\n"
                       f" - Assistant Tool Calls: `{ctx_status.get("tool_calls_prompts", UNKNOWN_LABEL)}`\n"
                       f" - Tool Results Prompts: `{ctx_status.get("tool_results_prompts", UNKNOWN_LABEL)}`\n"
-                      f" - Last Round Total Tokens: `{ctx_status.get("last_tokens", 0) / 1000:.1f}` K\n"
-                      f" - Last Round Input Tokens: `{ctx_status.get("last_input_tokens", 0) / 1000:.1f}` K\n"
-                      f" - Last Round Output Tokens: `{ctx_status.get("last_output_tokens", 0) / 1000:.1f}` K")
+                      f" - Last Round Total Tokens: `{format_number(ctx_status.get("last_tokens", 0), 1)}`\n"
+                      f" - Last Round Input Tokens: `{format_number(ctx_status.get("last_input_tokens", 0), 1)}`\n"
+                      f" - Last Round Output Tokens: `{format_number(ctx_status.get("last_output_tokens", 0), 1)}`")
         return status_str
 
     # [WeChat Bot internal API] Internal bot loop

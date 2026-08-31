@@ -20,40 +20,11 @@ import argparse
 from rich.console import Console
 from rich.table import Table as RichTable
 from rich.text import Text
-from rich.theme import Theme
 from rich.live import Live
-from rich.layout import Layout
-from src.utility.basic_utils import ReasonMD, ContentMD
-from src.constants import (
-    REASON_ICON, REASON_ICON_SYLTE,
-    CONTENT_ICON, CONTENT_ICON_SYLTE,
-    MESSAGE_PRINT_MARGIN, MARKDOWN_TABLE_HEADER_STYLE,
-    MARKDOWN_LIST_BULLET_COLOR, MARKDOWN_LIST_NUMBER_COLOR,
-    MARKDOWN_INLINE_CODE_COLOR, MARKDOWN_BLOCKQUOTE_STYLE,
-    MARKDOWN_LINK_COLOR, MARKDOWN_HR_COLOR,
-    MARKDOWN_IMAGE_STYLE,
-    MARKDOWN_H1_STYLE, MARKDOWN_H2_STYLE,
-    MARKDOWN_H3_STYLE, MARKDOWN_H4_STYLE, MARKDOWN_H5_STYLE, MARKDOWN_H6_STYLE,
-    AGENT_CONSOLE_ICON, STREAM_DISPLAY_MAX_REASON_LINE,
-    STREAM_DISPLAY_MAX_CONTENT_LINE,
-)
+from src.utility.basic_utils import ReasonMD, ContentMD, get_console
+from src.constants import *
 
-console = Console(theme=Theme({
-    "markdown.h1": MARKDOWN_H1_STYLE,
-    "markdown.h2": MARKDOWN_H2_STYLE,
-    "markdown.h3": MARKDOWN_H3_STYLE,
-    "markdown.h4": MARKDOWN_H4_STYLE,
-    "markdown.h5": MARKDOWN_H5_STYLE,
-    "markdown.h6": MARKDOWN_H6_STYLE,
-    "markdown.code": MARKDOWN_INLINE_CODE_COLOR,
-    "markdown.item.bullet": MARKDOWN_LIST_BULLET_COLOR,
-    "markdown.item.number": MARKDOWN_LIST_NUMBER_COLOR,
-    "markdown.table.header": MARKDOWN_TABLE_HEADER_STYLE,
-    "markdown.block_quote": MARKDOWN_BLOCKQUOTE_STYLE,
-    "markdown.link_url": MARKDOWN_LINK_COLOR,
-    "markdown.hr": MARKDOWN_HR_COLOR,
-    "markdown.image": MARKDOWN_IMAGE_STYLE,
-}))
+console = get_console()
 
 
 # sample Markdown content (realistic docs with h1-h4 + all elements)
@@ -113,7 +84,7 @@ REASONING = (
 CONTENT = (
     "# Project Structure Report\n\n"
     "This is the inspection result for the requested directory. The analysis\n"
-    "covers file types, sizes, permissions, and potential issues discovered\n"
+    "covers **file types**, **sizes**, **permissions**, and **potential issues** discovered\n"
     "during the automated scan.\n\n"
     "## Overview\n\n"
     "The directory contains **42 files** across *8 subdirectories*. Most files\n"
@@ -203,7 +174,7 @@ def render_block(reasoning: str | None, content: str | None):
         t_reason.add_column(vertical="top", overflow="fold")
         t_reason.add_row(
             Text(f" {REASON_ICON} ", style=REASON_ICON_SYLTE),
-            ReasonMD("{Think}: " + reasoning))
+            ReasonMD("**{Think}**: " + reasoning))
         console.print(t_reason)
         console.print()
 

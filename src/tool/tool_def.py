@@ -68,6 +68,8 @@ Revision:
 2026.8.4       Yu Huang      5.7      WeChat bot can get more information of AgentContext via wechat_status tool
 2026.8.15      Yu Huang      5.8      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
 2026.8.17      Yu Huang      5.9      bash tool uses spawn_managed_proc/kill_tree: whole-tree kill on timeout/cancel (Windows Job Object / POSIX killpg)
+2026.8.24      Yu Huang      6.0      Support of image content read-in
+2026.8.25      Yu Huang      6.1      Add no simulation tools support
 
 Details:
 ---------
@@ -78,6 +80,9 @@ tracking; (3) simulation tools - check simulator, init/copy/query design, launch
 (4) MCP tool dispatch via TOOL_NAME_CALL_MCP. Each tool handles permission TUI, logging, and error reporting.
 """
 import os
+import base64
+import json
+import mimetypes
 import subprocess
 import logging
 import tempfile
@@ -132,6 +137,7 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         tool_glob_file_def(),
         tool_grep_file_def(),
         tool_read_file_def(),
+        tool_read_image_def(),
         tool_write_file_def(),
         tool_edit_file_def(),
         tool_skill_def(),
@@ -145,14 +151,15 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
             tool_wechat_send_file_def()
         ])
     # simulation tools
-    prompts.extend([
-        tool_check_simulator_def(),
-        tool_init_design_def(),
-        tool_query_design_def(),
-        tool_launch_sim_def(),
-        tool_query_run_def(),
-        tool_read_log_def()
-    ])
+    if not ctx.args.nosimtools:
+        prompts.extend([
+            tool_check_simulator_def(),
+            tool_init_design_def(),
+            tool_query_design_def(),
+            tool_launch_sim_def(),
+            tool_query_run_def(),
+            tool_read_log_def()
+        ])
     # MCP tools
     prompts.extend(ctx.mcp_router.reg_tools)
 
@@ -1594,6 +1601,115 @@ def read_file(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) 
         sys_log.error(f"{func_name} {FAIL_LABEL}: Read file failed with error: {e}")
         progress.console.print(f"{func_name} {FAIL_LABEL}: Read file failed with error: {e}", style="bold red")
         return {"status": FAIL_LABEL, "info": f"Read file failed with error: {e}"}
+
+
+def tool_read_image_def() -> dict[str, Any]:
+    """tool definition of reading the image (TOOL_NAME_READ_IMAGE)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_READ_IMAGE,
+            "description": "Read an image (e.g., JPEG, PNG, GIF, WebP) from the local filesystem with given path\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the image (must be absolute, not relative).",
+                    },
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def read_image(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> tuple[dict[str, Any], dict[str, str] | None]:
+    """tool realization of reading the image with arguments and AgentContext"""
+    func_name = TOOL_NAME_READ_IMAGE
+    try:
+        """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, func_name,
+                                         f"path: {arguments["path"]}",
+                                         progress.console)
+        resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
+        if not token:
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}, None
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}, None
+            else:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}, None
+        """check the path"""
+        img_path = arguments["path"]
+        if not os.path.exists(img_path):
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Path: {img_path} doesn't exist.")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Path: {img_path} doesn't exist", style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Path: {img_path} doesn't exist"}, None
+        """check the image"""
+        if not os.path.isfile(img_path):
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Path: {img_path} is not a file")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: Path: {img_path} is not a file", style="bold red")
+            return {"status": FAIL_LABEL, "info": f"Path: {img_path} is not a file"}, None
+        """check the image size"""
+        img_size = os.path.getsize(img_path)
+        if img_size > ctx.agent_configs["READ_IMAGE_MB_LIMIT"] * 1024 * 1024:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"File {img_path} is larger than {ctx.agent_configs["READ_IMAGE_MB_LIMIT"]} MB, please modify "
+                          f"the `READ_IMAGE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}")
+            progress.console.print(f"{func_name} {FAIL_LABEL}: "
+                                   f"File {img_path} is larger than {ctx.agent_configs["READ_IMAGE_MB_LIMIT"]} MB, please "
+                                   f"modify the `READ_IMAGE_MB_LIMIT` in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}", style="bold red")
+            return {"status": FAIL_LABEL,
+                    "info": f"File is larger than {ctx.agent_configs["READ_IMAGE_MB_LIMIT"]} MB, user should modify the `READ_IMAGE_MB_LIMIT` "
+                            f"in {str(AGENT_PATH / AGENT_CONFIGS_PATH)}"}, None
+        """read the image"""
+        with open(img_path, 'rb') as f:
+            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+        """infer mime type of the image (fallback to image/jpg if unknown)"""
+        mime_type, _ = mimetypes.guess_type(img_path)
+        if mime_type is None or not mime_type.startswith("image/"):
+            mime_type = "image/jpg"
+        addon = {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{image_b64}",
+                                  "detail": ctx.agent_configs["READ_IMAGE_DETAIL"]},
+        }
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Path: {img_path}")
+        progress.console.print(f"{func_name} {SUCCESS_LABEL}: Path: {img_path}", style="bright_black")
+        return {"status": SUCCESS_LABEL,
+                "info": "Image content is loaded in context"}, addon
+    except PermissionError as e:
+        sys_log.error(f"{func_name} {DENIED_LABEL}: Can't read image, permission denied: {e}")
+        progress.console.print(f"{func_name} {DENIED_LABEL}: Can't read image, permission denied: {e}", style="bold red")
+        return {"status": DENIED_LABEL, "info": f"Can't read image, permission denied: {e}"}, None
+    except OSError as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Can't read image, OS error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Can't read image, OS error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Can't read image, OS error: {e}"}, None
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Read image failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Read image failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Read image failed with error: {e}"}, None
+
+
+# multimodal content blocks (e.g. {"type": "image_url", "image_url": {...}}) must be sent as a list
+# content array per OpenAI-compatible vision spec; legacy addons (e.g. skill payload dict) keep the
+# original json-string format to preserve existing display / resume / stats behavior.
+_MULTIMODAL_ADDON_TYPES: tuple[str, ...] = ("image_url", "text")
+
+
+def format_user_addon_content(addon: dict[str, Any] | str) -> str | list[dict[str, Any]]:
+    """format a tool returned user addon into message content (supported by OpenAI-compatible APIs)"""
+    if isinstance(addon, dict) and isinstance(addon.get("type", ""), str) and \
+            addon.get("type") in _MULTIMODAL_ADDON_TYPES:
+        return [addon]
+    return json.dumps(addon, ensure_ascii=False)
 
 
 def tool_write_file_def() -> dict[str, Any]:

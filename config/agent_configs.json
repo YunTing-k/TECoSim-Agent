@@ -23,6 +23,8 @@
 
     "READ_FILE_MB_LIMIT": 100,
     "READ_FILE_LLM_KB_LIMIT": 500,
+    "READ_IMAGE_MB_LIMIT": 32,
+    "READ_IMAGE_DETAIL": "auto",
 
     "SKILL_DESC_CHAR_LIMIT": 250,
 
@@ -78,6 +80,7 @@
         "TOOL_NAME_GLOB_FILE": true,
         "TOOL_NAME_GREP_FILE": true,
         "TOOL_NAME_READ_FILE": true,
+        "TOOL_NAME_READ_IMAGE": true,
         "TOOL_NAME_WRITE_FILE": false,
         "TOOL_NAME_EDIT_FILE": false,
         "TOOL_NAME_SKILL": true,

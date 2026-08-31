@@ -242,6 +242,7 @@ if __name__ == '__main__':
 
     """set the terminal title"""
     ui_info.set_terminal_title(ctx.session_title)
+    console.print("")
 
     """core agent loop"""
     while True:

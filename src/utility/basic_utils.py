@@ -28,6 +28,8 @@ Revision:
 2026.7.25      Yu Huang      2.4      Fix: prevent truncation in Markdown table with overflow="fold"
 2026.8.2       Yu Huang      2.5      Remove get_webfetch_str from web_support.py to basic_utils.py
 2026.8.15      Yu Huang      2.6      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
+2026.8.27      Yu Huang      2.7      Modify the reasoning content style and add constants of strong & em style of Markdown rendering
+2026.8.31      Yu Huang      2.8      Add number format with unit of K/M/B(G)/T
 
 Details:
 ---------
@@ -217,6 +219,8 @@ class ContentMD(_NoLeadingNewlinesMD):
 def get_console() -> Console:
     """Create a Console with Markdown theme styles applied."""
     return Console(theme=Theme({
+        "markdown.strong": MARKDOWN_STRONG_STYLE,
+        "markdown.em": MARKDOWN_EM_STYLE,
         "markdown.h1": MARKDOWN_H1_STYLE,
         "markdown.h2": MARKDOWN_H2_STYLE,
         "markdown.h3": MARKDOWN_H3_STYLE,
@@ -230,7 +234,7 @@ def get_console() -> Console:
         "markdown.block_quote": MARKDOWN_BLOCKQUOTE_STYLE,
         "markdown.link_url": MARKDOWN_LINK_COLOR,
         "markdown.hr": MARKDOWN_HR_COLOR,
-        "markdown.image": MARKDOWN_IMAGE_STYLE,
+        "markdown.image": MARKDOWN_IMAGE_STYLE
     }))
 
 
@@ -407,7 +411,7 @@ def grad_color_hex_list(start_hex: str, end_hex: str, gradient: int, grad_type: 
 
 
 def format_time_sec(seconds: float | int) -> str:
-    """format seconds into string"""
+    """format seconds into string (days, hours, minutes, seconds)"""
     total_seconds = int(seconds)
 
     days = total_seconds // 86400
@@ -425,6 +429,32 @@ def format_time_sec(seconds: float | int) -> str:
     if seconds > 0 or not parts:
         parts.append(f"{seconds}s")
     return " ".join(parts)
+
+
+def format_number(number: float | int, digit: int = 3) -> str:
+    """format numbers into string (K/M/B/T)"""
+    units = ["", "K", "M", "B", "T"]
+    unit_index = 0
+    if number < 1000:
+        return str(number)
+    while number >= 1000 and unit_index < len(units) - 1:
+        number /= 1000
+        unit_index += 1
+    formatted = f"{number:.{digit}f}".rstrip('0').rstrip('.')
+    return f"{formatted} {units[unit_index]}"
+
+
+def format_bin_number(bin_number: float | int, digit: int = 3) -> str:
+    """format bin number into string (K/M/G/T)"""
+    units = ["", "K", "M", "G", "T"]
+    unit_index = 0
+    if bin_number < 1024:
+        return str(bin_number)
+    while bin_number >= 1024 and unit_index < len(units) - 1:
+        bin_number /= 1024
+        unit_index += 1
+    formatted = f"{bin_number:.{digit}f}".rstrip('0').rstrip('.')
+    return f"{formatted} {units[unit_index]}"
 
 
 def load_configs(configs_path: str, name: str, console: Console):

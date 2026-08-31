@@ -71,6 +71,7 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 > - `BASH_PATH` — 指向非 GNU Bash 的 shell 会使风险检测失效，**所有命令都会绕过权限控制** / Points to non-GNU Bash; risk evaluation becomes ineffective and **all commands bypass permission controls**
 > - `RIPGREP_PATH` — 指向无效路径会使 `grep_file` 全文搜索工具完全不可用 / Invalid path disables the `grep_file` full-text search tool completely
 > - `READ_FILE_MB_LIMIT` — 设置过大可能导致 OOM 或 LLM 上下文溢出 / Excessively large value may cause OOM or LLM context overflow
+> - `READ_IMAGE_MB_LIMIT` — 设置过大会使内联图片（base64）请求体超过 API 上限（如 DeepSeek 多模态接口 48 MiB），请求直接失败 / Excessively large value may push the inline-image (base64) request body beyond the API limit (e.g. 48 MiB for DeepSeek multimodal), failing the request
 > - `WECHAT_BOT_PERMISSION` — 微信模式下**直接覆盖主 Agent 全部权限**，误操作可能导致微信用户获得危险工具访问权 / **Fully overrides main agent permissions** in WeChat mode; misconfiguration may grant dangerous tool access to WeChat users
 > - `MAIN_TOOL_RESULT_CHAR_LIMIT` — 设置过大会将大量工具结果注入 LLM 上下文，快速耗尽上下文窗口 / Excessively large value injects massive tool result into LLM context, quickly exhausting the context window
 > - `READ_FILE_LLM_KB_LIMIT` — 设置过大会将超大文件内容直接注入 LLM 上下文，单次读取即可撑爆 / Excessively large value injects huge file content directly into LLM context; a single read may overflow
@@ -99,6 +100,8 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 | `RESUME_DISPLAY_SYS_REMINDER` | 恢复会话时是否显示系统提醒内容 / Whether to display system reminder content when resuming session                                                                                                                                                                        |
 | `READ_FILE_MB_LIMIT` | 文件读取大小限制（MB），超限文件将被拒绝读取 / File read size limit (MB); larger files will be rejected                                                                                                                                                                        |
 | `READ_FILE_LLM_KB_LIMIT` | 文件读取 LLM 上下文限制（KB），超出部分将被截断 / File read LLM context limit (KB); exceeding part will be truncated                                                                                                                                                          |
+| `READ_IMAGE_MB_LIMIT` | 图像读取大小限制（MB），超限图像将被拒绝读取——防止内联图片请求体超过 API 上限 / Image read size limit (MB); larger images are rejected to keep the inline-image request body within API limits                                                                                                                                                              |
+| `READ_IMAGE_DETAIL` | 图像注入 LLM 上下文的细节级别：`"auto"`、`"low"` 或 `"high"`（OpenAI 兼容 vision 参数）/ Detail level of images injected into LLM context: `"auto"`, `"low"` or `"high"` (OpenAI-compatible vision param)                                                                        |
 | `WEB_FETCH_TIMEOUT_S` | 网页获取超时（秒）/ Web fetch timeout (seconds)                                                                                                                                                                                                                    |
 | `WEB_FETCH_CACHE_TIME_S` | 网页获取 URL 缓存时间（秒）/ Web fetch URL cache time (seconds)                                                                                                                                                                                                      |
 | `WEB_FETCH_USER_AGENT` | 网页获取使用的 User-Agent 头 / User-Agent header used for web fetching                                                                                                                                                                                            |
@@ -174,6 +177,12 @@ The `agent_configs.json` file defines the agent's core runtime behavior:
 >   **Soft limit**. When read content exceeds this size, the tool truncates and returns TRUNCATED status (not an error), with partial content still available
 > - 两个限制同时生效，`MB_LIMIT` 先检查文件大小，`LLM_KB_LIMIT` 后检查读取内容大小
 >   Both limits apply: `MB_LIMIT` checks total file size first, `LLM_KB_LIMIT` checks read content size second
+>
+> **图像读取限制 | Image Read Limits**
+> - `READ_IMAGE_MB_LIMIT`：**硬限制**。超过此大小的图像被**拒绝读取**。图像以 base64 data URL 内联注入上下文并计入请求体大小（如 DeepSeek 多模态接口上限 48 MiB；>32 MiB 需 Files API，本实现未支持）
+>   **Hard limit**. Larger images are **rejected**. Images are injected inline as base64 data URLs and count toward the request body size (e.g. DeepSeek multimodal caps at 48 MiB; images >32 MiB require the Files API, not implemented)
+> - `READ_IMAGE_DETAIL`：注入图像的 `detail` 参数（`"auto"` / `"low"` / `"high"`），控制 OpenAI 兼容 vision 接口对图像的采样分辨率
+>   The `detail` param (`"auto"` / `"low"` / `"high"`) of injected images, controlling sampling resolution of OpenAI-compatible vision APIs
 
 > **模型兼容性 | Model Compatibility**
 > - `MAIN_MODEL_DEEPSEEK_SUPPORT` / `MEDIUM_MODEL_DEEPSEEK_SUPPORT` / `FAST_MODEL_DEEPSEEK_SUPPORT`（`api_configs.json`）：分别控制主模型、中阶模型和快速模型的 DeepSeek 格式支持。启用后 Agent 会在对应模型的响应中处理 `thinking` 特殊字段，将其转换为 `reasoning` 格式展示。如果使用非 DeepSeek 模型，建议保持 `false`

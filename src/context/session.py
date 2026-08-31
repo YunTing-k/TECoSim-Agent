@@ -27,6 +27,7 @@ Revision:
 2026.7.23      Yu Huang      2.5      Add launch support in arbitrary path
 2026.8.15      Yu Huang      2.6      Key binding support of undo, discard for user prompt input
 2026.8.17      Yu Huang      2.7      Add CLI command support of session fork
+2026.8.31      Yu Huang      2.8      Add number format with unit of K/M/B(G)/T
 
 Details:
 ---------
@@ -53,6 +54,7 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.console import Console
 from src.utility import basic_utils, ui_info
+from src.utility.basic_utils import format_number
 from src.utility.command import BuiltinCommands, BUILTIN_UNKNOWN
 from src.constants import *
 
@@ -302,7 +304,7 @@ def session_list_cli(console: Console):
     title = f"Available Sessions ({len(sessions_list)})"
     cmd_str = Text()
     for session in sessions_list:
-        token_str = "N/A" if session["input_tokens"] == -1 else f"{session["input_tokens"] / 1000.0:.1f} K tokens"
+        token_str = "N/A" if session["input_tokens"] == -1 else f"{format_number(session["input_tokens"], 1)} tokens"
         cmd_str.append(f"UUID: ", style=f"white")
         cmd_str.append(f"{session["uuid"]}", style=f"bold {MAJOR_COLOR2}")
         cmd_str.append(f"  Title: ", style=f"white")

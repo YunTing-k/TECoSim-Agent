@@ -88,6 +88,7 @@ All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/co
 | `TOOL_NAME_GLOB_FILE` | `glob_file` | 文件通配匹配 / Glob file patterns                                                                 |
 | `TOOL_NAME_GREP_FILE` | `grep_file` | 文件内容搜索 / Search file contents                                                               |
 | `TOOL_NAME_READ_FILE` | `read_file` | 读取文件 / Read file                                                                            |
+| `TOOL_NAME_READ_IMAGE` | `read_image` | 读取图像并以 base64 data URL 注入上下文（多模态）/ Read an image and inject it into context as a base64 data URL (multimodal) |
 | `TOOL_NAME_WRITE_FILE` | `write_file` | 写入文件 / Write file                                                                           |
 | `TOOL_NAME_EDIT_FILE` | `edit_file` | 编辑文件 / Edit file                                                                            |
 | `TOOL_NAME_SKILL` | `skill` | 调用技能 / Invoke a skill                                                                       |
@@ -139,7 +140,8 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 |----------|---------|---------|
 | `MAJOR_COLOR1` | `#FF9FF3`（亮粉 bright pink） | 强调色、内容图标、进度条终点 / Accent, content icon, progress bar end |
 | `MAJOR_COLOR2` | `#54A0FF`（蓝 blue） | 主色调、命令名称、进度条起点 / Primary color, command names, progress bar start |
-| `REASONING_COLOR` | `MAJOR_COLOR2`（#54A0FF） | 推理文本颜色 / Reasoning text color |
+| `USAGE_BAR_ENTRY_COLOR` | `#767676`（灰 grey） | 上下文用量条标签颜色 / Context usage bar label color |
+| `REASONING_COLOR` | `#797979`（灰 grey） | 推理文本颜色 / Reasoning text color |
 | `EDIT_FUZZY_WARN_COLOR` | `MAJOR_COLOR1`（#FF9FF3） | 模糊匹配警告颜色 / Fuzzy match warning color |
 | `EDIT_SUBTLE_COLOR` | `bright_black`（灰 grey） | 精确匹配族回退模式标签 / Subtle label for exact-family fallback modes |
 
@@ -190,7 +192,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 |----------|---------|---------|
 | `REASON_ICON_SYLTE` | `bold #54A0FF` | 推理图标样式 / Reasoning icon style |
 | `CONTENT_ICON_SYLTE` | `bold #FF9FF3` | 内容图标样式 / Content icon style |
-| `REASON_STYLE` | `italic #54A0FF` | 推理文本样式 / Reasoning text style |
+| `REASON_STYLE` | `italic #797979` | 推理文本样式 / Reasoning text style |
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
 | `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Esc: Discard draft)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
@@ -217,6 +219,8 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `MARKDOWN_LINK_COLOR` | `#F5A742` | `markdown.link_url` | 链接文字颜色 / Link text color |
 | `MARKDOWN_HR_COLOR` | `#696969` | `markdown.hr` | 分割线颜色 / Horizontal rule line color |
 | `MARKDOWN_IMAGE_STYLE` | `#F5A742` | `markdown.image` | 图片占位符文字颜色 / Image placeholder text color |
+| `MARKDOWN_STRONG_STYLE` | `bold #54A0FF` | `markdown.strong` | 粗体文字样式 / Bold text style |
+| `MARKDOWN_EM_STYLE` | `italic` | `markdown.em` | 斜体文字样式 / Italic text style |
 
 > **HTML 标签转义**：Rich 的 Markdown 解析器将 `<...>` 视为内联 HTML 并默认移除，导致 LLM 回复中的尖括号内容（如 `<html>`、`<head>`、`<!DOCTYPE>`）被静默丢弃。`_NoLeadingNewlinesMD` 基础类通过正则 `re.split` 分割代码块与正文，仅在代码块**外部**将 `<` / `>` 替换为 `&lt;` / `&gt;` 实体（Rich 会在渲染时解析回原字符），代码块内部（\`\`\`）保持原始符号不变。
 >
@@ -492,7 +496,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `9` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `10` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `AGENT_PATH` | 动态（exe 所在目录或项目根目录）/ Dynamic (exe dir or project root) | Agent 根路径，所有相对路径解析的基础 / Agent root path; base for all relative path resolution |
 | `AGENT_EXECUTE` | `"TECoSim-Agent"` / `"python -m src.main"` | Agent 可执行命令（预构建 exe / 源码运行）/ Agent executable command (pre-built exe / source run) |
@@ -574,7 +578,7 @@ The agent can be started in WeChat bot mode via the `--wechat` CLI argument. The
 | `WECHAT_MEDIA_CACHE_KEY_MAX_LEN` | `8` | CDN 缓存键随机十六进制长度 / Random hex length for CDN cache keys |
 | `WECHAT_BOT_QUOTED_CHAR_MAX` | `1000` | 引用消息的最大文本提取字符数 / Max chars extracted from quoted reply messages |
 | `WECHAT_REPLY_BUDGET_MAX` | `10` | 每轮用户消息的回复预算上限 / Max replies per user message round |
-| `WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT` | `> ℹ️ This is the last messgae during tool call ...` | 预算倒数第2条回复时附加的提示文本（提醒用户发送新消息以重置预算）/ Hint appended to the second-to-last reply during tool calls (prompts user to send a new message to reset budget) |
+| `WECHAT_BOT_LAST_REPLY_DURING_TOOL_CALL_HINT` | `> ℹ️ This is the last message during tool call ...` | 预算倒数第2条回复时附加的提示文本（提醒用户发送新消息以重置预算）/ Hint appended to the second-to-last reply during tool calls (prompts user to send a new message to reset budget) |
 
 ### 预置回复列表 | Preset Reply Lists
 

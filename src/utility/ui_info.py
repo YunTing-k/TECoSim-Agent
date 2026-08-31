@@ -40,6 +40,7 @@ Revision:
 2026.7.23      Yu Huang      3.4      Add launch support in arbitrary path
 2026.8.1-2     Yu Huang      3.5      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.3       Yu Huang      3.6      Hide the insert box when live exits
+2026.8.31      Yu Huang      3.7      Add number format with unit of K/M/B(G)/T
 
 Details:
 ---------
@@ -70,7 +71,8 @@ from src.tool.file_io_support import save_messages
 from src.context.agent_context import AgentContext
 from src.utility.input_thread import InputThread
 from src.tool.scoreboard import Scoreboard, get_tasks_render
-from src.utility.basic_utils import hex_to_rgb, grad_color_hex_list, format_time_sec, create_clean_input, flush_terminal_input
+from src.utility.basic_utils import (
+    hex_to_rgb, grad_color_hex_list, format_time_sec, create_clean_input, flush_terminal_input, format_number)
 from src.agent.agent_types import SubAgentProgress
 from src.constants import *
 
@@ -177,17 +179,17 @@ def usage_bar(ctx: AgentContext, console: Console, length: int = 20, prefix1: st
     progress_str.append(prefix2, style=f"bold {MAJOR_COLOR1}")
 
     bar_str = Text()
-    bar_str.append(f"Main: ", style="bright_black")
+    bar_str.append(f"Main: ", style=f"bold {USAGE_BAR_ENTRY_COLOR}")
     bar_str.append(f"{ctx.api_configs["MAIN_MODEL_NAME"]}", style=f"bold {MAJOR_COLOR2}")
-    bar_str.append(f" Usage: ", style="bright_black")
+    bar_str.append(f" Usage: ", style=f"bold {USAGE_BAR_ENTRY_COLOR}")
     bar_str.append(progress_str)
-    bar_str.append(f" {100 * ratio:.1f} %", style="bright_black")
-    bar_str.append(f" ({input_tokens / 1000.0:.1f} K / {total_context / 1000.0:.1f} K)", style="bright_black")
-    bar_str.append(f" Total: ", style="bright_black")
+    bar_str.append(f" {100 * ratio:.1f} %", style=f"bold {USAGE_BAR_ENTRY_COLOR}")
+    bar_str.append(f" ({format_number(input_tokens, 1)} / {format_number(total_context, 1)})", style=f"{USAGE_BAR_ENTRY_COLOR}")
+    bar_str.append(f" Total: ", style=f"bold {USAGE_BAR_ENTRY_COLOR}")
     bar_str.append(f"↑", style=f"bold {MAJOR_COLOR2}")
-    bar_str.append(f" {total_input_tokens / 1000.0:.1f} K, ", style="bright_black")
+    bar_str.append(f" {format_number(total_input_tokens, 1)}, ", style=f"{USAGE_BAR_ENTRY_COLOR}")
     bar_str.append(f"↓", style=f"bold {MAJOR_COLOR1}")
-    bar_str.append(f" {total_output_tokens / 1000.0:.1f} K", style="bright_black")
+    bar_str.append(f" {format_number(total_output_tokens, 1)}", style=f"{USAGE_BAR_ENTRY_COLOR}")
 
     console.print(bar_str)
 
@@ -251,9 +253,9 @@ def render_subagent_line(p: SubAgentProgress, running_color: str = "") -> Text:
     subject_display = p.subject[:SUBAGENT_SUBJECT_CHAR_LIMIT] if len(p.subject) > SUBAGENT_SUBJECT_CHAR_LIMIT else p.subject
     line.append(f"{subject_display} ", style="bright_black")
     line.append("↑", style=f"bold {MAJOR_COLOR2}")
-    line.append(f" {p.input_tokens / 1000:.1f} K", style=usage_style)
+    line.append(f" {format_number(p.input_tokens, 1)}", style=usage_style)
     line.append(" ↓", style=f"bold {MAJOR_COLOR1}")
-    line.append(f" {p.output_tokens / 1000:.1f} K", style=usage_style)
+    line.append(f" {format_number(p.output_tokens, 1)}", style=usage_style)
     is_ended = sv in (AGENT_DONE_LABEL, AGENT_ERROR_LABEL, AGENT_TIMEOUT_LABEL, AGENT_UNKNOWN_LABEL)
     if is_ended and p.tool_calls_done > 0:
         elapsed = p.elapsed_s if p.elapsed_s > 0 else (time.time() - p.start_time if p.start_time > 0 else 0)

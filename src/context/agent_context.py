@@ -32,6 +32,7 @@ Revision:
 2026.7.26      Yu Huang      3.0      Support of dumping webfetch caches to file & Revise TUI info for session file I/O
 2026.8.1-2     Yu Huang      3.1      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.4       Yu Huang      3.2      Support of tracking the amount of received WeChat messages & Add get_status method
+2026.8.24      Yu Huang      3.3      Support of image content read-in
 
 Details:
 ---------
@@ -127,6 +128,7 @@ PERMISSION_LABEL_TO_NAME_MAP: dict[str, str] = {
     "TOOL_NAME_GLOB_FILE": TOOL_NAME_GLOB_FILE,
     "TOOL_NAME_GREP_FILE": TOOL_NAME_GREP_FILE,
     "TOOL_NAME_READ_FILE": TOOL_NAME_READ_FILE,
+    "TOOL_NAME_READ_IMAGE": TOOL_NAME_READ_IMAGE,
     "TOOL_NAME_WRITE_FILE": TOOL_NAME_WRITE_FILE,
     "TOOL_NAME_EDIT_FILE": TOOL_NAME_EDIT_FILE,
     "TOOL_NAME_SKILL": TOOL_NAME_SKILL,
@@ -229,6 +231,7 @@ class AgentContext:
             TOOL_NAME_GLOB_FILE: False,
             TOOL_NAME_GREP_FILE: False,
             TOOL_NAME_READ_FILE: False,
+            TOOL_NAME_READ_IMAGE: False,
             TOOL_NAME_WRITE_FILE: False,
             TOOL_NAME_EDIT_FILE: False,
             TOOL_NAME_SKILL: False,
