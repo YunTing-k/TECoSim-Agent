@@ -3,7 +3,7 @@
     "API_KEY": "sk-1234",
     "LLM_TIMEOUT_MS": 1000000,
 
-    "MAIN_MODEL_NAME": "dpsko/deepseek-v4-pro",
+    "MAIN_MODEL_NAME": "dpsko/deepseek-flash",
     "MAIN_MODEL_DEEPSEEK_SUPPORT": true,
     "MAIN_MODEL_STREAM": true,
     "MAIN_MODEL_CONTEXT": 1000000,
@@ -13,7 +13,7 @@
     "MAIN_MODEL_REASONING_EFFORT": "max",
     "MAIN_MODEL_MAX_TOKENS": 24576,
 
-    "MEDIUM_MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "MEDIUM_MODEL_NAME": "dpsko/deepseek-flash",
     "MEDIUM_MODEL_DEEPSEEK_SUPPORT": true,
     "MEDIUM_MODEL_CONTEXT": 1000000,
     "MEDIUM_MODEL_TEMPERATURE": 0.3,
@@ -22,7 +22,7 @@
     "MEDIUM_MODEL_REASONING_EFFORT": "high",
     "MEDIUM_MODEL_MAX_TOKENS": 24576,
 
-    "FAST_MODEL_NAME": "dpsko/deepseek-v4-flash",
+    "FAST_MODEL_NAME": "dpsko/deepseek-flash",
     "FAST_MODEL_DEEPSEEK_SUPPORT": true,
     "FAST_MODEL_CONTEXT": 1000000,
     "FAST_MODEL_TEMPERATURE": 0.3,

@@ -346,6 +346,9 @@ The agent integrates full TECoSim simulator workflow management:
 |---------------|------------------|
 | `check_simulator` | 检查仿真器是否可用 / Check if simulator is available |
 | `init_design` | 从默认模板创建新面板设计 / Create a new panel design from default template |
+| `fork_design` | 从已有设计复制出新的设计分支 / Fork a new design branch by copying an existing design |
+| `modify_design` | 修改设计：在同一设计下分配新修订，配置拷入 scratchpad 供编辑 / Modify a design: allocate a new revision under the same design and copy the configs into a scratchpad for editing |
+| `submit_design` | 提交修改修订：校验配置完备性后拷入正式目录并置为就绪 / Submit an editing revision: check config completeness, copy into the formal folder and mark it ready |
 | `query_design` | 查询设计列表与修订历史 / Query design list and revision history |
 | `launch_sim` | 启动仿真运行 / Launch a simulation run |
 | `query_run` | 查询仿真运行记录 / Query simulation run records |
@@ -441,7 +444,7 @@ TECoSimAgent/
 
 ---
 
-## 延伸阅读 | Further Reading
+## 相关文档 | References
 
 - [配置参数参考 | Configuration Reference](./doc/configuration.md) — `api_configs.json` & `agent_configs.json` 完整参数说明 / All parameter descriptions
 - [常量参考 | Constants Reference](./doc/constants_reference.md) — `constants.py` 完整参考：工具名称、Bash风险等级、UI配置等 / Tool names, bash risk levels, UI configs, etc.
@@ -449,10 +452,12 @@ TECoSimAgent/
 - [Rich 开发注意事项 | Rich Development Pitfalls](./doc/rich_pitfalls.md) — 终端 TUI 预览功能开发中遇到的 Rich 库关键问题与解决方案 / Key issues and solutions when developing TUI preview features with the Rich library
 - [微信机器人行为与限制 | WeChat Bot Behavior & Limitations](./doc/wechat_behavior.md) — 微信 SDK 集成中的行为细节、已知限制与处理方法 / Behavioral details, known limitations, and workarounds for the WeChat SDK integration
 
+## 延伸阅读 | Further Reading
 
 - [Shell 命令实现对比 | Shell Command Comparison](./doc/ref/shell_comparison.md) — 五款 Agent 项目（Claude Code · CodeWhale · Codex · OpenCode · deepseek-harness）Bash/Shell 命令实现横向对比 / Horizontal comparison of Bash/Shell command implementation across five agent projects
 - [任务管理机制对比研究 | Task Management Comparison](doc/ref/task_comparison.md) — 主流 coding agent 任务管理机制横向对比与设计参考 / Horizontal comparison of task management across major coding agents
 - [Subagent 架构对比分析 | Subagent Architecture Comparison](doc/ref/subagent_comparison.md) — Claude Code · CodeWhale · Codex · OpenCode Agent 架构深度对比 / In-depth comparison of subagent/task architectures across coding agents
+- [DSH 动态工作流分析 | DSH Dynamic Workflow Mechanism](doc/ref/dsh_workflow.md) — deepseek-harness的动态工作流机制分析 / Analysis of deepseek-harness's dynamic workflow mechanism
 
 ## 致谢 | Acknowledgement
 

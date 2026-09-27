@@ -19,12 +19,13 @@ Revision:
 2026.6.29      Yu Huang      1.7      Multi-select no choice → explicit label; add get_answers_render for answer display
 2026.7.3       Yu Huang      1.8      Bugfix of buffered keyboard press before real TUI interaction
 2026.7.31      Yu Huang      1.9      Revise the displays of user's customize answer
+2026.9.4       Yu Huang      2.0      choose of single-select question will jump to next one
 
 Details:
 ---------
 Interactive multi-question TUI using prompt_toolkit and Rich. Supports single-select and multi-select questions with keyboard
-navigation (←/→ switch question, ↑/↓ select option, Enter choose, Ctrl+Enter confirm). Automatically appends a QUESTION_OTHER_LABEL option
-for custom text input. Returns structured answers with optional user-provided text.
+navigation (←/→ switch question, ↑/↓ select option, Enter choose, Ctrl+Enter confirm). Automatically appends a QUESTION_OTHER_LABEL
+option for custom text input. Returns structured answers with optional user-provided text.
 """
 import time
 import logging
@@ -315,5 +316,7 @@ def ask_user_question_tui(questions: list[dict[str, Any]], console: Console, age
                 options_choices = toggle_options_choice(questions_normalized, active_idx, selected_indices, options_choices)
         if action == "choose":  # choose a none Other label
             options_choices = toggle_options_choice(questions_normalized, active_idx, selected_indices, options_choices)
+            if not questions_normalized[active_idx].get("multi_select"):
+                active_idx = (active_idx + 1) % len(questions_normalized)
         if action == "submit":
             return get_answers(questions_normalized, selected_indices, options_choices, user_cache)

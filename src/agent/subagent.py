@@ -26,12 +26,15 @@ Revision:
 2026.7.26      Yu Huang      2.3      Support of dumping webfetch caches to file
 2026.7.31      Yu Huang      2.4      Support of configuring LLM's top_p
 2026.8.24      Yu Huang      2.5      Support of image content read-in
+2026.9.5       Yu Huang      2.6      Modify prompts of subagent to not use tools in the final round when handoff is text
+2026.9.27      Yu Huang      2.7      Add fork_design/modify_design/submit_design to tool display keys
+2026.9.27      Yu Huang      2.8      Exclude spawn_agent & wechat_send_file from full-tool subagents (worker)
 
 Details:
 ---------
 SubAgent wraps a cloned AgentContext + own Scoreboard to run a mini-agent loop. The loop mimics main.py: LLM request
-(non-streaming) → tool dispatch → append results. On completion or failure, raw data (messages, tokens, tool stats) is auto-dumped.
-SubAgentProgress provides lightweight monitoring for TUI display.
+(non-streaming) → tool dispatch → append results. On completion or failure, raw data (messages, tokens, tool stats) is
+auto-dumped. SubAgentProgress provides lightweight monitoring for TUI display.
 """
 import os
 import json
@@ -78,6 +81,9 @@ _TOOL_DISPLAY_KEYS: dict[str, str] = {
     TOOL_NAME_WEB_SEARCH: "query",
     # simulation tools
     TOOL_NAME_INIT_DESIGN: "subject",
+    TOOL_NAME_FORK_DESIGN: "design_id",
+    TOOL_NAME_MODIFY_DESIGN: "design_id",
+    TOOL_NAME_SUBMIT_DESIGN: "design_id",
     TOOL_NAME_QUERY_DESIGN: "design_id",
     TOOL_NAME_LAUNCH_SIM: "subject",
     TOOL_NAME_QUERY_RUN: "run_id",
@@ -277,10 +283,12 @@ class SubAgent:
             self.ctx.tools = [
                 t for t in self.ctx.tools
                 if t.get("function", {}).get("name", "") not in (
+                    TOOL_NAME_SPAWN_AGENT,  # spawn is handled by the main agent's execute_tools, not by call_tools
                     TOOL_NAME_ASK_QUESTION,
                     TOOL_NAME_CREATE_CRON,
                     TOOL_NAME_QUERY_CRON,
                     TOOL_NAME_REMOVE_CRON,
+                    TOOL_NAME_WECHAT_SEND_FILE,
                 )
             ]
         else:
@@ -310,8 +318,9 @@ class SubAgent:
             f"You are a `{self.subagent_type}` subagent spawned by the main TECoSim agent.\n\n"
             f"Your task: {self.prompt}\n\n"
             f"{board_note}"
-            "Work step by step. Use tools to gather information or make changes. When you are done, provide your final answer "
-            "as plain text (no tool calls). Do not ask the user questions – you are running autonomously.\n"
+            "Work step by step. Use tools to gather information or make changes. In your final round, provide your final answer "
+            f"as plain text (**NOT ANY** tool calls, including task tools such as `{TOOL_NAME_UPDATE_TASK}`). Do not ask the "
+            f"user questions – you are running autonomously.\n"
             "The bash tool uses GNU bash (Git Bash on Windows). Do NOT use PowerShell/cmd.exe commands.\n\n"
             f"Available agent types for reference:\n"
             f"{', '.join(f'{k}: {v}' for k, v in SUPPORTED_TYPES_DESC.items())}"

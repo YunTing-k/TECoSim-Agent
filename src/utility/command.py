@@ -35,6 +35,7 @@ Revision:
 2026.8.17      Yu Huang      3.2      Add builtin commands of /regen /pop /sessionFork
 2026.8.26      Yu Huang      3.3      Add builtin commands of /rewind
 2026.8.31      Yu Huang      3.4      Add number format with unit of K/M/B(G)/T % Add builtin command /wechatCDNList
+2026.9.27      Yu Huang      3.5      Add design status display in /designList & Color the design status in /designList (ready/editing)
 
 Details:
 ---------
@@ -94,6 +95,11 @@ def cmd_design_list(args: list[str], ctx: AgentContext, board: Scoreboard, conso
             cmd_str.append(f"{design["design_rev"]}\n", style=f"{MAJOR_COLOR2}")
             cmd_str.append(f" - Subject: ", style=f"white")
             cmd_str.append(f"{design["subject"]}\n", style=f"{MAJOR_COLOR2}")
+            cmd_str.append(f" - Status: ", style=f"white")
+            if design["status"].value == DESIGN_READY_LABEL:
+                cmd_str.append(f"{design["status"].value}\n", style=DESIGN_READY_COLOR)
+            else:
+                cmd_str.append(f"{design["status"].value}\n", style=DESIGN_EDITING_COLOR)
             cmd_str.append(f" - Description: ", style=f"white")
             cmd_str.append(f"{design["description"]}\n", style=f"bright_black")
             if design["copy_id"] is not None:

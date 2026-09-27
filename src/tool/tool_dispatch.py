@@ -13,6 +13,7 @@ Revision:
 2026.7.15-16   Yu Huang      1.1      Add WeChat bot interaction support
 2026.7.18      Yu Huang      1.2      Add tool of checking WeChat status
 2026.8.24      Yu Huang      1.3      Support of image content read-in
+2026.9.27      Yu Huang      1.4      Add fork_design/modify_design/submit_design tool dispatch
 
 Details:
 ---------
@@ -110,6 +111,15 @@ def call_tools(func_name: str, arguments: dict[str, Any], ctx: AgentContext, boa
             user_addon = None
         elif func_name == TOOL_NAME_INIT_DESIGN:
             results = tool_def.init_design(arguments, ctx, progress)
+            user_addon = None
+        elif func_name == TOOL_NAME_FORK_DESIGN:
+            results = tool_def.fork_design(arguments, ctx, progress)
+            user_addon = None
+        elif func_name == TOOL_NAME_MODIFY_DESIGN:
+            results = tool_def.modify_design(arguments, ctx, progress)
+            user_addon = None
+        elif func_name == TOOL_NAME_SUBMIT_DESIGN:
+            results = tool_def.submit_design(arguments, ctx, progress)
             user_addon = None
         elif func_name == TOOL_NAME_QUERY_DESIGN:
             results = tool_def.query_design(arguments, ctx, progress)

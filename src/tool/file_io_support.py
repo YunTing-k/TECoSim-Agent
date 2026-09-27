@@ -45,16 +45,16 @@ Revision:
 2026.7.23      Yu Huang      3.6      Add launch support in arbitrary path
 2026.7.31      Yu Huang      3.7      Fix of invalid truncated line amount of get_syntax_render
 2026.8.4       Yu Huang      3.8      Fix TUI text preview of NBSP mismatched VS16/ZWJ emoji
+2026.9.27      Yu Huang      3.9      Add simulation scratchpad as writable carve-out in check_read_only
 
 Details:
 ---------
-File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE — 7-stage cascade
-fallback matching with per-mode track & enhanced Unicode normalization (quotes/dashes/spaces) and EOF-first rfind;
-(3) preview renderers with pygments syntax highlighting, diff-style add/remove with soft-wrap, 3-part gutter bg,
-CJK display-width continuity, inter-hunk separator, and highlight-then-split token-style preservation;
-(4) write_file content preview (get_syntax_render) with lexer-based highlighting, line-number gutter, configurable
-truncation, and highlight-then-split wrapping; (5) edit permission TUI with preview and match mode visibility;
-(6) read-only path checking; (7) session saving utility.
+File I/O support layer: (1) read truncation with byte-limit enforcement; (2) TOOL_NAME_EDIT_FILE — 7-stage cascade fallback
+matching with per-mode track & enhanced Unicode normalization (quotes/dashes/spaces) and EOF-first rfind; (3) preview
+renderers with pygments syntax highlighting, diff-style add/remove with soft-wrap, 3-part gutter bg, CJK display-width
+continuity, inter-hunk separator, and highlight-then-split token-style preservation; (4) write_file content preview
+(get_syntax_render) with lexer-based highlighting, line-number gutter, configurable truncation, and highlight-then-split
+wrapping; (5) edit permission TUI with preview and match mode visibility; (6) read-only path checking; (7) session saving utility.
 """
 import os
 import math
@@ -1322,6 +1322,11 @@ def check_read_only(in_path: str, ctx: AgentContext) -> tuple[bool, str]:
     try:
         fpath = Path(in_path)
         resolved_fpath = fpath.resolve()
+
+        # simulation scratchpad is a writable carve-out inside the system read-only session folder: a `modify` revision
+        # is edited there before it is submitted, and the revision registry decides whether the scratchpad still exists
+        if ctx.design_man.is_scratchpad_path(str(resolved_fpath)):
+            return False, ""
 
         for base_path in ctx.system_read_only_paths:
             resolved_base_path = base_path.resolve()

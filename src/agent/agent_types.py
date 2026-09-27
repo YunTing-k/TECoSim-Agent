@@ -12,6 +12,8 @@ Revision:
 2026.6.12      Yu Huang      1.0      First implementation
 2026.6.13      Yu Huang      1.1      Add if_background and subject fields, replace simulate with scheduler agent type
 2026.6.29      Yu Huang      1.2      Add start_time and elapsed_s fields for subagent duration tracking
+2026.9.27      Yu Huang      1.3      Add read-only simulation tools to explorer (check_simulator/query_design/query_run)
+2026.9.27      Yu Huang      1.4      Grant worker all usable permissions & update subagent type descriptions
 
 Details:
 ---------
@@ -96,6 +98,9 @@ SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
         TOOL_NAME_WEB_FETCH,
         TOOL_NAME_WEB_SEARCH,
         TOOL_NAME_BASH,
+        TOOL_NAME_CHECK_SIMULATOR,
+        TOOL_NAME_QUERY_DESIGN,
+        TOOL_NAME_QUERY_RUN,
         TOOL_NAME_READ_LOG,
         TOOL_NAME_CREATE_TASK,
         TOOL_NAME_UPDATE_TASK,
@@ -133,11 +138,19 @@ PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
         TOOL_NAME_GLOB_FILE,
         TOOL_NAME_GREP_FILE,
         TOOL_NAME_READ_FILE,
+        TOOL_NAME_READ_IMAGE,
         TOOL_NAME_WRITE_FILE,
         TOOL_NAME_EDIT_FILE,
+        TOOL_NAME_SKILL,
         TOOL_NAME_WEB_FETCH,
         TOOL_NAME_WEB_SEARCH,
         TOOL_NAME_READ_LOG,
+        # simulation tools
+        TOOL_NAME_INIT_DESIGN,
+        TOOL_NAME_FORK_DESIGN,
+        TOOL_NAME_MODIFY_DESIGN,
+        TOOL_NAME_SUBMIT_DESIGN,
+        TOOL_NAME_LAUNCH_SIM,
         TOOL_NAME_CREATE_TASK,
         TOOL_NAME_UPDATE_TASK,
         TOOL_NAME_QUERY_TASK,
@@ -161,13 +174,15 @@ PERMISSION_PRESETS: dict[str, tuple[str, ...]] = {
 SUPPORTED_TYPES_DESC: dict[str, str] = {
     EXPLORER_AGENT_LABEL: (
         f"Read-only explorer. Can use {TOOL_NAME_GLOB_FILE}, `{TOOL_NAME_GREP_FILE}`, `{TOOL_NAME_READ_FILE}`, "
-        f"`{TOOL_NAME_WEB_FETCH}`, `{TOOL_NAME_WEB_SEARCH}`, `{TOOL_NAME_BASH}`, `{TOOL_NAME_READ_LOG}`, plus task tools "
+        f"`{TOOL_NAME_WEB_FETCH}`, `{TOOL_NAME_WEB_SEARCH}`, `{TOOL_NAME_BASH}`, `{TOOL_NAME_CHECK_SIMULATOR}`, "
+        f"`{TOOL_NAME_QUERY_DESIGN}`, `{TOOL_NAME_QUERY_RUN}`, `{TOOL_NAME_READ_LOG}`, plus task tools "
         f"(`{TOOL_NAME_CREATE_TASK}` / `{TOOL_NAME_UPDATE_TASK}` / `{TOOL_NAME_QUERY_TASK}`) for own workflow (independent "
-        f"scoreboard)."
+        f"scoreboard). Cannot modify designs, launch simulations or edit files."
     ),
     WORKER_AGENT_LABEL: (
         "General-purpose worker agent for research, multi-step tasks, and implementation. Has all tools except spawning other "
-        "agents and cron tasks management. Can use task tools for their own workflow (independent scoreboard)."
+        "agents, cron task management and sending WeChat files; it can also modify designs and launch simulations. Can use task "
+        "tools for their own workflow (independent scoreboard)."
     ),
     SCHEDULER_AGENT_LABEL: (
         f"Task planning and dependency management agent with shared scoreboard access. Can use {TOOL_NAME_CREATE_TASK} / "

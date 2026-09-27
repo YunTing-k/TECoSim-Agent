@@ -70,6 +70,8 @@ Revision:
 2026.8.17      Yu Huang      5.9      bash tool uses spawn_managed_proc/kill_tree: whole-tree kill on timeout/cancel (Windows Job Object / POSIX killpg)
 2026.8.24      Yu Huang      6.0      Support of image content read-in
 2026.8.25      Yu Huang      6.1      Add no simulation tools support
+2026.9.27      Yu Huang      6.2      Add design status (editing/ready) gating for launch_sim & expose status in query_design
+2026.9.27      Yu Huang      6.3      Add fork_design/modify_design/submit_design tool
 
 Details:
 ---------
@@ -103,7 +105,8 @@ from src.tool.file_io_support import (
     get_enhanced_debug_info, match_escape_literal, match_trimmed_boundary, match_unicode_escape, _unescape_literals,
     _unescape_unicode, get_syntax_render)
 from src.tool.simulator_support import (
-    init_design_impl, launch_sim_impl, runs_to_info, run_to_info, read_log_impl, design_to_info, designs_to_info)
+    init_design_impl, fork_design_impl, modify_design_impl, submit_design_impl, launch_sim_impl, runs_to_info,
+    run_to_info, read_log_impl, design_to_info, designs_to_info)
 from src.tool.skills_support import load_skill_content, get_skill_description
 from src.tool.web_support import (
     check_url, web_single_fetch, web_fetch_process, web_search_top, web_search_process)
@@ -155,6 +158,9 @@ def create_tools_prompts(ctx: AgentContext) -> list[dict[str, Any]]:
         prompts.extend([
             tool_check_simulator_def(),
             tool_init_design_def(),
+            tool_fork_design_def(),
+            tool_modify_design_def(),
+            tool_submit_design_def(),
             tool_query_design_def(),
             tool_launch_sim_def(),
             tool_query_run_def(),
@@ -2678,7 +2684,7 @@ def tool_init_design_def() -> dict[str, Any]:
             "name": TOOL_NAME_INIT_DESIGN,
             "description": f"Use this tool to create a brand-new `{SIM_DESIGN_NAME}` with default configuration from simulator's "
                            "path. Each design gets a unique auto-assigned ID (`design_id`, starting from 1), with its first "
-                           "revision set to `design_rev` = 1\n"
+                           f"revision set to `design_rev` = 1 and its status set to `{DESIGN_READY_LABEL}` (ready for simulation)\n"
                            f"Each `{SIM_DESIGN_NAME}` is an independent panel project identified by its `design_id`. Use "
                            f"this tool to start a new project from scratch.\n"
                            # f"TODO: For iterative changes on the same design, use the modify tool `{TOOL}` which creates a new revision under the same `design_id`.\n"
@@ -2733,6 +2739,235 @@ def init_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress
         return {"status": FAIL_LABEL, "info": f"Initialize design failed with error: {e}"}
 
 
+def tool_fork_design_def() -> dict[str, Any]:
+    """tool definition of forking a design (TOOL_NAME_FORK_DESIGN)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_FORK_DESIGN,
+            "description": f"Use this tool to fork a brand-new `{SIM_DESIGN_NAME}` from an existing one by copying its "
+                           f"configuration. The source can be any revision of any `{SIM_DESIGN_NAME}`, but only a source "
+                           f"whose status is `{DESIGN_READY_LABEL}` can be forked.\n"
+                           f"The forked `{SIM_DESIGN_NAME}` gets a unique auto-assigned ID (`design_id`, starting from 1) "
+                           f"and its first revision `design_rev` = 1, inheriting ALL configurations of the source revision. "
+                           f"Its status is `{DESIGN_READY_LABEL}`, so it can be simulated directly.\n"
+                           f"Use this tool to branch out a new panel project from an existing design while keeping the "
+                           f"source design untouched. The source `design_id` and `design_rev` are recorded as the forked "
+                           f"design's copy-from info.\n"
+                           f"Parameters:\n"
+                           f" - `design_id`: The ID of the source `{SIM_DESIGN_NAME}` to fork from\n"
+                           f" - `design_rev`: The revision of the source `{SIM_DESIGN_NAME}` to fork from\n"
+                           f" - `subject`: A short title describing the purpose of the new forked design\n"
+                           f" - `description`: Detailed notes about the goals or specifications of the new forked design\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "design_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The ID of the source `{SIM_DESIGN_NAME}` to fork from.",
+                    },
+                    "design_rev": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The revision of the source `{SIM_DESIGN_NAME}` to fork from.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "A brief title for the new forked design.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The detailed purpose or information for the new forked design.",
+                    },
+                },
+                "required": ["design_id", "design_rev", "subject", "description"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def fork_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of forking a design with arguments and AgentContext"""
+    func_name = TOOL_NAME_FORK_DESIGN
+    try:
+        """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, func_name, f"fork a new design from design: {arguments["design_id"]} "
+                                                          f"(rev {arguments["design_rev"]}). Subject: "
+                                                          f"{arguments["subject"]}\n"
+                                                          f"Description: {arguments["description"]}", progress.console)
+        resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
+        if not token:
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
+            else:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
+        """fork design"""
+        if_success, label, info = fork_design_impl(arguments, ctx.design_man, progress.console)
+        return {"status": label, "info": info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Fork design failed with error: {e}"}
+
+
+def tool_modify_design_def() -> dict[str, Any]:
+    """tool definition of modifying a design (TOOL_NAME_MODIFY_DESIGN)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_MODIFY_DESIGN,
+            "description": f"Use this tool to modify an existing `{SIM_DESIGN_NAME}` revision: it allocates a NEW revision "
+                           f"under the SAME `design_id` and copies the source revision's configuration into a scratchpad "
+                           f"folder for editing. Only a source whose status is `{DESIGN_READY_LABEL}` can be modified.\n"
+                           f"The new revision's status is `{DESIGN_EDITING_LABEL}` — it can NOT be simulated until it is "
+                           f"submitted. This tool returns the scratchpad folder path; ALL configuration changes of this "
+                           f"revision MUST be made inside that scratchpad folder. The scratchpad is the only writable "
+                           f"folder of the design; after submitting the scratchpad stays read-only.\n"
+                           f"Use this tool for iterative changes on an existing design instead of creating a new design.\n"
+                           f"Parameters:\n"
+                           f" - `design_id`: The ID of the `{SIM_DESIGN_NAME}` to modify\n"
+                           f" - `design_rev`: The revision of the `{SIM_DESIGN_NAME}` to modify; must be `{DESIGN_READY_LABEL}`\n"
+                           f" - `subject`: A short title describing the purpose of the new revision\n"
+                           f" - `description`: Detailed notes about the goals or specifications of the new revision\n",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "design_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The ID of the `{SIM_DESIGN_NAME}` to modify.",
+                    },
+                    "design_rev": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The revision of the `{SIM_DESIGN_NAME}` to modify. It must be in status "
+                                       f"`{DESIGN_READY_LABEL}`.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "A brief title for the new revision.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The detailed purpose or information for the new revision.",
+                    },
+                },
+                "required": ["design_id", "design_rev", "subject", "description"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def modify_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of modifying a design with arguments and AgentContext"""
+    func_name = TOOL_NAME_MODIFY_DESIGN
+    try:
+        """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, func_name, f"modify design: {arguments["design_id"]} "
+                                                          f"(rev {arguments["design_rev"]}) into a new revision. "
+                                                          f"Subject: {arguments["subject"]}\n"
+                                                          f"Description: {arguments["description"]}", progress.console)
+        resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
+        if not token:
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
+            else:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
+        """modify design"""
+        if_success, label, info = modify_design_impl(arguments, ctx.design_man, progress.console)
+        return {"status": label, "info": info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Modify design failed with error: {e}"}
+
+
+def tool_submit_design_def() -> dict[str, Any]:
+    """tool definition of submitting a design (TOOL_NAME_SUBMIT_DESIGN)"""
+    tool_def = {
+        "type": "function",
+        "function": {
+            "name": TOOL_NAME_SUBMIT_DESIGN,
+            "description": f"Use this tool to submit a `{SIM_DESIGN_NAME}` revision whose status is "
+                           f"`{DESIGN_EDITING_LABEL}`: its scratchpad configuration is copied into the formal revision "
+                           f"folder and its status is switched to `{DESIGN_READY_LABEL}`, so it can be simulated.\n"
+                           f"Before submitting, this tool checks the completeness of the design configuration:\n"
+                           f"  1. Every config file the simulator loads must exist. `run.json`, `model_param.json`, "
+                           f"`panel_param.json` and `simulation_param.json` are always required; `heat_contact.json` is "
+                           f"required when `panel_param.json` has `extra_hcontact` = true, `heat_flux.json` is required "
+                           f"when `extra_hflux` = true, and `pdn_injection.json` is required when `simulation_param.json` "
+                           f"has a `couple_type` that enables IR drop update\n"
+                           f"  2. Every required config file must contain all fields defined by the simulator's "
+                           f"configuration schema. Field types and field values are NOT checked\n"
+                           f"This tool will fail if: the target design doesn't exist, its status is not "
+                           f"`{DESIGN_EDITING_LABEL}`, its scratchpad doesn't exist, or its configuration is incomplete. "
+                           f"On failure the revision stays `{DESIGN_EDITING_LABEL}` and can be fixed and submitted again.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "design_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The ID of the `{SIM_DESIGN_NAME}` to submit.",
+                    },
+                    "design_rev": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": f"The revision of the `{SIM_DESIGN_NAME}` to submit. It must be in status "
+                                       f"`{DESIGN_EDITING_LABEL}`.",
+                    },
+                },
+                "required": ["design_id", "design_rev"],
+                "additionalProperties": False,
+            },
+        }
+    }
+    return tool_def
+
+
+def submit_design(arguments: dict[str, Any], ctx: AgentContext, progress: Progress) -> dict[str, Any]:
+    """tool realization of submitting a design with arguments and AgentContext"""
+    func_name = TOOL_NAME_SUBMIT_DESIGN
+    try:
+        """request permission"""
+        if ctx.in_thread is not None: ctx.in_thread.pause()
+        pause_for_permission(progress)
+        token, info = ask_permission_tui(ctx, func_name, f"submit design: {arguments["design_id"]} "
+                                                          f"(rev {arguments["design_rev"]}) into the formal workflow",
+                                         progress.console)
+        resume_from_permission(progress)
+        if ctx.in_thread is not None: ctx.in_thread.resume()
+        if not token:
+            if ctx.tui_mute:
+                return {"status": DENIED_LABEL, "info": f"{MUTE_PERMISSION_DENIED_INFO}"}
+            elif info is None:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_INFO}"}
+            else:
+                return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
+        """submit design"""
+        if_success, label, info = submit_design_impl(arguments, ctx.design_man, progress.console)
+        return {"status": label, "info": info}
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {e}")
+        progress.console.print(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {e}", style="bold red")
+        return {"status": FAIL_LABEL, "info": f"Submit design failed with error: {e}"}
+
+
 def tool_query_design_def() -> dict[str, Any]:
     """tool definition of querying the list of created designs (TOOL_NAME_QUERY_DESIGN)"""
     tool_def = {
@@ -2744,13 +2979,19 @@ def tool_query_design_def() -> dict[str, Any]:
                            f"- Get a specific `{SIM_DESIGN_NAME}` revision (requires both `design_id` and `design_rev`) and "
                            f"return:\n"
                            f"  1. The subject and description of the specified revision\n"
-                           f"  2. The design ID and revision ID that this revision was copied from (if any)\n"
+                           f"  2. The status of the specified revision: `{DESIGN_EDITING_LABEL}` (can't be simulated) or "
+                           f"`{DESIGN_READY_LABEL}` (can be simulated)\n"
+                           f"  3. The design ID and revision ID that this revision was copied from (if any)\n"
                            f"- Get all revisions under a specific design ID (requires only `design_id`) and return:\n"
                            f"  1. The subject of each revision belonging to this design\n"
-                           f"  2. The design ID and revision ID that each revision was copied from (if any)\n"
+                           f"  2. The status of each revision: `{DESIGN_EDITING_LABEL}` (can't be simulated) or "
+                           f"`{DESIGN_READY_LABEL}` (can be simulated)\n"
+                           f"  3. The design ID and revision ID that each revision was copied from (if any)\n"
                            f"- List all `{SIM_DESIGN_NAME}` designs (no parameters required):\n"
                            f"  1. The subject of the latest revision for each design\n"
-                           f"  2. The design ID and revision ID that the latest revision was copied from (if any)\n",
+                           f"  2. The status of the latest revision for each design: `{DESIGN_EDITING_LABEL}` (can't be "
+                           f"simulated) or `{DESIGN_READY_LABEL}` (can be simulated)\n"
+                           f"  3. The design ID and revision ID that the latest revision was copied from (if any)\n",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2832,11 +3073,13 @@ def tool_launch_sim_def() -> dict[str, Any]:
         "function": {
             "name": TOOL_NAME_LAUNCH_SIM,
             "description": f"Run a thermo-electrical simulation through TECoSim on an existing display panel's `{SIM_DESIGN_NAME}`. "
-                           f"A new `{SIM_RUN_NAME}` entry is created and the simulator executes with the design's configuration. "
-                           f"After completion, simulation logs can BE read with `{TOOL_NAME_READ_LOG}`\n"
+                           f"Only a `{SIM_DESIGN_NAME}` whose status is `{DESIGN_READY_LABEL}` can be simulated. A new `{SIM_RUN_NAME}` "
+                           f"entry is created and the simulator executes with the design's configuration. After completion, simulation "
+                           f"logs can BE read with `{TOOL_NAME_READ_LOG}`\n"
                            # f" (TODO: other results reading tools are not implemented).\n"
-                           "This tool will fail if: the target design doesn't exist, the design path is invalid, simulator "
-                           "times out, simulator encounters runtime error, or the simulation is cancelled by the user\n"
+                           f"This tool will fail if: the target design doesn't exist, the design's status is not `{DESIGN_READY_LABEL}`, "
+                           "the design path is invalid, simulator times out, simulator encounters runtime error, or the simulation "
+                           "is cancelled by the user\n"
                            "Each run has its own `subject` and `description` to document its purpose.",
             "parameters": {
                 "type": "object",
@@ -2891,7 +3134,7 @@ def launch_sim(arguments: dict[str, Any], ctx: AgentContext, progress: Progress)
             else:
                 return {"status": DENIED_LABEL, "info": f"{MAINAGENT_PERMISSION_DENIED_PREFIX_INFO} {info}"}
         """launch sim"""
-        if_success, label, info = launch_sim_impl(arguments, ctx.run_man, progress.console)
+        if_success, label, info = launch_sim_impl(arguments, ctx.design_man, ctx.run_man, progress.console)
         return {"status": label, "info": info}
     except Exception as e:
         sys_log.error(f"{func_name} {FAIL_LABEL}: Launch simulator failed with error: {e}")

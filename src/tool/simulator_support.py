@@ -16,15 +16,19 @@ Revision:
 2026.6.14      Yu Huang      1.4      Fix: decode with errors=replace, timeout default guard
 2026.7.23      Yu Huang      1.5      Add launch support in arbitrary path
 2026.8.15      Yu Huang      1.6      Add drain_after_kill: bounded pipe drain after kill (no infinite block)
+2026.9.27      Yu Huang      1.7      Add design status (editing/ready) to gate simulation
+2026.9.27      Yu Huang      1.8      Add fork design support: DesignManager.fork_design & fork_design_impl
+2026.9.27      Yu Huang      1.9      Add modify design support: DesignManager.modify_design & scratchpad
+2026.9.27      Yu Huang      2.0      Add submit design support: completeness check & DesignManager.submit_design
 
 Details:
 ---------
 Core backend for TECoSim simulation toolchain. (1) DesignManager — thread-safe design CRUD with revision tracking
-(init/get/list/save/load), each design identified by (design_id, revision_id). (2) RunManager — thread-safe simulation run registry
-with id auto-increment, status tracking (PENDING/DONE/CANCELLED/TIMEOUT/RUNTIME_ERROR), and persist to JSON. (3) Tool
-implementations: init_design copies default configs from simulator path; launch_sim spawns TECoSim.exe as subprocess with
-timeout/cancel/error handling, saves stdout/stderr logs on exit; read_log reads cleaned logs with byte-limit enforcement
-and three access methods (from_top/from_bottom/offset). (4) Helper formatting functions for user-facing info strings.
+(init/fork/modify/submit/get/list/save/load). A revision is `editing` (not simulatable, edited in its scratchpad) or
+`ready`; `modify` allocates an `editing` revision and exposes `design<id>/<rev>.scratchpad` as the only writable folder
+inside the read-only session dir, and `submit` validates that scratchpad's configs and promotes them into the formal
+revision folder. (2) RunManager — thread-safe run registry with status tracking and JSON persistence. (3) Tool
+implementations (init_design, launch_sim, read_log) and helper formatting functions for user-facing info strings.
 """
 import os
 import re
@@ -39,6 +43,7 @@ from enum import Enum
 from typing import Any, TypedDict
 from rich.console import Console
 from src.utility.basic_utils import read_line_with_limit, format_file_for_llm, drain_after_kill
+from src.tool.simulator_param import DESIGN_CONFIG_SCHEMAS, DESIGN_CONFIG_REQUIRED, COUPLE_TYPES_WITH_IRD
 from src.constants import *
 
 sys_log = logging.getLogger('logger')
@@ -97,6 +102,12 @@ class DesignInit(TypedDict):
     description: str
 
 
+class DesignStatus(str, Enum):
+    """Design status enum: only a `READY` design can be simulated"""
+    EDITING = DESIGN_EDITING_LABEL
+    READY = DESIGN_READY_LABEL
+
+
 class Design(TypedDict):
     """Design information"""
     design_uuid: int  # unique ID
@@ -104,6 +115,7 @@ class Design(TypedDict):
     design_rev: int  # revision ID is different in same design ID
     subject: str
     description: str
+    status: DesignStatus  # `EDITING`: can't be simulated; `READY`: can be simulated
     copy_id: int | None
     copy_rev: int | None
 
@@ -116,10 +128,7 @@ class Revision(TypedDict):
 
 
 class DesignManager:
-    """Shared, thread-safe simulation design manager for multi-agent coordination.
-
-    TODO: modify design, copy design
-    """
+    """Shared, thread-safe simulation design manager for multi-agent coordination."""
     def __init__(self):
         self.session_uuid: str = ""  # don't dump
         self.simulator_path: str = ""  # don't dump
@@ -147,6 +156,7 @@ class DesignManager:
                     design_rev=revision["next_rev_id"],
                     subject=design_init["subject"],
                     description=design_init["description"],
+                    status=DesignStatus.READY,  # a brand-new design is ready for simulation
                     copy_id=None,
                     copy_rev=None,
                 )
@@ -162,6 +172,129 @@ class DesignManager:
                 return True, design["design_id"], f"Design with id {design["design_id"]} initialized. Revision start from 1"
             except Exception as e:
                 return False, -1, f"Initialize design failed with error: {e}"
+
+
+    def fork_design(self, design_id: int, design_rev: int, design_init: DesignInit) -> tuple[bool, int, str]:
+        """fork a brand-new design from an existing ready design by copying it (new design id, revision start from 1)"""
+        with self._lock:
+            try:
+                # check the source design
+                if design_id not in self._revisions:
+                    return False, -1, f"Design with id: {design_id} not found"
+                uuid_map = self._revisions[design_id]["revision_uuids"]
+                if design_rev not in uuid_map:
+                    return False, -1, f"Design with id: {design_id} has no revision {design_rev}"
+                design_uuid = uuid_map[design_rev]
+                if design_uuid not in self._designs:
+                    return False, -1, (f"Design (id: {design_uuid}, rev: {design_rev}) logged in revision but not found "
+                                       f"in designs")
+                source_design = self._designs[design_uuid]
+                # only a ready design can be forked
+                if source_design["status"] != DesignStatus.READY:
+                    return False, -1, (f"Design (id: {design_id}, rev: {design_rev}) is in status "
+                                       f"`{source_design['status'].value}`. Only a design in status "
+                                       f"`{DESIGN_READY_LABEL}` can be forked")
+                # create empty revision
+                revision = Revision(
+                    design_id=self._next_design_id,
+                    revision_uuids={},
+                    next_rev_id=1
+                )
+                # create design according to revision
+                design = Design(
+                    design_uuid=self._next_design_uuid,
+                    design_id=self._next_design_id,
+                    design_rev=revision["next_rev_id"],
+                    subject=design_init["subject"],
+                    description=design_init["description"],
+                    status=DesignStatus.READY,  # a forked design is ready for simulation
+                    copy_id=design_id,
+                    copy_rev=design_rev,
+                )
+                # update revision
+                revision["revision_uuids"][design["design_rev"]] = design["design_uuid"]
+                revision["next_rev_id"] += 1
+                # insert a new design
+                self._designs[self._next_design_uuid] = design
+                # insert a new revision
+                self._revisions[self._next_design_id] = revision
+                self._next_design_uuid += 1
+                self._next_design_id += 1
+                return True, design["design_id"], (f"Design with id {design['design_id']} forked from design {design_id} "
+                                                   f"(rev {design_rev}). Revision start from 1")
+            except Exception as e:
+                return False, -1, f"Fork design failed with error: {e}"
+
+
+    def modify_design(self, design_id: int, design_rev: int, design_init: DesignInit) -> tuple[bool, int, str]:
+        """modify an existing ready revision into a new revision (editing status) of the same design"""
+        with self._lock:
+            try:
+                # check the source revision
+                if design_id not in self._revisions:
+                    return False, -1, f"Design with id: {design_id} not found"
+                revision = self._revisions[design_id]
+                uuid_map = revision["revision_uuids"]
+                if design_rev not in uuid_map:
+                    return False, -1, f"Design with id: {design_id} has no revision {design_rev}"
+                design_uuid = uuid_map[design_rev]
+                if design_uuid not in self._designs:
+                    return False, -1, (f"Design (id: {design_uuid}, rev: {design_rev}) logged in revision but not found "
+                                       f"in designs")
+                source_design = self._designs[design_uuid]
+                # only a ready design can be modified
+                if source_design["status"] != DesignStatus.READY:
+                    return False, -1, (f"Design (id: {design_id}, rev: {design_rev}) is in status "
+                                       f"`{source_design['status'].value}`. Only a design in status "
+                                       f"`{DESIGN_READY_LABEL}` can be modified")
+                # create a new revision under the same design id
+                design = Design(
+                    design_uuid=self._next_design_uuid,
+                    design_id=design_id,
+                    design_rev=revision["next_rev_id"],
+                    subject=design_init["subject"],
+                    description=design_init["description"],
+                    status=DesignStatus.EDITING,  # a modified revision can't be simulated until it is submitted
+                    copy_id=design_id,
+                    copy_rev=design_rev,
+                )
+                # update revision
+                revision["revision_uuids"][design["design_rev"]] = design["design_uuid"]
+                revision["next_rev_id"] += 1
+                # insert a new design
+                self._designs[self._next_design_uuid] = design
+                self._next_design_uuid += 1
+                return True, design["design_rev"], (f"Design with id {design_id} revision {design['design_rev']} "
+                                                    f"allocated, modified from revision {design_rev}")
+            except Exception as e:
+                return False, -1, f"Modify design failed with error: {e}"
+
+
+    def submit_design(self, design_id: int, design_rev: int) -> tuple[bool, str]:
+        """submit an editing revision: mark it ready so that it can be simulated"""
+        with self._lock:
+            try:
+                # check the revision
+                if design_id not in self._revisions:
+                    return False, f"Design with id: {design_id} not found"
+                uuid_map = self._revisions[design_id]["revision_uuids"]
+                if design_rev not in uuid_map:
+                    return False, f"Design with id: {design_id} has no revision {design_rev}"
+                design_uuid = uuid_map[design_rev]
+                if design_uuid not in self._designs:
+                    return False, (f"Design (id: {design_uuid}, rev: {design_rev}) logged in revision but not found "
+                                   f"in designs")
+                design = self._designs[design_uuid]
+                # only an editing design can be submitted
+                if design["status"] != DesignStatus.EDITING:
+                    return False, (f"Design (id: {design_id}, rev: {design_rev}) is in status "
+                                   f"`{design['status'].value}`. Only a design in status `{DESIGN_EDITING_LABEL}` can "
+                                   f"be submitted")
+                design["status"] = DesignStatus.READY
+                return True, (f"Design (id: {design_id}, rev: {design_rev}) submitted. Its status is "
+                              f"`{DESIGN_READY_LABEL}` now")
+            except Exception as e:
+                return False, f"Submit design failed with error: {e}"
 
 
     def list_revisions(self) -> list[Revision]:
@@ -230,6 +363,41 @@ class DesignManager:
             return designs
 
 
+    def is_scratchpad_path(self, in_path: str) -> bool:
+        """check if the input path is inside the scratchpad of an editing revision of this manager
+
+        A scratchpad lives at `session/<session_uuid>/design<design_id>/<design_rev>.scratchpad/` and only exists
+        while its revision is in status `editing`. This is used as the writable carve-out inside the read-only session
+        folder, so the check is derived from the revision registry (no extra state to persist).
+        """
+        try:
+            resolved_root = (AGENT_PATH / SESSION_PATH / self.session_uuid).resolve()
+            resolved_path = Path(in_path).resolve()
+            if not resolved_path.is_relative_to(resolved_root):
+                return False
+            parts = resolved_path.relative_to(resolved_root).parts
+            if len(parts) < 2:
+                return False
+            design_part, scratchpad_part = parts[0], parts[1]
+            if not design_part.startswith(SIM_DESIGN_NAME) or not scratchpad_part.endswith(SIM_SCRATCHPAD_SUFFIX):
+                return False
+            design_id = int(design_part[len(SIM_DESIGN_NAME):])
+            design_rev = int(scratchpad_part[:-len(SIM_SCRATCHPAD_SUFFIX)])
+            with self._lock:
+                if design_id not in self._revisions:
+                    return False
+                uuid_map = self._revisions[design_id]["revision_uuids"]
+                if design_rev not in uuid_map:
+                    return False
+                design_uuid = uuid_map[design_rev]
+                if design_uuid not in self._designs:
+                    return False
+                return self._designs[design_uuid]["status"] == DesignStatus.EDITING
+        except Exception as e:
+            sys_log.error(f"Failed to check if path {in_path} is a scratchpad path with error: {e}")
+            return False
+
+
     def save_to_file(self, console: Console, mute: bool = False):
         """save all designs info to a JSON file (this method can't be called in other threads)"""
         with self._lock:
@@ -277,6 +445,7 @@ class DesignManager:
                 self._designs.clear()
                 self._revisions.clear()
                 for design_data in data["designs"]:
+                    design_data["status"] = DesignStatus(design_data["status"])
                     design = Design(**design_data)
                     self._designs[design["design_uuid"]] = design
                 for revision_data in data["revisions"]:
@@ -302,6 +471,7 @@ def design_to_info(design: Design) -> str:
     info = ""
     info += f"Subject: {design["subject"]}\n"
     info += f"Description: {design["description"]}\n"
+    info += f"Status: {design["status"].value}\n"
     if design["copy_id"] is None:
         info += f"Copy from: (None)"
     else:
@@ -315,6 +485,7 @@ def designs_to_info(designs: list[Design]) -> str:
     for design in designs:
         info += f"Design ID: {design["design_id"]} (rev: {design["design_rev"]})\n"
         info += f" - Subject: {design["subject"]}\n"
+        info += f" - Status: {design["status"].value}\n"
         # info += f" - Description: {design["description"]}\n"
         if design["copy_id"] is None:
             info += f" - Copy from: (None)\n"
@@ -517,6 +688,270 @@ def init_design_impl(arguments: dict[str, Any], design_man: DesignManager, conso
         return False, FAIL_LABEL, e.__str__()
 
 
+def fork_design_impl(arguments: dict[str, Any], design_man: DesignManager, console: Console) -> tuple[bool, str, str]:
+    """fork design implementation"""
+    func_name = TOOL_NAME_FORK_DESIGN
+    try:
+        design_id = arguments["design_id"]
+        design_rev = arguments["design_rev"]
+        """check the source design"""
+        if_success, source_design, get_info = design_man.get_design(design_id, design_rev)
+        if not if_success or source_design is None:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Fork failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Fork failed", style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev}) is not found, "
+                                       f"detail: {get_info}. Fork failed")
+        if source_design["status"] != DesignStatus.READY:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                          f"`{source_design['status'].value}`. Only a design in status `{DESIGN_READY_LABEL}` can be "
+                          f"forked. Fork failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                          f"`{source_design['status'].value}`. Only a design in status `{DESIGN_READY_LABEL}` can be "
+                          f"forked. Fork failed", style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                                       f"`{source_design['status'].value}`. Only a design in status "
+                                       f"`{DESIGN_READY_LABEL}` can be forked. Fork failed")
+        """check the source design's path"""
+        source_path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
+        if not os.path.exists(source_path):
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. Fork failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. Fork failed",
+                          style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. "
+                                       f"Fork failed")
+        """fork design"""
+        design = DesignInit(
+            subject=arguments["subject"],
+            description=arguments["description"],
+        )
+        if_success, new_design_id, fork_info = design_man.fork_design(design_id, design_rev, design)
+        if not if_success:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {fork_info}")
+            console.print(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {fork_info}", style="bold red")
+            return False, FAIL_LABEL, f"Fork design failed with error: {fork_info}"
+        """copy the source design's configs to the forked design"""
+        path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{new_design_id}" / f"{1}")
+        shutil.copytree(src=source_path, dst=path, dirs_exist_ok=True)
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Design with id: {new_design_id} (rev 1) forked from design "
+                      f"{design_id} (rev {design_rev})")
+        console.print(f"{func_name} {SUCCESS_LABEL}: Design with id: {new_design_id} (rev 1) forked from design "
+                      f"{design_id} (rev {design_rev})", style="bright_black")
+        return True, SUCCESS_LABEL, (f"Design with id: {new_design_id} (rev 1) forked from design {design_id} "
+                                     f"(rev {design_rev})")
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {e}")
+        console.print(f"{func_name} {FAIL_LABEL}: Fork design failed with error: {e}", style="bold red")
+        return False, FAIL_LABEL, e.__str__()
+
+
+def modify_design_impl(arguments: dict[str, Any], design_man: DesignManager, console: Console) -> tuple[bool, str, str]:
+    """modify design implementation"""
+    func_name = TOOL_NAME_MODIFY_DESIGN
+    try:
+        design_id = arguments["design_id"]
+        design_rev = arguments["design_rev"]
+        """check the source design"""
+        if_success, source_design, get_info = design_man.get_design(design_id, design_rev)
+        if not if_success or source_design is None:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Modify failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Modify failed", style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev}) is not found, "
+                                       f"detail: {get_info}. Modify failed")
+        if source_design["status"] != DesignStatus.READY:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                          f"`{source_design['status'].value}`. Only a design in status `{DESIGN_READY_LABEL}` can be "
+                          f"modified. Modify failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                          f"`{source_design['status'].value}`. Only a design in status `{DESIGN_READY_LABEL}` can be "
+                          f"modified. Modify failed", style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev}) is in status "
+                                       f"`{source_design['status'].value}`. Only a design in status "
+                                       f"`{DESIGN_READY_LABEL}` can be modified. Modify failed")
+        """check the source design's path"""
+        source_path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
+        if not os.path.exists(source_path):
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. Modify failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. Modify failed",
+                          style="bold red")
+            return False, FAIL_LABEL, (f"Source design (id: {design_id}, rev: {design_rev})'s path doesn't exist. "
+                                       f"Modify failed")
+        """modify design"""
+        design = DesignInit(
+            subject=arguments["subject"],
+            description=arguments["description"],
+        )
+        if_success, new_design_rev, modify_info = design_man.modify_design(design_id, design_rev, design)
+        if not if_success:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {modify_info}")
+            console.print(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {modify_info}", style="bold red")
+            return False, FAIL_LABEL, f"Modify design failed with error: {modify_info}"
+        """copy the source design's configs to the scratchpad of the new revision"""
+        scratchpad_path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}"
+                              / f"{new_design_rev}{SIM_SCRATCHPAD_SUFFIX}")
+        shutil.copytree(src=source_path, dst=scratchpad_path, dirs_exist_ok=True)
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Design (id: {design_id}, rev: {new_design_rev}) allocated with "
+                      f"scratchpad: {scratchpad_path}")
+        console.print(f"{func_name} {SUCCESS_LABEL}: Design (id: {design_id}, rev: {new_design_rev}) allocated, "
+                      f"modified from revision {design_rev}", style="bright_black")
+        return True, SUCCESS_LABEL, (
+            f"Design (id: {design_id}, rev: {new_design_rev}) is allocated for modification, modified from revision "
+            f"{design_rev}. It can NOT be simulated until it is submitted\n"
+            f"Scratchpad folder: {scratchpad_path}\n")
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {e}")
+        console.print(f"{func_name} {FAIL_LABEL}: Modify design failed with error: {e}", style="bold red")
+        return False, FAIL_LABEL, e.__str__()
+
+
+def load_design_config(design_path: str, config_name: str) -> dict:
+    """load one design config file as a JSON object (raises ValueError with a readable message on failure)"""
+    with open(os.path.join(design_path, config_name), "r", encoding=SIM_DESIGN_ENCODING_DEFAULT) as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"`{config_name}` is not valid JSON: {e}")
+    if not isinstance(data, dict):
+        raise ValueError(f"`{config_name}` is not a JSON object")
+    return data
+
+
+def check_design_completeness(design_path: str) -> tuple[bool, str]:
+    """check if the design configs under the given path are complete
+
+    (1) every config file that the simulator will load must exist. The unconditional files are `DESIGN_CONFIG_REQUIRED`;
+        the conditional ones are decided by the design's own `panel_param.json` (`extra_hcontact` -> `heat_contact.json`,
+        `extra_hflux` -> `heat_flux.json`) and `simulation_param.json` (`couple_type` -> `pdn_injection.json`).
+    (2) every required config file must contain all fields defined by its schema in `simulator_param.py`.
+    Field types and field values are NOT checked. Returns (True, "") if complete, otherwise (False, detail)
+    """
+    try:
+        # (1) the unconditional config files must exist
+        missing = [name for name in DESIGN_CONFIG_REQUIRED
+                   if not os.path.isfile(os.path.join(design_path, name))]
+        if missing:
+            return False, f"Required config file(s) missing: {', '.join(missing)}"
+        # (2) the conditional config files are decided by the design's own parameters
+        panel_param = load_design_config(design_path, "panel_param.json")
+        simulation_param = load_design_config(design_path, "simulation_param.json")
+        required = list(DESIGN_CONFIG_REQUIRED)
+        if panel_param.get("extra_hcontact"):
+            required.append("heat_contact.json")
+        if panel_param.get("extra_hflux"):
+            required.append("heat_flux.json")
+        if simulation_param.get("couple_type") in COUPLE_TYPES_WITH_IRD:
+            required.append("pdn_injection.json")
+        missing = [name for name in required if not os.path.isfile(os.path.join(design_path, name))]
+        if missing:
+            return False, (f"Required config file(s) missing: {', '.join(missing)}, which are enabled by the design's "
+                           f"`panel_param.json` / `simulation_param.json`")
+        # (3) every required config file must contain all fields defined by its schema
+        problems: list[str] = []
+        for name in required:
+            data = load_design_config(design_path, name)
+            missing_fields = sorted(DESIGN_CONFIG_SCHEMAS[name].__required_keys__ - set(data.keys()))
+            if missing_fields:
+                problems.append(f"{name} -> {', '.join(missing_fields)}")
+        if problems:
+            return False, "Config field(s) missing: " + "; ".join(problems)
+        return True, ""
+    except ValueError as e:
+        return False, f"Invalid config file, {e}"
+    except Exception as e:
+        return False, f"Check design configs failed with error: {e}"
+
+
+def submit_design_impl(arguments: dict[str, Any], design_man: DesignManager, console: Console) -> tuple[bool, str, str]:
+    """submit design implementation"""
+    func_name = TOOL_NAME_SUBMIT_DESIGN
+    try:
+        design_id = arguments["design_id"]
+        design_rev = arguments["design_rev"]
+        """check the design"""
+        if_success, design, get_info = design_man.get_design(design_id, design_rev)
+        if not if_success or design is None:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Submit failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"Submit failed", style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                                       f"Submit failed")
+        if design["status"] != DesignStatus.EDITING:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is in status `{design['status'].value}`. Only a "
+                          f"design in status `{DESIGN_EDITING_LABEL}` can be submitted. Submit failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is in status `{design['status'].value}`. Only a "
+                          f"design in status `{DESIGN_EDITING_LABEL}` can be submitted. Submit failed", style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev}) is in status "
+                                       f"`{design['status'].value}`. Only a design in status `{DESIGN_EDITING_LABEL}` "
+                                       f"can be submitted. Submit failed")
+        """check the scratchpad"""
+        scratchpad_path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}"
+                              / f"{design_rev}{SIM_SCRATCHPAD_SUFFIX}")
+        if not os.path.exists(scratchpad_path):
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev})'s scratchpad path doesn't exist. Submit failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev})'s scratchpad path doesn't exist. Submit failed",
+                          style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev})'s scratchpad path doesn't exist. "
+                                       f"Submit failed")
+        """check the completeness of the design configs in the scratchpad"""
+        configs_complete, check_info = check_design_completeness(scratchpad_path)
+        if not configs_complete:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev})'s configs are incomplete. {check_info}. "
+                          f"Submit failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev})'s configs are incomplete. {check_info}. "
+                          f"Submit failed", style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev})'s configs are incomplete. "
+                                       f"{check_info}. Submit failed")
+        """copy the design config files from the scratchpad into the formal revision folder"""
+        design_path = str(AGENT_PATH / SESSION_PATH / design_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
+        os.makedirs(design_path, exist_ok=True)
+        copied_configs: list[str] = []
+        for config_name in DESIGN_CONFIG_SCHEMAS:
+            scratchpad_config_path = os.path.join(scratchpad_path, config_name)
+            if os.path.isfile(scratchpad_config_path):
+                shutil.copy2(scratchpad_config_path, os.path.join(design_path, config_name))
+                copied_configs.append(config_name)
+        """submit design"""
+        if_success, submit_info = design_man.submit_design(design_id, design_rev)
+        if not if_success:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {submit_info}")
+            console.print(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {submit_info}", style="bold red")
+            return False, FAIL_LABEL, f"Submit design failed with error: {submit_info}"
+        sys_log.debug(f"{func_name} {SUCCESS_LABEL}: Design (id: {design_id}, rev: {design_rev}) submitted, copied "
+                      f"config(s): {', '.join(copied_configs)} to: {design_path}")
+        console.print(f"{func_name} {SUCCESS_LABEL}: Design (id: {design_id}, rev: {design_rev}) submitted", style="bright_black")
+        return True, SUCCESS_LABEL, (
+            f"Design (id: {design_id}, rev: {design_rev}) is submitted and it can be simulated. "
+            f"The scratchpad folder is kept and is read-only now")
+    except Exception as e:
+        sys_log.error(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {e}")
+        console.print(f"{func_name} {FAIL_LABEL}: Submit design failed with error: {e}", style="bold red")
+        return False, FAIL_LABEL, e.__str__()
+
+
 def save_simulator_logs(run_path: str, stdout: bytes, stderr: bytes):
     """save stdout and stderr logs of simulator"""
     stdout_str = stdout.decode('utf-8', errors='replace')
@@ -533,14 +968,36 @@ def save_simulator_logs(run_path: str, stdout: bytes, stderr: bytes):
             f.write("(stderr is empty)")
 
 
-def launch_sim_impl(arguments: dict[str, Any], run_man: RunManager, console: Console) -> tuple[bool, str, str]:
+def launch_sim_impl(arguments: dict[str, Any], design_man: DesignManager, run_man: RunManager, console: Console)\
+        -> tuple[bool, str, str]:
     """launch simulator implementation"""
     func_name = TOOL_NAME_LAUNCH_SIM
     try:
         design_id = arguments["design_id"]
         design_rev = arguments["design_rev"]
-        design_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
         """check the design"""
+        if_success, design, get_info = design_man.get_design(design_id, design_rev)
+        if not if_success or design is None:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"`{SIM_RUN_NAME}` is not created. Launch failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                          f"`{SIM_RUN_NAME}` is not created. Launch failed", style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev}) is not found, detail: {get_info}. "
+                                       f"`{SIM_RUN_NAME}` is not created. Launch failed")
+        if design["status"] != DesignStatus.READY:
+            sys_log.error(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is in status `{design['status'].value}`. Only a design in "
+                          f"status `{DESIGN_READY_LABEL}` can be simulated. `{SIM_RUN_NAME}` is not created. Launch failed")
+            console.print(f"{func_name} {FAIL_LABEL}: "
+                          f"Design (id: {design_id}, rev: {design_rev}) is in status `{design['status'].value}`. Only a design in "
+                          f"status `{DESIGN_READY_LABEL}` can be simulated. `{SIM_RUN_NAME}` is not created. Launch failed",
+                          style="bold red")
+            return False, FAIL_LABEL, (f"Design (id: {design_id}, rev: {design_rev}) is in status `{design['status'].value}`. Only a "
+                                       f"design in status `{DESIGN_READY_LABEL}` can be simulated. `{SIM_RUN_NAME}` is not created. "
+                                       f"Launch failed")
+        design_path = str(AGENT_PATH / SESSION_PATH / run_man.session_uuid / f"{SIM_DESIGN_NAME}{design_id}" / f"{design_rev}")
         if not os.path.exists(design_path):
             sys_log.error(f"{func_name} {FAIL_LABEL}: "
                           f"Design (id: {design_id}, rev: {design_rev})'s path doesn't exist. `{SIM_RUN_NAME}` is not created. "

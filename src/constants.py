@@ -19,6 +19,9 @@ Revision:
 2026.8.15      Yu Huang      1.7      Support of messages thumbnail displays in builtin command /context
 2026.8.24      Yu Huang      1.8      Support of image content read-in
 2026.8.27      Yu Huang      1.9      Modify the reasoning content style and add constants of strong & em style of Markdown rendering
+2026.9.27      Yu Huang      2.0      Add design status labels (editing/ready) for simulation gating
+2026.9.27      Yu Huang      2.1      Add fork_design/modify_design/submit_design tool name & scratchpad naming constants
+2026.9.27      Yu Huang      2.2      Add design status colors (ready/editing) for /designList
 
 Details:
 ---------
@@ -33,7 +36,7 @@ from pathlib import Path
 """TECoSim Agent Version"""
 TECOSIM_AGENT_MAJOR_VERSION: int = 0
 TECOSIM_AGENT_MINOR_VERSION: int = 3
-TECOSIM_AGENT_UPDATE_VERSION: int = 10
+TECOSIM_AGENT_UPDATE_VERSION: int = 11
 
 """Basic Diles/Dirs"""
 if getattr(sys, 'frozen', False):
@@ -290,6 +293,9 @@ TOOL_NAME_CALL_MCP: str = "call_mcp"
 # Simulation tool names
 TOOL_NAME_CHECK_SIMULATOR: str = "check_simulator"
 TOOL_NAME_INIT_DESIGN: str = "init_design"
+TOOL_NAME_FORK_DESIGN: str = "fork_design"
+TOOL_NAME_MODIFY_DESIGN: str = "modify_design"
+TOOL_NAME_SUBMIT_DESIGN: str = "submit_design"
 TOOL_NAME_QUERY_DESIGN: str = "query_design"
 TOOL_NAME_LAUNCH_SIM: str = "launch_sim"
 TOOL_NAME_QUERY_RUN: str = "query_run"
@@ -552,9 +558,15 @@ MCP_TOOL_DESC_CHAR_LIMIT: int =  250
 """Simulator Tools"""
 SIM_DESIGN_NAME: str = "design"
 SIM_RUN_NAME: str = "run"
+SIM_SCRATCHPAD_SUFFIX: str = ".scratchpad"
 SIMULATOR_TIMEOUT_DEFAULT_S: int = 3600
 READ_LOG_MAX_LINE: int = 10000
 READ_LOG_ENCODING_DEFAULT: str = "utf-8"
+DESIGN_EDITING_LABEL: str = "EDITING"
+DESIGN_READY_LABEL: str = "READY"
+DESIGN_EDITING_COLOR: str = MARKDOWN_INLINE_CODE_COLOR
+DESIGN_READY_COLOR: str = TASK_COMPLETED_COLOR
+SIM_DESIGN_ENCODING_DEFAULT: str = "utf-8"
 RUN_PENDING_LABEL: str = "PENDING"
 RUN_CANCELLED_LABEL: str = "CANCELLED"
 RUN_TIMEOUT_LABEL: str = "TIMEOUT"

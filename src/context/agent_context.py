@@ -33,6 +33,7 @@ Revision:
 2026.8.1-2     Yu Huang      3.1      Support of inserting messages during LLM request, LLM response display and tool calls
 2026.8.4       Yu Huang      3.2      Support of tracking the amount of received WeChat messages & Add get_status method
 2026.8.24      Yu Huang      3.3      Support of image content read-in
+2026.9.27      Yu Huang      3.4      Add fork_design/modify_design/submit_design tool to permission map and permission dict
 
 Details:
 ---------
@@ -138,6 +139,9 @@ PERMISSION_LABEL_TO_NAME_MAP: dict[str, str] = {
     "TOOL_NAME_WECHAT_SEND_FILE": TOOL_NAME_WECHAT_SEND_FILE,
     # simulation tool"
     "TOOL_NAME_INIT_DESIGN": TOOL_NAME_INIT_DESIGN,
+    "TOOL_NAME_FORK_DESIGN": TOOL_NAME_FORK_DESIGN,
+    "TOOL_NAME_MODIFY_DESIGN": TOOL_NAME_MODIFY_DESIGN,
+    "TOOL_NAME_SUBMIT_DESIGN": TOOL_NAME_SUBMIT_DESIGN,
     "TOOL_NAME_LAUNCH_SIM": TOOL_NAME_LAUNCH_SIM,
     "TOOL_NAME_READ_LOG": TOOL_NAME_READ_LOG,
 }
@@ -241,6 +245,9 @@ class AgentContext:
             TOOL_NAME_WECHAT_SEND_FILE: False,
             # simulation tools
             TOOL_NAME_INIT_DESIGN: False,
+            TOOL_NAME_FORK_DESIGN: False,
+            TOOL_NAME_MODIFY_DESIGN: False,
+            TOOL_NAME_SUBMIT_DESIGN: False,
             TOOL_NAME_LAUNCH_SIM: False,
             TOOL_NAME_READ_LOG: False,
         }

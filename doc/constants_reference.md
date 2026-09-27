@@ -35,11 +35,14 @@ Agent tools and internal operations return standardized status labels for unifie
 | `RUN_TIMEOUT_LABEL` | `TIMEOUT` | 仿真运行超时 / Simulation run timed out |
 | `RUN_RUNTIME_ERROR_LABEL` | `RUNTIME_ERROR` | 仿真运行发生运行时错误 / Simulation run encountered a runtime error |
 | `RUN_DONE_LABEL` | `DONE` | 仿真运行成功完成 / Simulation run completed successfully |
+| `DESIGN_EDITING_LABEL` | `EDITING` | 设计正在编辑，不可被仿真 / Design is being edited and can't be simulated |
+| `DESIGN_READY_LABEL` | `READY` | 设计已就绪，可被仿真 / Design is ready to be simulated |
 
 > **状态流转说明 | Status Flow**
 > - 工具操作状态 / Tool operation status: `FAIL` / `FALLBACK` / `SUCCESS` / `DENIED` / `DISABLED` / `TRUNCATED` / `TIMEOUT` are mutually exclusive; one per invocation
 > - Scoreboard 任务状态 / Scoreboard task status: `pending → in_progress → completed` (irreversible); any status can be marked as `deleted`
 > - 仿真运行状态 / Simulation run status: `PENDING → DONE` / `CANCELLED` / `TIMEOUT` / `RUNTIME_ERROR`
+> - 设计状态 / Design status: `EDITING` (not simulatable) / `READY` (simulatable). `init_design` creates a design whose first revision is `READY`; `launch_sim` refuses any revision that is not `READY`
 
 ---
 
@@ -99,6 +102,9 @@ All agent tool names are defined centrally as `TOOL_NAME_*` constants in `src/co
 | `TOOL_NAME_CALL_MCP` | `call_mcp` | 调用 MCP 工具 / Call an MCP tool                                                                |
 | `TOOL_NAME_CHECK_SIMULATOR` | `check_simulator` | 检查仿真器可用性 / Check simulator availability                                                     |
 | `TOOL_NAME_INIT_DESIGN` | `init_design` | 创建设计 / Initialize a design                                                                  |
+| `TOOL_NAME_FORK_DESIGN` | `fork_design` | 从已有设计 fork 出新设计 / Fork a new design from an existing one                                    |
+| `TOOL_NAME_MODIFY_DESIGN` | `modify_design` | 修改设计并分配新修订（scratchpad 编辑）/ Modify a design and allocate a new revision (scratchpad editing) |
+| `TOOL_NAME_SUBMIT_DESIGN` | `submit_design` | 提交修改修订（校验完备性并转为就绪）/ Submit an editing revision (check completeness and mark it ready) |
 | `TOOL_NAME_QUERY_DESIGN` | `query_design` | 查询设计列表 / Query design list                                                                  |
 | `TOOL_NAME_LAUNCH_SIM` | `launch_sim` | 启动仿真 / Launch a simulation                                                                  |
 | `TOOL_NAME_QUERY_RUN` | `query_run` | 查询运行记录 / Query simulation run records                                                       |
@@ -196,6 +202,7 @@ The agent calls `evaluate_bash_risk()` before executing any bash command, classi
 | `CONTENT_STYLE` | `none` | 内容文本样式 / Content text style |
 | `MESSAGE_PRINT_MARGIN` | `4` | 消息打印左侧缩进宽度 / Left margin width for message printing |
 | `USER_PROMPT_FIXED_PREFIX` | `(Shift+Tab: New line, Esc: Discard draft)` | 用户输入提示固定文字 / Fixed prompt prefix for user input |
+| `USER_PROMPT_PREFIX_LIST` | `list[str]`（7 条） | 空闲时用户输入框的随机提示文案列表，由 `agent_configs.json` 的 `RANDOM_PROGRESS_TITLE` 开关控制 / Random placeholder texts for the idle user input bar, toggled by `RANDOM_PROGRESS_TITLE` in `agent_configs.json` |
 
 ### Markdown 渲染 | Markdown Rendering
 
@@ -253,6 +260,8 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 | `TASK_IN_PROGRESS_COLOR_END` | `#54A0FF`（蓝） | 进行中任务渐变终止色 / Gradient end for in-progress tasks |
 | `TASK_COMPLETED_COLOR` | `#8CDCA0`（绿） | 已完成任务颜色 / Color for completed tasks |
 | `TASK_DELETED_COLOR` | `#767676`（灰） | 已删除任务颜色 / Color for deleted tasks |
+| `DESIGN_EDITING_COLOR` | `#61D6D6`（青） | `/designList` 中 `EDITING` 设计状态的颜色 / Color of the `EDITING` design status in /designList |
+| `DESIGN_READY_COLOR` | `#8CDCA0`（绿） | `/designList` 中 `READY` 设计状态的颜色 / Color of the `READY` design status in /designList |
 
 ### 监听 TUI | Listen TUI
 
@@ -320,10 +329,12 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 
 | 常量 Constant | 默认值 Default | 用途 Purpose |
 |----------|---------|---------|
+| `LLM_REQUEST_TITLE_LIST` | `list[str]`（7 条） | LLM 请求进行中的随机提示文案列表，由 `RANDOM_PROGRESS_TITLE` 开关控制 / Random titles shown while an LLM request is in flight, toggled by `RANDOM_PROGRESS_TITLE` |
 | `LLM_REQUEST_DONE_TITLE` | `LLM response latency` | LLM 请求完成提示 / LLM request done prompt |
 | `LLM_REQUEST_INTRP_TITLE` | `LLM request interrupted` | LLM 请求中断提示 / LLM request interrupted prompt |
 | `LLM_REQUEST_FAIL_TITLE` | `LLM request failed` | LLM 请求失败提示 / LLM request failed prompt |
 | `LLM_REQUEST_SPINNER` | `dots2` | LLM 请求时的 spinner 样式 / Spinner style for LLM requests |
+| `TOOLS_EXECUTION_TITLE_LIST` | `list[str]`（24 条） | 工具执行进行中的随机提示文案列表，由 `RANDOM_PROGRESS_TITLE` 开关控制 / Random titles shown while tools are executing, toggled by `RANDOM_PROGRESS_TITLE` |
 | `TOOLS_EXECUTION_DONE_TITLE` | `Tools execution done` | 工具执行完成提示 / Tools execution done prompt |
 | `TOOLS_EXECUTION_INTRP_TITLE` | `Tools execution interrupted` | 工具执行中断提示 / Tools execution interrupted prompt |
 | `TOOLS_EXECUTION_FAIL_TITLE` | `Tools execution failed` | 工具执行失败提示 / Tools execution failed prompt |
@@ -338,13 +349,13 @@ The `get_console()` function creates a `Console` with a `Theme` for uniform mark
 > 当 `agent_configs.json` 中的 `RANDOM_PROGRESS_TITLE` 设为 `true` 时，Agent 会在三个场景中随机循环显示趣味标题（定义于 `constants.py`）：
 > When `RANDOM_PROGRESS_TITLE` is `true` in `agent_configs.json`, the agent cycles through random fun titles in three scenarios:
 > 
-> **LLM 请求时**（`LLM_REQUEST_TITLE_LIST`，7+ 条）— 如 `"Brain (but not mine) using ..."`、`"Staring into the abyss. The abyss is typing ..."`
+> **LLM 请求时**（`LLM_REQUEST_TITLE_LIST`，7 条）— 如 `"Brain (but not mine) using ..."`、`"Staring into the abyss. The abyss is typing ..."`
 > **During LLM requests** — e.g., `"Brain (but not mine) using ..."`
 >
-> **工具执行时**（`TOOLS_EXECUTION_TITLE_LIST`，23+ 条）— 如 `"Reaching into the toolbox ..."`、`"Finding the right screwdriver ..."`
+> **工具执行时**（`TOOLS_EXECUTION_TITLE_LIST`，24 条）— 如 `"Reaching into the toolbox ..."`、`"Finding the right screwdriver ..."`
 > **During tool execution** — e.g., `"Reaching into the toolbox ..."`
 > 
-> **用户输入前**（`USER_PROMPT_PREFIX_LIST`，7+ 条）— 如 `"Type, and behold the breath of silica"`、`"Whisper your command into the chips"`
+> **用户输入前**（`USER_PROMPT_PREFIX_LIST`，7 条）— 如 `"Type, and behold the breath of silica"`、`"Whisper your command into the chips"`
 > **Before user input** — e.g., `"Type, and behold the breath of silica"`
 > 
 > 以上列表均可在 `constants.py` 中自由定制。设为 `false` 则使用固定的默认标题（见上表各 `*_TITLE` 常量）。
@@ -496,7 +507,7 @@ These constants control the agent's core identity and basic behavior:
 |----------|---------|-------------|
 | `TECOSIM_AGENT_MAJOR_VERSION` | `0` | Agent 主版本号 / Agent major version |
 | `TECOSIM_AGENT_MINOR_VERSION` | `3` | Agent 次版本号 / Agent minor version |
-| `TECOSIM_AGENT_UPDATE_VERSION` | `10` | Agent 更新版本号 / Agent update version |
+| `TECOSIM_AGENT_UPDATE_VERSION` | `11` | Agent 更新版本号 / Agent update version |
 | `CRON_TASK_ID_LEN` | `8` | 定时任务 ID 长度 / Cron task ID length |
 | `AGENT_PATH` | 动态（exe 所在目录或项目根目录）/ Dynamic (exe dir or project root) | Agent 根路径，所有相对路径解析的基础 / Agent root path; base for all relative path resolution |
 | `AGENT_EXECUTE` | `"TECoSim-Agent"` / `"python -m src.main"` | Agent 可执行命令（预构建 exe / 源码运行）/ Agent executable command (pre-built exe / source run) |
@@ -520,6 +531,8 @@ These constants control the agent's core identity and basic behavior:
 | `DESIGNS_NAME` | `"designs.json"` | 面板设计持久化文件名 / Panel design persistence file name |
 | `SIM_DESIGN_NAME` | `"design"` | 仿真设计目录名 / Simulation design directory name |
 | `SIM_RUN_NAME` | `"run"` | 仿真运行目录名 / Simulation run directory name |
+| `SIM_SCRATCHPAD_SUFFIX` | `".scratchpad"` | 修改修订的暂存目录后缀，路径为 `design<id>/<rev>.scratchpad` / Scratchpad dir suffix of a modified revision, path is `design<id>/<rev>.scratchpad` |
+| `SIM_DESIGN_ENCODING_DEFAULT` | `utf-8` | 设计配置文件（json）读写默认编码 / Default encoding for reading/writing design config (json) files |
 | `ASK_USER_QUESTION_MAX_QUESTION` | `4` | 单次提问最多问题数 / Max questions per ask_user_question call |
 | `ASK_USER_QUESTION_MIN_QUESTION` | `1` | 单次提问最少问题数 / Min questions per ask_user_question call |
 | `ASK_USER_QUESTION_MAX_OPTION` | `4` | 每个问题最多选项数 / Max options per question |

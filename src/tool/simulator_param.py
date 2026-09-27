@@ -10,16 +10,19 @@ Description: TECoSim Simulator's param
 Revision:
 ---------
 2026.6.8         Yu Huang      1.0      First implementation
+2026.9.27        Yu Huang      1.1      Add design config file-to-schema mapping, required config list & IRD couple types
 
 Details:
 ---------
 TypedDict definitions for all simulator configuration files: RunConfig (paths, CUDA device), ModelParamConfig (4 pixel circuit
 models with hysteresis/LUT params), PanelParamConfig (physical/electrical/thermal/PDN params), HeatFluxConfig, HeatContactConfig,
-PdnInjectionConfig, SimulationParamConfig (solver, display, encoding, probing).
+PdnInjectionConfig, SimulationParamConfig (solver, display, encoding, probing). Also holds the design input contract used by
+`submit_design`: which config file maps to which schema, which files are always loaded, and the `couple_type` values that make
+the simulator load `pdn_injection.json`.
 """
 import logging
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 sys_log = logging.getLogger('logger')
 
@@ -233,3 +236,29 @@ class SimulationParamConfig(TypedDict):
     gop_size: int
     max_b_frames: int
     thread_count: int
+
+
+"""Design input contract"""
+# Which config file is defined by which schema (used to check missing fields on submit). The values are TypedDict
+# classes whose `__required_keys__` is read at runtime, so they are typed as `Any` (a TypedDict class can't be
+# expressed as a class type).
+DESIGN_CONFIG_SCHEMAS: dict[str, Any] = {
+    "run.json": RunConfig,
+    "model_param.json": ModelParamConfig,
+    "panel_param.json": PanelParamConfig,
+    "simulation_param.json": SimulationParamConfig,
+    "heat_contact.json": HeatContactConfig,
+    "heat_flux.json": HeatFluxConfig,
+    "pdn_injection.json": PdnInjectionConfig,
+}
+# config files always loaded by the simulator (mirrors TECoSim's src/main.cpp)
+DESIGN_CONFIG_REQUIRED: list[str] = [
+    "run.json",
+    "model_param.json",
+    "panel_param.json",
+    "simulation_param.json",
+]
+# `couple_type` values that enable IR drop solving and update, which makes the simulator load `pdn_injection.json`
+# (mirrors the `coupling_type` enum & switch in TECoSim's src/simulation_param.h & src/utility.cpp: IRD_STATIC,
+# TE_DYNAMIC_IRD_STATIC, IRD_DYNAMIC, TE_DYNAMIC_IRD_DYNAMIC)
+COUPLE_TYPES_WITH_IRD: list[int] = [2, 3, 4, 5]

@@ -88,6 +88,9 @@
         "TOOL_NAME_WEB_SEARCH": true,
         "TOOL_NAME_WECHAT_SEND_FILE": true,
         "TOOL_NAME_INIT_DESIGN": true,
+        "TOOL_NAME_FORK_DESIGN": true,
+        "TOOL_NAME_MODIFY_DESIGN": true,
+        "TOOL_NAME_SUBMIT_DESIGN": true,
         "TOOL_NAME_LAUNCH_SIM": true,
         "TOOL_NAME_READ_LOG": true,
         "ALL_MCP_TOOLS": true
